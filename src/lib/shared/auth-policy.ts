@@ -132,9 +132,9 @@ export const STEP_UP_REQUIREMENT_POLICIES = {
   },
 } as const satisfies Record<StepUpRequirement, StepUpRequirementPolicy>;
 
-export function buildStepUpRedirectSearch(requirement: StepUpRequirement) {
+export function buildStepUpRedirectSearch(challengeId: string) {
   return {
-    requirement,
+    challengeId,
     security: 'step-up-required' as const,
   };
 }

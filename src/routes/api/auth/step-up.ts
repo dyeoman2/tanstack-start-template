@@ -1,35 +1,34 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
+import { api } from '@convex/_generated/api';
+import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import { createPendingStepUpCookie } from '~/lib/server/step-up-cookie.server';
-import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
-const stepUpStartSchema = z.object({
-  redirectTo: z.string().optional(),
-  requirement: z.enum([
-    STEP_UP_REQUIREMENTS.accountEmailChange,
-    STEP_UP_REQUIREMENTS.auditExport,
-    STEP_UP_REQUIREMENTS.attachmentAccess,
-    STEP_UP_REQUIREMENTS.documentExport,
-    STEP_UP_REQUIREMENTS.documentDeletion,
-    STEP_UP_REQUIREMENTS.organizationAdmin,
-    STEP_UP_REQUIREMENTS.sessionAdministration,
-    STEP_UP_REQUIREMENTS.userAdministration,
-  ]),
+const stepUpPrepareSchema = z.object({
+  challengeId: z.string().uuid(),
 });
 
 export const Route = createFileRoute('/api/auth/step-up')({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const body = stepUpStartSchema.safeParse(await request.json());
+        const body = stepUpPrepareSchema.safeParse(await request.json());
         if (!body.success) {
           return new Response(body.error.message, { status: 400 });
+        }
+
+        try {
+          await convexAuthReactStart.fetchAuthMutation(api.stepUp.prepareCurrentChallenge, {
+            challengeId: body.data.challengeId,
+          });
+        } catch {
+          return new Response('Unable to prepare the verification challenge.', { status: 403 });
         }
 
         return new Response(null, {
           status: 204,
           headers: {
-            'set-cookie': createPendingStepUpCookie(body.data),
+            'set-cookie': createPendingStepUpCookie({ challengeId: body.data.challengeId }),
           },
         });
       },

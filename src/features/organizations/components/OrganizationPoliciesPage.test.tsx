@@ -166,7 +166,7 @@ describe('OrganizationPoliciesPage', () => {
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
     expect(routerInvalidateMock).toHaveBeenCalled();
     expect(
-      screen.getAllByText(/does not auto-delete primary chats or messages/i).length,
+      screen.getAllByText(/legal holds pause destructive chat retention/i).length,
     ).toBeGreaterThan(0);
   });
 

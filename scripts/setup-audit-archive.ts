@@ -27,6 +27,11 @@ import {
   printTargetSummary,
   routeLogsToStderrWhenJson,
 } from './lib/script-ux';
+import {
+  assertSecretTierAcknowledgment,
+  SECRET_TIER_ACK_ENV,
+  SECRET_TIER_ACK_FLAG,
+} from './lib/secret-tier';
 
 const LOCAL_ENV_FILE = '.env.local';
 const PROD_ENV_FILE = '.env.prod';
@@ -231,12 +236,15 @@ function writeProdEnvValue(envContent: string, name: string, value: string) {
 }
 
 function printUsage() {
-  console.log('Usage: pnpm run audit-archive:setup -- [--prod] [--yes] [--json]');
+  console.log(
+    'Usage: pnpm run audit-archive:setup -- [--prod] [--yes] [--json] [--ack-secret-tier]',
+  );
   console.log('');
   console.log(
     'What this does: configure immutable audit archive AWS inputs for local/dev by default or production with --prod, optionally preview/deploy the stack, capture CloudFormation outputs, and optionally sync Convex runtime env.',
   );
   console.log('Use this when S3-backed storage needs immutable audit archive infrastructure.');
+  console.log(`Production mutation requires ${SECRET_TIER_ACK_FLAG} or ${SECRET_TIER_ACK_ENV}=1.`);
   console.log('Docs: docs/DEPLOY_ENVIRONMENT.md');
   console.log('');
   console.log('Safe to rerun: yes; operator env and Convex runtime env can be refreshed.');
@@ -251,6 +259,13 @@ async function main() {
     printUsage();
     return;
   }
+  if (prod) {
+    assertSecretTierAcknowledgment({
+      command: 'pnpm run audit-archive:setup -- --prod',
+      argv: process.argv,
+      env: process.env,
+    });
+  }
 
   const changedLocally: string[] = [];
   const changedRemotely: string[] = [];
@@ -261,7 +276,7 @@ async function main() {
   const targetEnvLabel = prod ? 'production' : 'local development';
   const convexTarget = prod ? 'production' : 'current development';
   const rerunCommand = prod
-    ? 'pnpm run audit-archive:setup -- --prod'
+    ? `pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`
     : 'pnpm run audit-archive:setup';
   const deployDoctorCommand = prod ? 'pnpm run deploy:doctor -- --prod' : 'pnpm run deploy:doctor';
 

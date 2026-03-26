@@ -143,9 +143,8 @@ If production uses `s3-primary` or `s3-mirror`, make sure the resulting secret i
 - `AWS_S3_MIRROR_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 - `STORAGE_BROKER_URL`
-- `STORAGE_BROKER_ACCESS_KEY_ID`
-- `STORAGE_BROKER_SECRET_ACCESS_KEY`
-- optional `STORAGE_BROKER_SESSION_TOKEN`
+- `STORAGE_BROKER_EDGE_ASSERTION_SECRET`
+- `STORAGE_BROKER_CONTROL_ASSERTION_SECRET`
 - `CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET`
 - `CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET`
 - `CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET`
@@ -184,10 +183,10 @@ export BETTER_AUTH_SECRET=your-production-better-auth-secret
 export JWKS='{"keys":[...]}'
 ```
 
-When the storage stack is already deployed, treat the CloudFormation outputs
-`StorageBrokerRuntimeUrl`, `StorageBrokerAccessKeyId`, and
-`StorageBrokerSecretAccessKey` as the canonical source for the broker settings you
-restore into Convex.
+When the storage stack is already deployed, treat the CloudFormation output
+`StorageBrokerRuntimeUrl` as the canonical source for the broker runtime URL you
+restore into Convex. Restore the broker assertion secrets from the DR env
+secret rather than from stack outputs.
 
 `AWS_DR_FRONTEND_CNAME_TARGET` remains available as an override, but `pnpm run dr:setup` now persists the Netlify frontend hostname in Secrets Manager so manual export is usually unnecessary.
 

@@ -6,9 +6,9 @@ import type { ActionCtx } from './_generated/server';
 import { issueFileAccessUrlForCurrentUser } from './fileServing';
 import {
   createQuarantineUploadPresignedUrl,
-  deleteStorageObject,
   getRequiredStorageEncryptionHeaders,
 } from './lib/storageS3';
+import { deleteStorageObject } from './lib/storageS3Control';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
 
 function toStoragePathSegment(value: string) {

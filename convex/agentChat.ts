@@ -66,6 +66,7 @@ import {
   threadWithAccessValidator,
 } from './lib/returnValidators';
 import { recordUserAuditEvent } from './lib/auditEmitters';
+import { getFullPhiRecordSetPurgeEligibleAt } from './lib/retention';
 import { getOrganizationPolicies } from './organizationManagement';
 import { createUploadTargetWithMode } from './storagePlatform';
 import { uploadTargetResultValidator } from './storageTypes';
@@ -382,6 +383,24 @@ function getMessageTextLength(message: AgentMessageDoc | null) {
 
 const THREAD_DELETE_BATCH_SIZE = 128;
 
+async function getThreadRetentionPurgeEligibleAt(
+  ctx: MutationCtx,
+  args: {
+    lastActivityAt: number;
+    organizationId: string;
+  },
+) {
+  const policies = await ctx.db
+    .query('organizationPolicies')
+    .withIndex('by_organization_id', (query) => query.eq('organizationId', args.organizationId))
+    .unique();
+
+  return getFullPhiRecordSetPurgeEligibleAt({
+    dataRetentionDays: policies?.dataRetentionDays ?? 30,
+    lastActivityAt: args.lastActivityAt,
+  });
+}
+
 async function deleteThreadDocumentsInBatches(ctx: MutationCtx, threadId: Id<'chatThreads'>) {
   while (true) {
     const runs = await ctx.db
@@ -431,6 +450,13 @@ async function deleteThreadForCleanup(ctx: MutationCtx, threadId: Id<'chatThread
   if (!thread) {
     return { deleted: false as const };
   }
+
+  await ctx.runQuery(internal.retention.assertOrganizationHoldAllowsOperationInternal, {
+    operation: 'cleanup',
+    organizationId: thread.organizationId,
+    resourceId: String(thread._id),
+    resourceType: 'chat_thread_record_set',
+  });
 
   await deleteThreadDocumentsInBatches(ctx, threadId);
   await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
@@ -594,13 +620,17 @@ export const createThreadShellInternal = internalMutation({
   },
   returns: v.id('chatThreads'),
   handler: async (ctx, args) => {
+    const purgeEligibleAt = await getThreadRetentionPurgeEligibleAt(ctx, {
+      lastActivityAt: args.createdAt,
+      organizationId: args.organizationId,
+    });
     return await ctx.db.insert('chatThreads', {
       ...args,
       visibility: 'private',
       pinned: false,
       deletedAt: undefined,
       deletedByUserId: undefined,
-      purgeEligibleAt: undefined,
+      purgeEligibleAt,
       updatedAt: args.createdAt,
       lastMessageAt: args.createdAt,
     });
@@ -629,6 +659,10 @@ export const patchThreadInternal = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.threadId);
+    if (!existing) {
+      return null;
+    }
     const patch: Partial<Doc<'chatThreads'>> = {};
     if (args.patch.agentThreadId !== undefined) patch.agentThreadId = args.patch.agentThreadId;
     if (args.patch.title !== undefined) patch.title = args.patch.title;
@@ -661,7 +695,15 @@ export const patchThreadInternal = internalMutation({
       patch.purgeEligibleAt = args.patch.purgeEligibleAt ?? undefined;
     }
     if (args.patch.updatedAt !== undefined) patch.updatedAt = args.patch.updatedAt;
-    if (args.patch.lastMessageAt !== undefined) patch.lastMessageAt = args.patch.lastMessageAt;
+    if (args.patch.lastMessageAt !== undefined) {
+      patch.lastMessageAt = args.patch.lastMessageAt;
+      if (args.patch.purgeEligibleAt === undefined) {
+        patch.purgeEligibleAt = await getThreadRetentionPurgeEligibleAt(ctx, {
+          lastActivityAt: args.patch.lastMessageAt,
+          organizationId: existing.organizationId,
+        });
+      }
+    }
     await ctx.db.patch(args.threadId, patch);
     return null;
   },
@@ -861,6 +903,17 @@ export const deleteAttachmentStorageInternal = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const attachment = await ctx.db.get(args.attachmentId);
+    if (!attachment) {
+      return null;
+    }
+
+    await ctx.runQuery(internal.retention.assertOrganizationHoldAllowsOperationInternal, {
+      operation: 'delete',
+      organizationId: attachment.organizationId,
+      resourceId: String(attachment._id),
+      resourceType: 'chat_attachment',
+    });
     await ctx.db.delete(args.attachmentId);
     return null;
   },
@@ -2336,6 +2389,13 @@ export const deleteThread = mutation({
       permission: 'writeThread',
     });
     const { thread } = decision;
+
+    await ctx.runQuery(internal.retention.assertOrganizationHoldAllowsOperationInternal, {
+      operation: 'delete',
+      organizationId: thread.organizationId,
+      resourceId: String(thread._id),
+      resourceType: 'chat_thread',
+    });
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
       threadId: args.threadId,

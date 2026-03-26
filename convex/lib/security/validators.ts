@@ -1146,6 +1146,7 @@ const auditReadinessSnapshotValidator = v.object({
         v.literal('attachment_purge'),
         v.literal('quarantine_cleanup'),
         v.literal('temporary_artifact_purge'),
+        v.literal('phi_record_purge'),
       ),
       processedCount: v.number(),
       scopeId: securityScopeIdValidator,

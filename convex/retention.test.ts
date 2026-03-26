@@ -11,21 +11,29 @@ vi.mock('./_generated/server', () => ({
 vi.mock('./_generated/api', () => ({
   internal: {
     agentChat: {
-      updateAttachmentInternal: 'internal.agentChat.updateAttachmentInternal',
+      deleteAttachmentStorageInternal: 'internal.agentChat.deleteAttachmentStorageInternal',
+      deleteThreadForCleanupInternal: 'internal.agentChat.deleteThreadForCleanupInternal',
+      getAttachmentByStorageIdInternal: 'internal.agentChat.getAttachmentByStorageIdInternal',
     },
     organizationManagement: {
-      getOrganizationLegalHoldInternal:
-        'internal.organizationManagement.getOrganizationLegalHoldInternal',
       getOrganizationPoliciesInternal:
         'internal.organizationManagement.getOrganizationPoliciesInternal',
     },
     pdfParse: {
+      deletePdfParseJobInternal: 'internal.pdfParse.deletePdfParseJobInternal',
       getPdfParseJobByStorageIdInternal: 'internal.pdfParse.getPdfParseJobByStorageIdInternal',
-      upsertPdfParseJobInternal: 'internal.pdfParse.upsertPdfParseJobInternal',
     },
     retention: {
-      listPurgeEligibleTemporaryArtifactsInternal:
-        'internal.retention.listPurgeEligibleTemporaryArtifactsInternal',
+      getOrganizationHoldAwareOperationDecisionInternal:
+        'internal.retention.getOrganizationHoldAwareOperationDecisionInternal',
+      listPurgeEligibleChatThreadsInternal:
+        'internal.retention.listPurgeEligibleChatThreadsInternal',
+      listPurgeEligiblePdfParseJobsInternal:
+        'internal.retention.listPurgeEligiblePdfParseJobsInternal',
+      listPurgeEligibleStandaloneAttachmentsInternal:
+        'internal.retention.listPurgeEligibleStandaloneAttachmentsInternal',
+      listThreadAttachmentsForRetentionInternal:
+        'internal.retention.listThreadAttachmentsForRetentionInternal',
       recordRetentionDeletionBatchInternal:
         'internal.retention.recordRetentionDeletionBatchInternal',
     },
@@ -42,6 +50,63 @@ vi.mock('./lib/auditEmitters', () => ({
   recordSystemAuditEvent: recordSystemAuditEventMock,
 }));
 
+describe('retention policy helpers', () => {
+  it('blocks destructive operations during an active hold and allows exports', async () => {
+    const retentionModule = await import('./retention');
+    const handler = (retentionModule.getOrganizationHoldAwareOperationDecisionInternal as any)
+      .handler as (ctx: unknown, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    const query = vi.fn().mockReturnValue({
+      withIndex: vi.fn().mockReturnValue({
+        unique: vi.fn().mockResolvedValue({
+          _id: 'hold-1',
+          reason: 'Preserve records',
+          status: 'active',
+        }),
+      }),
+    });
+
+    const deleteDecision = await handler(
+      {
+        db: {
+          query,
+        },
+      } as never,
+      {
+        operation: 'delete',
+        organizationId: 'org-1',
+        resourceType: 'chat_thread',
+      },
+    );
+    const exportDecision = await handler(
+      {
+        db: {
+          query,
+        },
+      } as never,
+      {
+        allowExportDuringHold: true,
+        operation: 'export',
+        organizationId: 'org-1',
+        resourceType: 'audit_export',
+      },
+    );
+
+    expect(deleteDecision).toMatchObject({
+      allowed: false,
+      legalHoldActive: true,
+      legalHoldId: 'hold-1',
+      normalizedLegalHoldReason: 'active_legal_hold',
+      retentionScopeVersion: 'full_phi_record_set_v2',
+    });
+    expect(exportDecision).toMatchObject({
+      allowed: true,
+      legalHoldActive: true,
+      legalHoldId: 'hold-1',
+      resourceType: 'audit_export',
+    });
+  });
+});
+
 describe('purgeExpiredTemporaryArtifacts', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -53,37 +118,38 @@ describe('purgeExpiredTemporaryArtifacts', () => {
     vi.useRealTimers();
   });
 
-  it('skips organizations on legal hold and records a deletion batch', async () => {
+  it('skips organizations on legal hold and records a v2 retention batch', async () => {
     const retentionModule = await import('./retention');
     const handler = (retentionModule.purgeExpiredTemporaryArtifacts as any).handler as (
       ctx: unknown,
       args: Record<string, never>,
     ) => Promise<null>;
-    const runQuery = vi.fn(async (ref: string, args?: Record<string, unknown>) => {
+
+    const runQuery = vi.fn(async (ref: string) => {
       switch (ref) {
-        case 'internal.retention.listPurgeEligibleTemporaryArtifactsInternal':
-          expect(args).toMatchObject({
-            limit: 128,
-            now: Date.now(),
-          });
+        case 'internal.retention.listPurgeEligibleChatThreadsInternal':
+          return [
+            {
+              _id: 'thread-1',
+              organizationId: 'org_1',
+              purgeEligibleAt: Date.now() - 1_000,
+              title: 'Lab review',
+            },
+          ];
+        case 'internal.retention.listPurgeEligibleStandaloneAttachmentsInternal':
+        case 'internal.retention.listPurgeEligiblePdfParseJobsInternal':
+          return [];
+        case 'internal.retention.getOrganizationHoldAwareOperationDecisionInternal':
           return {
-            attachments: [
-              {
-                _id: 'attachment-1',
-                kind: 'chat_attachment',
-                name: 'lab-report.pdf',
-                organizationId: 'org_1',
-                purgeEligibleAt: Date.now() - 1_000,
-                storageId: 'storage-1',
-              },
-            ],
-            pdfParseJobs: [],
-          };
-        case 'internal.organizationManagement.getOrganizationLegalHoldInternal':
-          return {
-            id: 'hold-1',
-            reason: 'Pending investigation',
-            status: 'active',
+            allowed: false,
+            legalHoldActive: true,
+            legalHoldId: 'hold-1',
+            legalHoldReason: 'Pending investigation',
+            normalizedLegalHoldReason: 'active_legal_hold',
+            operation: 'purge',
+            resourceId: null,
+            resourceType: 'chat_thread_record_set',
+            retentionScopeVersion: 'full_phi_record_set_v2',
           };
         case 'internal.organizationManagement.getOrganizationPoliciesInternal':
           return {
@@ -99,15 +165,20 @@ describe('purgeExpiredTemporaryArtifacts', () => {
           expect(args).toMatchObject({
             deletedCount: 0,
             failedCount: 0,
-            jobKind: 'temporary_artifact_purge',
+            jobKind: 'phi_record_purge',
             organizationId: 'org_1',
             skippedOnHoldCount: 1,
             status: 'success',
           });
+          expect(JSON.parse(String(args.policySnapshotJson))).toMatchObject({
+            legalHoldId: 'hold-1',
+            legalHoldStatus: 'active',
+            retentionScope: 'full_phi_record_set_v2',
+          });
           return 'batch-1';
         case 'internal.securityOps.recordRetentionJob':
           expect(args).toMatchObject({
-            jobKind: 'temporary_artifact_purge',
+            jobKind: 'phi_record_purge',
             processedCount: 0,
             status: 'success',
           });
@@ -133,37 +204,70 @@ describe('purgeExpiredTemporaryArtifacts', () => {
       expect.objectContaining({
         eventType: 'retention_purge_skipped_on_hold',
         organizationId: 'org_1',
+        sourceSurface: 'retention.phi_record_purge',
       }),
     );
   });
 
-  it('deletes expired attachment artifacts and patches the attachment only', async () => {
+  it('purges a full thread record set and dependent parse artifacts', async () => {
     const retentionModule = await import('./retention');
     const handler = (retentionModule.purgeExpiredTemporaryArtifacts as any).handler as (
       ctx: unknown,
       args: Record<string, never>,
     ) => Promise<null>;
-    const runQuery = vi.fn(async (ref: string) => {
+
+    const runQuery = vi.fn(async (ref: string, args?: Record<string, unknown>) => {
       switch (ref) {
-        case 'internal.retention.listPurgeEligibleTemporaryArtifactsInternal':
+        case 'internal.retention.listPurgeEligibleChatThreadsInternal':
+          return [
+            {
+              _id: 'thread-1',
+              organizationId: 'org_1',
+              purgeEligibleAt: Date.now() - 1_000,
+              title: 'Lab review',
+            },
+          ];
+        case 'internal.retention.listPurgeEligibleStandaloneAttachmentsInternal':
+        case 'internal.retention.listPurgeEligiblePdfParseJobsInternal':
+          return [];
+        case 'internal.retention.getOrganizationHoldAwareOperationDecisionInternal':
           return {
-            attachments: [
-              {
-                _id: 'attachment-1',
-                kind: 'chat_attachment',
-                name: 'lab-report.pdf',
-                organizationId: 'org_1',
-                purgeEligibleAt: Date.now() - 1_000,
-                storageId: 'storage-1',
-              },
-            ],
-            pdfParseJobs: [],
+            allowed: true,
+            legalHoldActive: false,
+            legalHoldId: null,
+            legalHoldReason: null,
+            normalizedLegalHoldReason: null,
+            operation: 'purge',
+            resourceId: null,
+            resourceType: 'chat_thread_record_set',
+            retentionScopeVersion: 'full_phi_record_set_v2',
           };
-        case 'internal.organizationManagement.getOrganizationLegalHoldInternal':
-          return null;
         case 'internal.organizationManagement.getOrganizationPoliciesInternal':
           return {
             dataRetentionDays: 30,
+          };
+        case 'internal.retention.listThreadAttachmentsForRetentionInternal':
+          expect(args).toEqual({
+            threadId: 'thread-1',
+          });
+          return [
+            {
+              _id: 'attachment-1',
+              extractedTextStorageId: 'extract-1',
+              name: 'lab-report.pdf',
+              organizationId: 'org_1',
+              storageId: 'storage-1',
+            },
+          ];
+        case 'internal.pdfParse.getPdfParseJobByStorageIdInternal':
+          expect(args).toEqual({
+            storageId: 'storage-1',
+          });
+          return {
+            _id: 'pdf-job-1',
+            organizationId: 'org_1',
+            resultStorageId: 'result-1',
+            storageId: 'storage-1',
           };
         default:
           throw new Error(`Unexpected runQuery ref: ${ref}`);
@@ -171,28 +275,31 @@ describe('purgeExpiredTemporaryArtifacts', () => {
     });
     const runMutation = vi.fn(async (ref: string, args: Record<string, unknown>) => {
       switch (ref) {
-        case 'internal.agentChat.updateAttachmentInternal':
-          expect(args).toMatchObject({
-            attachmentId: 'attachment-1',
-            patch: expect.objectContaining({
-              errorMessage: 'Attachment content expired per organization retention policy.',
-              extractedTextStorageId: null,
-              purgeEligibleAt: null,
-              status: 'error',
-            }),
+        case 'internal.pdfParse.deletePdfParseJobInternal':
+          expect(args).toEqual({
+            jobId: 'pdf-job-1',
           });
           return null;
+        case 'internal.agentChat.deleteThreadForCleanupInternal':
+          expect(args).toEqual({
+            threadId: 'thread-1',
+          });
+          return {
+            deleted: true,
+            organizationId: 'org_1',
+          };
         case 'internal.retention.recordRetentionDeletionBatchInternal':
           expect(args).toMatchObject({
             deletedCount: 1,
             failedCount: 0,
+            jobKind: 'phi_record_purge',
             skippedOnHoldCount: 0,
           });
           return 'batch-1';
         case 'internal.securityOps.recordRetentionJob':
           expect(args).toMatchObject({
             details: expect.stringContaining('deleted 1'),
-            jobKind: 'temporary_artifact_purge',
+            jobKind: 'phi_record_purge',
             processedCount: 1,
             status: 'success',
           });
@@ -205,10 +312,7 @@ describe('purgeExpiredTemporaryArtifacts', () => {
       if (ref !== 'internal.storagePlatform.deleteStoredFileInternal') {
         throw new Error(`Unexpected runAction ref: ${ref}`);
       }
-      expect(args).toEqual({
-        storageId: 'storage-1',
-      });
-      return null;
+      return args;
     });
 
     await handler(
@@ -220,12 +324,11 @@ describe('purgeExpiredTemporaryArtifacts', () => {
       {},
     );
 
-    expect(runAction).toHaveBeenCalledTimes(1);
-    expect(
-      runMutation.mock.calls.some(
-        ([ref]) => String(ref).includes('chatThreads') || String(ref).includes('deleteThread'),
-      ),
-    ).toBe(false);
+    expect(runAction.mock.calls).toEqual([
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'storage-1' }],
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'extract-1' }],
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'result-1' }],
+    ]);
     expect(recordSystemAuditEventMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -235,80 +338,101 @@ describe('purgeExpiredTemporaryArtifacts', () => {
     );
   });
 
-  it('deletes expired pdf parse results and clears resultStorageId on the job', async () => {
+  it('purges standalone attachments and independent pdf jobs under the v2 scope', async () => {
     const retentionModule = await import('./retention');
     const handler = (retentionModule.purgeExpiredTemporaryArtifacts as any).handler as (
       ctx: unknown,
       args: Record<string, never>,
     ) => Promise<null>;
+
     const runQuery = vi.fn(async (ref: string, args?: Record<string, unknown>) => {
       switch (ref) {
-        case 'internal.retention.listPurgeEligibleTemporaryArtifactsInternal':
+        case 'internal.retention.listPurgeEligibleChatThreadsInternal':
+          return [];
+        case 'internal.retention.listPurgeEligibleStandaloneAttachmentsInternal':
+          return [
+            {
+              _id: 'attachment-1',
+              extractedTextStorageId: 'extract-1',
+              name: 'lab-report.pdf',
+              organizationId: 'org_1',
+              purgeEligibleAt: Date.now() - 1_000,
+              storageId: 'storage-1',
+            },
+          ];
+        case 'internal.retention.listPurgeEligiblePdfParseJobsInternal':
+          return [
+            {
+              _id: 'pdf-job-2',
+              organizationId: 'org_1',
+              purgeEligibleAt: Date.now() - 1_000,
+              resultStorageId: 'result-2',
+              sourceStorageId: 'source-2',
+            },
+          ];
+        case 'internal.retention.getOrganizationHoldAwareOperationDecisionInternal':
           return {
-            attachments: [],
-            pdfParseJobs: [
-              {
-                _id: 'pdf-job-1',
-                organizationId: 'org_1',
-                purgeEligibleAt: Date.now() - 1_000,
-                resultStorageId: 'result-storage-1',
-                sourceStorageId: 'source-storage-1',
-              },
-            ],
+            allowed: true,
+            legalHoldActive: false,
+            legalHoldId: null,
+            legalHoldReason: null,
+            normalizedLegalHoldReason: null,
+            operation: 'purge',
+            resourceId: null,
+            resourceType: 'chat_thread_record_set',
+            retentionScopeVersion: 'full_phi_record_set_v2',
           };
-        case 'internal.organizationManagement.getOrganizationLegalHoldInternal':
-          return null;
         case 'internal.organizationManagement.getOrganizationPoliciesInternal':
           return {
             dataRetentionDays: 45,
           };
         case 'internal.pdfParse.getPdfParseJobByStorageIdInternal':
+          if (args?.storageId === 'storage-1') {
+            return null;
+          }
+          if (args?.storageId === 'source-2') {
+            return {
+              _id: 'pdf-job-2',
+              organizationId: 'org_1',
+              resultStorageId: 'result-2',
+              storageId: 'source-2',
+            };
+          }
+          throw new Error(`Unexpected storageId: ${String(args?.storageId)}`);
+        case 'internal.agentChat.getAttachmentByStorageIdInternal':
           expect(args).toEqual({
-            storageId: 'source-storage-1',
+            storageId: 'source-2',
           });
-          return {
-            _id: 'pdf-job-1',
-            completedAt: 1_710_000_000_000,
-            dispatchAttempts: 1,
-            dispatchErrorMessage: null,
-            errorMessage: null,
-            organizationId: 'org_1',
-            parserVersion: 'parser-v1',
-            processingStartedAt: 1_710_000_000_000,
-            purgeEligibleAt: 1_710_100_000_000,
-            requestedByUserId: 'user-1',
-            resultStorageId: 'result-storage-1',
-            status: 'ready',
-            storageId: 'source-storage-1',
-            updatedAt: 1_710_100_000_000,
-          };
+          return null;
         default:
           throw new Error(`Unexpected runQuery ref: ${ref}`);
       }
     });
     const runMutation = vi.fn(async (ref: string, args: Record<string, unknown>) => {
       switch (ref) {
-        case 'internal.pdfParse.upsertPdfParseJobInternal':
-          expect(args).toMatchObject({
-            organizationId: 'org_1',
-            purgeEligibleAt: null,
-            requestedByUserId: 'user-1',
-            resultStorageId: null,
-            status: 'failed',
-            storageId: 'source-storage-1',
+        case 'internal.agentChat.deleteAttachmentStorageInternal':
+          expect(args).toEqual({
+            attachmentId: 'attachment-1',
           });
-          return 'pdf-job-1';
+          return null;
+        case 'internal.pdfParse.deletePdfParseJobInternal':
+          expect(args).toEqual({
+            jobId: 'pdf-job-2',
+          });
+          return null;
         case 'internal.retention.recordRetentionDeletionBatchInternal':
           expect(args).toMatchObject({
-            deletedCount: 1,
+            deletedCount: 2,
             failedCount: 0,
+            jobKind: 'phi_record_purge',
             skippedOnHoldCount: 0,
           });
           return 'batch-1';
         case 'internal.securityOps.recordRetentionJob':
           expect(args).toMatchObject({
-            jobKind: 'temporary_artifact_purge',
-            processedCount: 1,
+            details: expect.stringContaining('deleted 2'),
+            jobKind: 'phi_record_purge',
+            processedCount: 2,
             status: 'success',
           });
           return null;
@@ -320,10 +444,7 @@ describe('purgeExpiredTemporaryArtifacts', () => {
       if (ref !== 'internal.storagePlatform.deleteStoredFileInternal') {
         throw new Error(`Unexpected runAction ref: ${ref}`);
       }
-      expect(args).toEqual({
-        storageId: 'result-storage-1',
-      });
-      return null;
+      return args;
     });
 
     await handler(
@@ -335,13 +456,11 @@ describe('purgeExpiredTemporaryArtifacts', () => {
       {},
     );
 
-    expect(runAction).toHaveBeenCalledTimes(1);
-    expect(recordSystemAuditEventMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        eventType: 'retention_purge_completed',
-        organizationId: 'org_1',
-      }),
-    );
+    expect(runAction.mock.calls).toEqual([
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'storage-1' }],
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'extract-1' }],
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'result-2' }],
+      ['internal.storagePlatform.deleteStoredFileInternal', { storageId: 'source-2' }],
+    ]);
   });
 });

@@ -18,6 +18,8 @@ export type StorageRoleConfig = Record<StorageCapability, string>;
 
 export type StorageBrokerRuntimeConfig = {
   awsRegion: string;
+  brokerAssertionSecrets: Record<'control' | 'edge', string>;
+  brokerInvokeRoleArns: Record<'control' | 'edge', string>;
   documentParseQueueUrl: string;
   fileServeSigningSecret: string;
   inspectionQueueUrl: string;
@@ -113,6 +115,14 @@ export function getStorageBrokerRuntimeConfig(): StorageBrokerRuntimeConfig {
   assertNoLegacyWebhookSecret();
   return {
     awsRegion: readRequiredEnv('AWS_REGION'),
+    brokerAssertionSecrets: {
+      control: readRequiredEnv('AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET'),
+      edge: readRequiredEnv('AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET'),
+    },
+    brokerInvokeRoleArns: {
+      control: readRequiredEnv('AWS_STORAGE_BROKER_CONTROL_INVOKE_ROLE_ARN'),
+      edge: readRequiredEnv('AWS_STORAGE_BROKER_EDGE_INVOKE_ROLE_ARN'),
+    },
     documentParseQueueUrl: readRequiredEnv('AWS_DOCUMENT_PARSE_QUEUE_URL'),
     fileServeSigningSecret: readRequiredEnv('AWS_FILE_SERVE_SIGNING_SECRET'),
     inspectionQueueUrl: readRequiredEnv('AWS_STORAGE_INSPECTION_QUEUE_URL'),

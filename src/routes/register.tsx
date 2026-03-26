@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
 import { Loader2, Lock, Mail, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -14,9 +14,9 @@ import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
   getAccountSetupHref,
-  getAppStepUpSearch,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
+import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
 
 export const Route = createFileRoute('/register')({
@@ -48,6 +48,7 @@ function RegisterPage() {
     user,
   } = useAuth();
   const navigate = useNavigate();
+  const router = useRouter();
   const redirectTarget = normalizeAppRedirectTarget(redirectTo);
 
   const [error, setError] = useState('');
@@ -200,18 +201,26 @@ function RegisterPage() {
     }
 
     if (requiresMfaVerification) {
-      void navigate({
-        to: '/step-up',
-        search: getAppStepUpSearch({ redirectTo: redirectTarget }),
-        replace: true,
-      });
+      void (async () => {
+        const challenge = await createOrganizationAdminStepUpChallengeServerFn({
+          data: {
+            redirectTo: redirectTarget,
+          },
+        });
+        await navigate({
+          to: '/step-up',
+          search: { challengeId: challenge.challengeId },
+          replace: true,
+        });
+      })();
       return;
     }
 
-    void navigate({ to: redirectTarget, replace: true });
+    router.history.replace(redirectTarget);
   }, [
     isAuthenticated,
     navigate,
+    router,
     redirectTarget,
     requiresEmailVerification,
     requiresMfaSetup,

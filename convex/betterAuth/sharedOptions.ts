@@ -26,10 +26,10 @@ import {
 } from '../../src/lib/server/env.server';
 import {
   clearPendingStepUpCookie,
+  hasPendingStepUpCookie,
   parsePendingStepUpCookie,
 } from '../../src/lib/server/step-up-cookie.server';
 import {
-  getStepUpRequirementPolicy,
   STEP_UP_REQUIREMENTS,
   STEP_UP_METHODS,
   type StepUpMethod,
@@ -127,12 +127,22 @@ type SharedBetterAuthCallbacks = {
     sessionId: string;
     userId: string;
   }) => Promise<boolean>;
-  issueStepUpClaim?: (input: {
+  completeStepUpChallenge?: (input: {
+    challengeId: string;
     method: StepUpMethod;
-    requirement: StepUpRequirement;
     sessionId: string;
     userId: string;
-  }) => Promise<void>;
+  }) => Promise<
+    | {
+        ok: true;
+        requirement: StepUpRequirement;
+      }
+    | {
+        ok: false;
+        reason: string;
+        requirement: StepUpRequirement | null;
+      }
+  >;
   finalizeOAuthAccountState?: (input: { providerId: string; userId: string }) => Promise<void>;
   consumeStepUpClaim?: (input: {
     requirement: StepUpRequirement;
@@ -724,36 +734,41 @@ async function handleStepUpAfterHook(
       mfaVerified,
     });
   }
-  const pendingStepUp = parsePendingStepUpCookie(ctx.headers?.get('cookie'));
+  const cookieHeader = ctx.headers?.get('cookie');
+  const pendingStepUp = parsePendingStepUpCookie(cookieHeader);
   const issuedMethod = resolveStepUpMethod(ctx);
 
+  if (!pendingStepUp && hasPendingStepUpCookie(cookieHeader)) {
+    appendResponseCookie(ctx, clearPendingStepUpCookie());
+  }
+
   if (pendingStepUp && sessionContext.sessionId && sessionContext.userId && issuedMethod) {
-    const allowedMethods = getStepUpRequirementPolicy(pendingStepUp.requirement).allowedMethods;
-    if (allowedMethods.includes(issuedMethod)) {
-      await callbacks.issueStepUpClaim?.({
-        method: issuedMethod,
-        requirement: pendingStepUp.requirement,
-        sessionId: sessionContext.sessionId,
-        userId: sessionContext.userId,
-      });
+    const result = await callbacks.completeStepUpChallenge?.({
+      challengeId: pendingStepUp.challengeId,
+      method: issuedMethod,
+      sessionId: sessionContext.sessionId,
+      userId: sessionContext.userId,
+    });
+
+    if (result?.ok) {
       await callbacks.recordStepUpCompletion?.({
         method: issuedMethod,
         path: ctx.path,
-        requirement: pendingStepUp.requirement,
+        requirement: result.requirement,
         sessionId: sessionContext.sessionId,
         userId: sessionContext.userId,
       });
-      appendResponseCookie(ctx, clearPendingStepUpCookie());
-    } else {
+    } else if (result && result.requirement) {
       await callbacks.recordStepUpFailure?.({
         path: ctx.path,
-        reason: `Step-up method ${issuedMethod} is not allowed for ${pendingStepUp.requirement}.`,
-        requirement: pendingStepUp.requirement,
+        reason: result.reason,
+        requirement: result.requirement,
         sessionId: sessionContext.sessionId,
         userId: sessionContext.userId,
       });
-      appendResponseCookie(ctx, clearPendingStepUpCookie());
     }
+
+    appendResponseCookie(ctx, clearPendingStepUpCookie());
   }
 
   if (ctx.path === '/change-email' && sessionContext.sessionId && sessionContext.userId) {

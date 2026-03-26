@@ -6,6 +6,8 @@ This document ties together Convex, Netlify, and local env so production and dev
 
 Variables such as `AUTUMN_*`, `CLOUDFLARE_*`, and `FIRECRAWL_*` are not read by this application. Remove them from Convex so secrets and mental overhead stay minimal.
 
+Production Convex operator/component access is **secret-tier production access** in this repo. Review [`docs/CONVEX_SECRET_TIER_ACCESS.md`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/CONVEX_SECRET_TIER_ACCESS.md) before granting access or running live production mutation flows.
+
 List known-unused names (dry run):
 
 ```bash
@@ -155,9 +157,25 @@ Exit code `1` means a configured local key is missing on Convex dev, or a compar
 
 Child processes spawned from scripts inherit the **current** `process.env` (including anything loaded above). Convex CLI calls use the same inheritance, so `CONVEX_DEPLOY_KEY` in the shell affects prod Convex commands.
 
+That means a shell with production Convex access is already in the secret-tier lane. Prefer named operator access for humans and environment-scoped CI secrets for unattended workflows.
+
 ### CLI preflight
 
 Most `pnpm run setup:*`, `convex:*`, and `deploy:doctor` scripts exit early with **install hints** if a required tool is missing on `PATH` (for example `pnpm`, `pnpm exec convex`, `openssl` for prod secrets, `gh`/`git` for GitHub deploy wiring, `netlify` before Netlify sync, `aws` before S3 storage flows). They **do not** auto-install packages; follow the printed links or commands, then rerun.
+
+Production-mutating operator flows now also require an explicit secret-tier acknowledgment:
+
+```bash
+--ack-secret-tier
+```
+
+For non-interactive automation, set:
+
+```bash
+CONVEX_SECRET_TIER_ACK=1
+```
+
+The affected production operator flows include `setup:prod`, `storage:setup:prod`, `audit-archive:setup -- --prod`, `dr:setup`, and the break-glass Session purge command.
 
 ### Deploy readiness
 
@@ -166,6 +184,8 @@ pnpm run deploy:doctor
 ```
 
 Add `-- --prod` to include production Convex env list + JWKS checks, plus hints when `CONVEX_DEPLOY_KEY` / `NETLIFY_AUTH_TOKEN` are unset.
+
+When production Convex access is available, `deploy:doctor -- --prod` also reports whether the current run explicitly acknowledged secret-tier production access, whether `.env.prod` is improperly storing `CONVEX_DEPLOY_KEY`, and whether the secret-tier runbook/docs are present.
 
 For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is missing any required runtime variables:
 
@@ -180,8 +200,8 @@ For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is mi
 - `AWS_S3_MIRROR_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 - `STORAGE_BROKER_URL`
-- `STORAGE_BROKER_ACCESS_KEY_ID`
-- `STORAGE_BROKER_SECRET_ACCESS_KEY`
+- `STORAGE_BROKER_EDGE_ASSERTION_SECRET`
+- `STORAGE_BROKER_CONTROL_ASSERTION_SECRET`
 - `CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET`
 - `CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET`
 - `CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET`
@@ -199,13 +219,15 @@ For S3-backed storage, immutable audit archiving is required and `deploy:doctor`
 For AWS storage infrastructure preview/deploy, the operator environment also needs:
 
 - `AWS_FILE_SERVE_SIGNING_SECRET`
+- `AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET`
+- `AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET`
 - `AWS_CONVEX_STORAGE_CALLBACK_BASE_URL`
 - `AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET`
 - `AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET`
 - `AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET`
 - optional `AWS_STORAGE_ALERT_EMAIL`
 
-For S3-backed storage setup, `pnpm run storage:setup:prod` now tries to auto-discover `StorageBrokerRuntimeUrl`, `StorageBrokerAccessKeyId`, and `StorageBrokerSecretAccessKey` from the deployed CloudFormation stack before prompting, persists them to `.env.prod` once available, and reports `needs attention` when those broker outputs are still missing.
+For S3-backed storage setup, `pnpm run storage:setup:prod` now auto-discovers `StorageBrokerRuntimeUrl` from the deployed CloudFormation stack, persists the broker assertion secrets to `.env.prod`, and reports `needs attention` when the runtime URL or assertion secrets are still missing.
 
 For immutable audit archiving, use the dedicated guided flow:
 
@@ -236,3 +258,17 @@ Non-interactive-oriented options (combine as needed):
 - `--smoke-base-url <url>` — with `--yes`, sets production smoke / `BETTER_AUTH_URL` without a prompt
 - `--skip-github-deploy` — skip GitHub Actions environment wiring (still offers `BETTER_AUTH_URL`)
 - `--create-netlify-site <name>` — create a new Netlify site mirroring the **linked** primary site’s repo settings (requires `netlify link` first)
+- `--ack-secret-tier` — required for production mutation; acknowledges that the current run can reach secret-tier Convex data
+
+## Secret-Tier Rotation Order
+
+For the initial rollout or any suspected exposure event:
+
+1. Restrict production Convex access to the approved operator set and CI.
+2. Rotate `CONVEX_DEPLOY_KEY`.
+3. Rotate Better Auth secrets using the versioned-secret sequence above.
+4. Run Session purge with `pnpm run auth:sessions:purge -- --prod --ack-secret-tier`.
+5. Rotate Better Auth signing keys.
+6. Re-sync public-only JWKS with `pnpm run convex:jwks:sync -- --prod`.
+7. Run `pnpm run deploy:doctor -- --prod --json` and require a clean result.
+8. Record the access review and rotation evidence in the security workspace.

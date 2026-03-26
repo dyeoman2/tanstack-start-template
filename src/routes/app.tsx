@@ -4,11 +4,9 @@ import { AuthenticatedAppShell } from '~/components/AuthenticatedAppShell';
 import { NotFound } from '~/components/NotFound';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Spinner } from '~/components/ui/spinner';
+import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import { useAuth } from '~/features/auth/hooks/useAuth';
-import {
-  getAppStepUpSearch,
-  normalizeAppRedirectTarget,
-} from '~/features/auth/lib/account-setup-routing';
+import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 
 export const Route = createFileRoute('/app')({
   pendingMs: 150,
@@ -55,13 +53,22 @@ function AppLayout() {
 
     if (isAuthenticated && requiresMfaVerification) {
       redirectRef.current = true;
-      void navigate({
-        to: '/step-up',
-        search: getAppStepUpSearch({ redirectTo: redirectTarget }),
-        replace: true,
-      }).catch(() => {
-        redirectRef.current = false;
-      });
+      void (async () => {
+        try {
+          const challenge = await createOrganizationAdminStepUpChallengeServerFn({
+            data: {
+              redirectTo: redirectTarget,
+            },
+          });
+          await navigate({
+            to: '/step-up',
+            search: { challengeId: challenge.challengeId },
+            replace: true,
+          });
+        } catch {
+          redirectRef.current = false;
+        }
+      })();
       return;
     }
 

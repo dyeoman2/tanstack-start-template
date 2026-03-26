@@ -1,4 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { Link, useRouter } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
@@ -11,10 +13,9 @@ import { ProfilePasskeysCard } from '~/features/profile/components/ProfilePasske
 import { ProfileSessionsCard } from '~/features/profile/components/ProfileSessionsCard';
 import { ProfileTwoFactorCard } from '~/features/profile/components/ProfileTwoFactorCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
-import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
 type ProfilePageSearchParams = {
-  requirement?: (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
+  challengeId?: string;
   security?: 'step-up-required';
 };
 
@@ -22,6 +23,10 @@ export function ProfilePage({ searchParams }: { searchParams?: ProfilePageSearch
   const { data: profile, isLoading, error } = useProfile();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const liveChallenge = useQuery(
+    api.stepUp.getCurrentChallenge,
+    searchParams?.challengeId ? { challengeId: searchParams.challengeId } : 'skip',
+  );
 
   useEffect(() => {
     if (error?.message === 'UNAUTHORIZED') {
@@ -111,9 +116,8 @@ export function ProfilePage({ searchParams }: { searchParams?: ProfilePageSearch
         ) : null}
 
         {searchParams?.security === 'step-up-required' &&
-        searchParams.requirement &&
-        (searchParams.requirement !== STEP_UP_REQUIREMENTS.accountEmailChange ||
-          (profile.recentStepUpValidUntil ?? 0) <= Date.now()) ? (
+        searchParams.challengeId &&
+        liveChallenge !== null ? (
           <Card className="border-amber-500/40 bg-amber-500/5">
             <CardHeader>
               <CardTitle>Recent verification required</CardTitle>
@@ -124,8 +128,7 @@ export function ProfilePage({ searchParams }: { searchParams?: ProfilePageSearch
                 <Button asChild size="sm">
                   <Link
                     search={{
-                      redirectTo: '/app/profile',
-                      requirement: searchParams.requirement,
+                      challengeId: searchParams.challengeId,
                     }}
                     to="/step-up"
                   >

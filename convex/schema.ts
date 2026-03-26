@@ -95,7 +95,10 @@ const pdfParseJobStatusValidator = v.union(
   v.literal('quarantined'),
 );
 const organizationLegalHoldStatusValidator = v.union(v.literal('active'), v.literal('released'));
-const retentionDeletionJobKindValidator = v.literal('temporary_artifact_purge');
+const retentionDeletionJobKindValidator = v.union(
+  v.literal('temporary_artifact_purge'),
+  v.literal('phi_record_purge'),
+);
 
 const onboardingStatusValidator = v.union(
   v.literal('not_started'),
@@ -443,6 +446,7 @@ export default defineSchema({
   })
     .index('by_agentThreadId', ['agentThreadId'])
     .index('by_organizationId_and_personaId', ['organizationId', 'personaId'])
+    .index('by_purgeEligibleAt', ['purgeEligibleAt'])
     .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
     .index('by_organizationId_and_visibility_and_updatedAt', [
       'organizationId',
@@ -757,6 +761,31 @@ export default defineSchema({
       'requirement',
     ])
     .index('by_claim_id', ['claimId']),
+
+  authStepUpChallenges: defineTable({
+    authUserId: v.string(),
+    challengeId: v.string(),
+    consumedAt: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    failureReason: v.union(v.string(), v.null()),
+    preparedAt: v.union(v.number(), v.null()),
+    redirectTo: v.string(),
+    requirement: v.union(
+      v.literal('account_email_change'),
+      v.literal('audit_export'),
+      v.literal('attachment_access'),
+      v.literal('document_export'),
+      v.literal('document_deletion'),
+      v.literal('organization_admin'),
+      v.literal('session_administration'),
+      v.literal('user_administration'),
+    ),
+    sessionId: v.string(),
+    updatedAt: v.number(),
+  })
+    .index('by_challenge_id', ['challengeId'])
+    .index('by_auth_user_id_and_session_id', ['authUserId', 'sessionId']),
 
   documentScanEvents: defineTable({
     attachmentId: v.optional(v.id('chatAttachments')),

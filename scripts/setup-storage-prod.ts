@@ -21,6 +21,11 @@ import {
   printTargetSummary,
   routeLogsToStderrWhenJson,
 } from './lib/script-ux';
+import {
+  assertSecretTierAcknowledgment,
+  SECRET_TIER_ACK_ENV,
+  SECRET_TIER_ACK_FLAG,
+} from './lib/secret-tier';
 import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
 import { loadOptionalEnvFile } from './lib/load-env-file';
 import {
@@ -196,6 +201,8 @@ function buildStorageDeployEnv(input: {
   alertEmailAddress?: string;
   awsRegion: string;
   awsProfile?: string;
+  brokerControlAssertionSecret: string;
+  brokerEdgeAssertionSecret: string;
   buckets: {
     clean: string;
     mirror: string;
@@ -213,6 +220,8 @@ function buildStorageDeployEnv(input: {
     ...(input.awsProfile ? { AWS_PROFILE: input.awsProfile } : {}),
     ...(input.alertEmailAddress ? { AWS_STORAGE_ALERT_EMAIL: input.alertEmailAddress } : {}),
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
+    AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET: input.brokerControlAssertionSecret,
+    AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET: input.brokerEdgeAssertionSecret,
     AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(input.convexSiteUrl),
     AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: input.decisionCallbackSharedSecret,
     AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: input.documentResultCallbackSharedSecret,
@@ -379,35 +388,41 @@ function getStorageStackOutputs(input: { awsProfile?: string; region: string; st
 }
 
 function getStorageSetupReadiness(input: {
-  brokerAccessKeyId?: string;
+  brokerControlAssertionSecret?: string;
+  brokerEdgeAssertionSecret?: string;
   brokerRuntimeUrl?: string;
   storageMode: StorageMode;
-  brokerSecretAccessKey?: string;
 }) {
   if (input.storageMode === 'convex') {
     return 'ready';
   }
 
-  return input.brokerRuntimeUrl && input.brokerAccessKeyId && input.brokerSecretAccessKey
+  return input.brokerRuntimeUrl &&
+    input.brokerEdgeAssertionSecret &&
+    input.brokerControlAssertionSecret
     ? 'ready'
     : 'needs attention';
 }
 
 function getStorageRuntimeUrlWarning(input: {
-  brokerAccessKeyId?: string;
+  brokerControlAssertionSecret?: string;
+  brokerEdgeAssertionSecret?: string;
   brokerRuntimeUrl?: string;
   storageMode: StorageMode;
-  brokerSecretAccessKey?: string;
 }) {
   if (input.storageMode === 'convex') {
     return null;
   }
 
-  if (input.brokerRuntimeUrl && input.brokerAccessKeyId && input.brokerSecretAccessKey) {
+  if (
+    input.brokerRuntimeUrl &&
+    input.brokerEdgeAssertionSecret &&
+    input.brokerControlAssertionSecret
+  ) {
     return null;
   }
 
-  return 'Production S3-backed storage is configured, but STORAGE_BROKER_URL plus broker access key outputs are still missing. Deploy the storage stack or rediscover the CloudFormation outputs before treating production storage as ready.';
+  return 'Production S3-backed storage is configured, but STORAGE_BROKER_URL plus broker assertion secrets are still missing. Configure them before treating production storage as ready.';
 }
 
 async function chooseStorageMode(): Promise<StorageMode> {
@@ -444,12 +459,13 @@ function normalizeStorageMode(value: string | undefined): StorageMode | null {
 }
 
 function printUsage() {
-  console.log('Usage: pnpm run storage:setup:prod [--yes] [--json]');
+  console.log('Usage: pnpm run storage:setup:prod [--yes] [--json] [--ack-secret-tier]');
   console.log('');
   console.log(
     'What this does: configure production storage runtime vars in Convex and optionally preview/deploy production AWS storage infra.',
   );
   console.log('Use this instead of storage:setup for production runtime/env wiring.');
+  console.log(`Production mutation requires ${SECRET_TIER_ACK_FLAG} or ${SECRET_TIER_ACK_ENV}=1.`);
   console.log('Docs: docs/SCRIPT_COMMAND_MAP.md');
   console.log('');
   console.log('Modes: convex, s3, mirror');
@@ -493,6 +509,11 @@ async function main() {
     printUsage();
     return;
   }
+  assertSecretTierAcknowledgment({
+    command: 'pnpm run storage:setup:prod --',
+    argv: process.argv,
+    env: process.env,
+  });
   const changedLocally: string[] = [];
   const changedRemotely: string[] = [];
   const nextCommands: string[] = [];
@@ -583,24 +604,12 @@ async function main() {
         });
   const discoveredBrokerRuntimeUrl =
     stackOutputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl]?.trim() || '';
-  const discoveredBrokerAccessKeyId =
-    stackOutputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId]?.trim() || '';
-  const discoveredBrokerSecretAccessKey =
-    stackOutputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey]?.trim() || '';
   if (storageMode !== 'convex') {
-    if (
-      discoveredBrokerRuntimeUrl ||
-      discoveredBrokerAccessKeyId ||
-      discoveredBrokerSecretAccessKey
-    ) {
+    if (discoveredBrokerRuntimeUrl) {
       console.log('\nDetected existing storage stack runtime outputs:');
       console.log(
         `   ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}=${discoveredBrokerRuntimeUrl || '[missing]'}`,
       );
-      console.log(
-        `   ${STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId}=${discoveredBrokerAccessKeyId || '[missing]'}`,
-      );
-      console.log('   StorageBrokerSecretAccessKey=[set from CloudFormation output]');
     } else {
       console.log(`\nNo deployed storage stack outputs found yet for ${storageStackName}.`);
     }
@@ -633,9 +642,10 @@ async function main() {
         try {
           run(
             yes
-              ? 'pnpm run audit-archive:setup -- --prod --yes'
-              : 'pnpm run audit-archive:setup -- --prod',
+              ? `pnpm run audit-archive:setup -- --prod --yes ${SECRET_TIER_ACK_FLAG}`
+              : `pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`,
             {
+              [SECRET_TIER_ACK_ENV]: '1',
               AWS_REGION: awsRegion,
               ...(awsProfile ? { AWS_PROFILE: awsProfile } : {}),
               ...(awsIdentity?.arn
@@ -653,10 +663,14 @@ async function main() {
             }) ?? null;
         } catch {
           console.log('⚠️  Guided audit archive setup did not complete.');
-          console.log('   You can rerun `pnpm run audit-archive:setup -- --prod` later.');
+          console.log(
+            `   You can rerun \`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}\` later.`,
+          );
         }
-      } else if (!nextCommands.includes('pnpm run audit-archive:setup -- --prod')) {
-        nextCommands.push('pnpm run audit-archive:setup -- --prod');
+      } else if (
+        !nextCommands.includes(`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`)
+      ) {
+        nextCommands.push(`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`);
       }
     }
 
@@ -771,6 +785,18 @@ async function main() {
       nonInteractive: yes,
       question: 'AWS file serve signing secret',
     });
+    const brokerEdgeAssertionSecret = await resolveDefaultedInput({
+      fallback:
+        process.env.STORAGE_BROKER_EDGE_ASSERTION_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'Storage broker edge assertion secret',
+    });
+    const brokerControlAssertionSecret = await resolveDefaultedInput({
+      fallback:
+        process.env.STORAGE_BROKER_CONTROL_ASSERTION_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'Storage broker control assertion secret',
+    });
     const decisionCallbackSharedSecret = await resolveDefaultedInput({
       fallback:
         process.env.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET?.trim() ||
@@ -801,27 +827,6 @@ async function main() {
       nonInteractive: yes,
       question: 'Storage broker runtime URL (leave empty until after infra deploy)',
     });
-    let brokerAccessKeyId = await resolveOptionalInput({
-      fallback:
-        discoveredBrokerAccessKeyId ||
-        process.env.STORAGE_BROKER_ACCESS_KEY_ID?.trim() ||
-        undefined,
-      nonInteractive: yes,
-      question: 'Storage broker access key id (leave empty until after infra deploy)',
-    });
-    let brokerSecretAccessKey = await resolveOptionalInput({
-      fallback:
-        discoveredBrokerSecretAccessKey ||
-        process.env.STORAGE_BROKER_SECRET_ACCESS_KEY?.trim() ||
-        undefined,
-      nonInteractive: yes,
-      question: 'Storage broker secret access key (leave empty until after infra deploy)',
-    });
-    const brokerSessionToken = await resolveOptionalInput({
-      fallback: process.env.STORAGE_BROKER_SESSION_TOKEN?.trim() || undefined,
-      nonInteractive: yes,
-      question: 'Storage broker session token (optional)',
-    });
     const alertEmailAddress = await resolveOptionalInput({
       fallback: process.env.AWS_STORAGE_ALERT_EMAIL?.trim() || undefined,
       nonInteractive: yes,
@@ -839,6 +844,8 @@ async function main() {
     operatorEnvVars.AWS_S3_MIRROR_KMS_KEY_ARN = mirrorKmsKeyArn;
     operatorEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
     operatorEnvVars.CONVEX_SITE_URL = convexSiteUrl;
+    operatorEnvVars.STORAGE_BROKER_EDGE_ASSERTION_SECRET = brokerEdgeAssertionSecret;
+    operatorEnvVars.STORAGE_BROKER_CONTROL_ASSERTION_SECRET = brokerControlAssertionSecret;
     operatorEnvVars.AWS_AUDIT_ARCHIVE_BUCKET = auditArchiveBucket;
     operatorEnvVars.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN = auditArchiveKmsKeyArn;
     operatorEnvVars.AWS_AUDIT_ARCHIVE_ROLE_ARN = auditArchiveRoleArn;
@@ -851,15 +858,9 @@ async function main() {
     if (brokerRuntimeUrl) {
       operatorEnvVars.STORAGE_BROKER_URL = brokerRuntimeUrl;
     }
-    if (brokerAccessKeyId) {
-      operatorEnvVars.STORAGE_BROKER_ACCESS_KEY_ID = brokerAccessKeyId;
-    }
-    if (brokerSecretAccessKey) {
-      operatorEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY = brokerSecretAccessKey;
-    }
-    if (brokerSessionToken) {
-      operatorEnvVars.STORAGE_BROKER_SESSION_TOKEN = brokerSessionToken;
-    }
+    delete operatorEnvVars.STORAGE_BROKER_ACCESS_KEY_ID;
+    delete operatorEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY;
+    delete operatorEnvVars.STORAGE_BROKER_SESSION_TOKEN;
     if (alertEmailAddress) {
       operatorEnvVars.AWS_STORAGE_ALERT_EMAIL = alertEmailAddress;
     }
@@ -878,6 +879,8 @@ async function main() {
     convexProdEnvVars.AWS_AUDIT_ARCHIVE_ROLE_ARN = auditArchiveRoleArn;
     convexProdEnvVars.AWS_AUDIT_ARCHIVE_PREFIX = auditArchivePrefix;
     convexProdEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
+    convexProdEnvVars.STORAGE_BROKER_EDGE_ASSERTION_SECRET = brokerEdgeAssertionSecret;
+    convexProdEnvVars.STORAGE_BROKER_CONTROL_ASSERTION_SECRET = brokerControlAssertionSecret;
     convexProdEnvVars.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET = decisionCallbackSharedSecret;
     convexProdEnvVars.CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET =
       documentResultCallbackSharedSecret;
@@ -886,19 +889,15 @@ async function main() {
     if (brokerRuntimeUrl) {
       convexProdEnvVars.STORAGE_BROKER_URL = brokerRuntimeUrl;
     }
-    if (brokerAccessKeyId) {
-      convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID = brokerAccessKeyId;
-    }
-    if (brokerSecretAccessKey) {
-      convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY = brokerSecretAccessKey;
-    }
-    if (brokerSessionToken) {
-      convexProdEnvVars.STORAGE_BROKER_SESSION_TOKEN = brokerSessionToken;
-    }
+    delete convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID;
+    delete convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY;
+    delete convexProdEnvVars.STORAGE_BROKER_SESSION_TOKEN;
 
     storageDeployEnv = buildStorageDeployEnv({
       awsRegion,
       awsProfile: awsProfile ?? undefined,
+      brokerControlAssertionSecret,
+      brokerEdgeAssertionSecret,
       buckets,
       decisionCallbackSharedSecret,
       documentResultCallbackSharedSecret,
@@ -969,6 +968,8 @@ async function main() {
   console.log(
     `   AWS_CONVEX_STORAGE_CALLBACK_BASE_URL=${storageDeployEnv.AWS_CONVEX_STORAGE_CALLBACK_BASE_URL}`,
   );
+  console.log('   AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET=[set]');
+  console.log('   AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET=[set]');
   console.log('   AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET=[set]');
   console.log('   AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET=[set]');
   console.log('   AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET=[set]');
@@ -1042,27 +1043,16 @@ async function main() {
           stackName: storageStackName,
         }) ?? {};
       const nextBrokerRuntimeUrl = outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl] ?? '';
-      const nextBrokerAccessKeyId = outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId] ?? '';
-      const nextBrokerSecretAccessKey =
-        outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey] ?? '';
-      if (nextBrokerRuntimeUrl && nextBrokerAccessKeyId && nextBrokerSecretAccessKey) {
+      if (nextBrokerRuntimeUrl) {
         operatorEnvVars.STORAGE_BROKER_URL = nextBrokerRuntimeUrl;
-        operatorEnvVars.STORAGE_BROKER_ACCESS_KEY_ID = nextBrokerAccessKeyId;
-        operatorEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY = nextBrokerSecretAccessKey;
         convexProdEnvVars.STORAGE_BROKER_URL = nextBrokerRuntimeUrl;
-        convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID = nextBrokerAccessKeyId;
-        convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY = nextBrokerSecretAccessKey;
         persistedEnvVars.STORAGE_BROKER_URL = nextBrokerRuntimeUrl;
-        persistedEnvVars.STORAGE_BROKER_ACCESS_KEY_ID = nextBrokerAccessKeyId;
-        persistedEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY = nextBrokerSecretAccessKey;
         const refreshedEnvPath = writeProdEnvFile(operatorEnvVars);
         changedLocally.push(`Updated ${refreshedEnvPath} with deployed storage broker outputs`);
         console.log(`   ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}=${nextBrokerRuntimeUrl}`);
-        console.log('   StorageBrokerAccessKeyId=[set]');
-        console.log('   StorageBrokerSecretAccessKey=[set]');
       } else {
         console.log(
-          '⚠️  Storage stack deployed, but broker URL or broker access key outputs are still missing.',
+          '⚠️  Storage stack deployed, but the broker runtime URL output is still missing.',
         );
       }
     } catch {
@@ -1076,7 +1066,9 @@ async function main() {
     );
     console.log('   2. Run: pnpm storage:preview:prod');
     console.log('   3. Run: pnpm storage:deploy:prod');
-    console.log('   4. Or rerun pnpm run storage:setup:prod when you want the guided flow again');
+    console.log(
+      `   4. Or rerun pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG} when you want the guided flow again`,
+    );
     nextCommands.push('pnpm storage:preview:prod');
     nextCommands.push('pnpm storage:deploy:prod');
   }
@@ -1084,19 +1076,15 @@ async function main() {
   const setConvex = yes ? true : await askYesNo('\nSet these in Convex production now?', true);
   if (setConvex) {
     convexEnvSyncRequested = true;
-    if (
-      !convexProdEnvVars.STORAGE_BROKER_URL ||
-      !convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID ||
-      !convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY
-    ) {
+    if (!convexProdEnvVars.STORAGE_BROKER_URL) {
       console.log(
-        '\n⚠️  Skipping Convex production env sync because broker URL or broker access key outputs are still missing.',
+        '\n⚠️  Skipping Convex production env sync because the broker runtime URL is still missing.',
       );
       console.log(
-        `   Deploy the storage stack or fetch ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}, ${STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId}, and ${STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey} from the deployed stack, then rerun this script or set the Convex env vars manually.`,
+        `   Deploy the storage stack or fetch ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl} from the deployed stack, then rerun this script or set the Convex env vars manually.`,
       );
       warnings.push(
-        'Convex production storage env sync was skipped because broker URL or broker access key outputs are still missing.',
+        'Convex production storage env sync was skipped because the broker runtime URL is still missing.',
       );
     } else {
       const convexCheck = checkConvexProdAccess();
@@ -1121,9 +1109,11 @@ async function main() {
         AWS_AUDIT_ARCHIVE_PREFIX: String(convexProdEnvVars.AWS_AUDIT_ARCHIVE_PREFIX),
         AWS_FILE_SERVE_SIGNING_SECRET: String(convexProdEnvVars.AWS_FILE_SERVE_SIGNING_SECRET),
         STORAGE_BROKER_URL: String(convexProdEnvVars.STORAGE_BROKER_URL),
-        STORAGE_BROKER_ACCESS_KEY_ID: String(convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID),
-        STORAGE_BROKER_SECRET_ACCESS_KEY: String(
-          convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY,
+        STORAGE_BROKER_EDGE_ASSERTION_SECRET: String(
+          convexProdEnvVars.STORAGE_BROKER_EDGE_ASSERTION_SECRET,
+        ),
+        STORAGE_BROKER_CONTROL_ASSERTION_SECRET: String(
+          convexProdEnvVars.STORAGE_BROKER_CONTROL_ASSERTION_SECRET,
         ),
         CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: String(
           convexProdEnvVars.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET,
@@ -1135,11 +1125,6 @@ async function main() {
           convexProdEnvVars.CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET,
         ),
       };
-      if (convexProdEnvVars.STORAGE_BROKER_SESSION_TOKEN) {
-        convexEnvValues.STORAGE_BROKER_SESSION_TOKEN = String(
-          convexProdEnvVars.STORAGE_BROKER_SESSION_TOKEN,
-        );
-      }
       const failedKeys: Array<{ name: string; value: string }> = [];
       for (const [name, value] of Object.entries(convexEnvValues)) {
         try {
@@ -1192,15 +1177,15 @@ async function main() {
   }
 
   const storageRuntimeWarning = getStorageRuntimeUrlWarning({
-    brokerAccessKeyId: convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID,
+    brokerControlAssertionSecret: convexProdEnvVars.STORAGE_BROKER_CONTROL_ASSERTION_SECRET,
+    brokerEdgeAssertionSecret: convexProdEnvVars.STORAGE_BROKER_EDGE_ASSERTION_SECRET,
     brokerRuntimeUrl: convexProdEnvVars.STORAGE_BROKER_URL,
-    brokerSecretAccessKey: convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY,
     storageMode,
   });
   if (storageRuntimeWarning) {
     warnings.push(storageRuntimeWarning);
-    if (!nextCommands.includes('pnpm run storage:setup:prod')) {
-      nextCommands.push('pnpm run storage:setup:prod');
+    if (!nextCommands.includes(`pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}`)) {
+      nextCommands.push(`pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}`);
     }
   }
 
@@ -1220,9 +1205,9 @@ async function main() {
               : 'needs attention',
       operatorEnv: 'ready',
       storage: getStorageSetupReadiness({
-        brokerAccessKeyId: convexProdEnvVars.STORAGE_BROKER_ACCESS_KEY_ID,
+        brokerControlAssertionSecret: convexProdEnvVars.STORAGE_BROKER_CONTROL_ASSERTION_SECRET,
+        brokerEdgeAssertionSecret: convexProdEnvVars.STORAGE_BROKER_EDGE_ASSERTION_SECRET,
         brokerRuntimeUrl: convexProdEnvVars.STORAGE_BROKER_URL,
-        brokerSecretAccessKey: convexProdEnvVars.STORAGE_BROKER_SECRET_ACCESS_KEY,
         storageMode,
       }),
     },

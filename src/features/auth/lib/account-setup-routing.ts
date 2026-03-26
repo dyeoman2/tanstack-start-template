@@ -1,5 +1,3 @@
-import { STEP_UP_REQUIREMENTS } from '../../../lib/shared/auth-policy';
-
 export const APP_REDIRECT_TARGETS = [
   '/app',
   '/app/profile',
@@ -66,13 +64,4 @@ export function getAccountSetupCallbackUrl(
     }),
     normalizeLocalAccountSetupOrigin(origin),
   ).toString();
-}
-
-export function getAppStepUpSearch(options?: { redirectTo?: string | null }) {
-  const redirectTo = normalizeAppRedirectTarget(options?.redirectTo);
-
-  return {
-    requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
-    ...(redirectTo !== '/app' ? { redirectTo } : {}),
-  };
 }

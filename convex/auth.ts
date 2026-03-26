@@ -59,6 +59,7 @@ import {
 import {
   createBetterAuthMember,
   deleteBetterAuthMemberRecord,
+  fetchAllBetterAuthSessions,
   fetchBetterAuthInvitationsByOrganizationAndEmail,
   fetchBetterAuthMembersByOrganizationId,
   fetchBetterAuthMembersByUserId,
@@ -2108,26 +2109,39 @@ export const createAuth = (
       });
       return claim !== null;
     },
-    issueStepUpClaim: async ({
+    completeStepUpChallenge: async ({
+      challengeId,
       method,
-      requirement,
       sessionId,
       userId,
     }: {
+      challengeId: string;
       method: StepUpMethod;
-      requirement: StepUpRequirement;
       sessionId: string;
       userId: string;
     }) => {
       if (!ctxWithRunMutation.runMutation) {
-        return;
+        return {
+          ok: false as const,
+          reason: 'Step-up challenge completion is unavailable.',
+          requirement: null,
+        };
       }
-      await ctxWithRunMutation.runMutation(internal.stepUp.issueClaimInternal, {
+      return (await ctxWithRunMutation.runMutation(internal.stepUp.completeChallengeInternal, {
         authUserId: userId,
+        challengeId,
         method,
-        requirement,
         sessionId,
-      });
+      })) as
+        | {
+            ok: true;
+            requirement: StepUpRequirement;
+          }
+        | {
+            ok: false;
+            reason: string;
+            requirement: StepUpRequirement | null;
+          };
     },
     consumeStepUpClaim: async ({ requirement, sessionId, userId }) => {
       if (!ctxWithRunMutation.runMutation) {
@@ -3852,6 +3866,80 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
   returns: scimLifecycleResponseValidator,
   handler: async (ctx, args) => {
     return await handleScimOrganizationLifecycleImpl(ctx, args);
+  },
+});
+
+export const purgeAllSessions = internalAction({
+  args: {
+    batchSize: v.optional(v.number()),
+    initiatedBy: v.optional(v.string()),
+    reason: v.optional(v.string()),
+  },
+  returns: v.object({
+    batchCount: v.number(),
+    deletedCount: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(Math.trunc(args.batchSize ?? 200), 500));
+    const sessions = await fetchAllBetterAuthSessions(ctx);
+
+    let batchCount = 0;
+    let deletedCount = 0;
+
+    for (let index = 0; index < sessions.length; index += batchSize) {
+      const batch = sessions.slice(index, index + batchSize);
+      if (batch.length === 0) {
+        continue;
+      }
+
+      await ctx.runMutation(
+        components.betterAuth.adapter.deleteMany as never,
+        {
+          input: {
+            model: 'session',
+            where: [
+              {
+                field: '_id',
+                operator: 'in',
+                value: batch.map((session) => session._id),
+              },
+            ],
+          },
+          paginationOpts: {
+            cursor: null,
+            numItems: batch.length,
+            id: 0,
+          },
+        } as never,
+      );
+
+      batchCount += 1;
+      deletedCount += batch.length;
+    }
+
+    await recordSystemAuditEvent(ctx, {
+      actorIdentifier: args.initiatedBy,
+      emitter: 'auth.operator',
+      eventType: 'sessions_revoked_all',
+      identifier: args.initiatedBy,
+      metadata: JSON.stringify({
+        batchCount,
+        batchSize,
+        deletedCount,
+        reason: args.reason ?? 'Operator-triggered global session purge',
+      }),
+      outcome: 'success',
+      resourceId: 'all',
+      resourceLabel: 'All Better Auth sessions',
+      resourceType: 'auth_session',
+      severity: deletedCount > 0 ? 'critical' : 'warning',
+      sourceSurface: 'auth.operator.purge_all_sessions',
+    });
+
+    return {
+      batchCount,
+      deletedCount,
+    };
   },
 });
 

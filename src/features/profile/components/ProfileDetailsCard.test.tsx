@@ -2,11 +2,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProfileData } from '~/features/profile/hooks/useProfile';
-import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 import { ProfileDetailsCard } from './ProfileDetailsCard';
 
-const { changeEmailMock, navigateMock, updateUserMock } = vi.hoisted(() => ({
+const {
+  changeEmailMock,
+  createProfileEmailChangeStepUpChallengeServerFnMock,
+  navigateMock,
+  updateUserMock,
+} = vi.hoisted(() => ({
   changeEmailMock: vi.fn(),
+  createProfileEmailChangeStepUpChallengeServerFnMock: vi.fn(),
   navigateMock: vi.fn(),
   updateUserMock: vi.fn(),
 }));
@@ -22,10 +27,20 @@ vi.mock('~/features/auth/auth-client', () => ({
   },
 }));
 
+vi.mock('~/features/auth/server/step-up', () => ({
+  createProfileEmailChangeStepUpChallengeServerFn: (...args: unknown[]) =>
+    createProfileEmailChangeStepUpChallengeServerFnMock(...args),
+}));
+
 describe('ProfileDetailsCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     changeEmailMock.mockResolvedValue({ success: true });
+    createProfileEmailChangeStepUpChallengeServerFnMock.mockResolvedValue({
+      challengeId: '550e8400-e29b-41d4-a716-446655440000',
+      redirectTo: '/app/profile',
+      requirement: 'account_email_change',
+    });
     navigateMock.mockResolvedValue(undefined);
     updateUserMock.mockResolvedValue({ success: true });
   });
@@ -107,7 +122,7 @@ describe('ProfileDetailsCard', () => {
       expect(navigateMock).toHaveBeenCalledWith({
         to: '/app/profile',
         search: {
-          requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+          challengeId: '550e8400-e29b-41d4-a716-446655440000',
           security: 'step-up-required',
         },
         replace: true,

@@ -30,7 +30,7 @@ import {
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
-import { enqueueDocumentParseTask, getCleanObject } from './lib/storageS3';
+import { createDownloadPresignedStorageUrl, enqueueDocumentParseTask } from './lib/storageS3';
 import { chooseEarlierPurgeEligibleAt, getTemporaryArtifactPurgeEligibleAt } from './lib/retention';
 import {
   deleteStoredFileWithMode,
@@ -146,50 +146,6 @@ async function computeBlobSha256Hex(blob: Blob) {
   return Buffer.from(digest).toString('hex');
 }
 
-async function toBlob(body: unknown, mimeType: string) {
-  if (!body) {
-    throw new Error('Uploaded file body was empty.');
-  }
-
-  if (body instanceof Blob) {
-    return body;
-  }
-
-  if (typeof body === 'string') {
-    return new Blob([body], { type: mimeType });
-  }
-
-  if (body instanceof Uint8Array) {
-    const copy = new Uint8Array(body.byteLength);
-    copy.set(body);
-    return new Blob([copy.buffer], {
-      type: mimeType,
-    });
-  }
-
-  if (body instanceof ArrayBuffer) {
-    return new Blob([new Uint8Array(body)], { type: mimeType });
-  }
-
-  if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
-    const bytes = await (
-      body as { transformToByteArray: () => Promise<Uint8Array> }
-    ).transformToByteArray();
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    return new Blob([copy.buffer], {
-      type: mimeType,
-    });
-  }
-
-  if (typeof body === 'object' && body !== null && 'transformToString' in body) {
-    const text = await (body as { transformToString: () => Promise<string> }).transformToString();
-    return new Blob([text], { type: mimeType });
-  }
-
-  throw new Error('Uploaded file body could not be converted to a blob.');
-}
-
 async function loadAttachmentProcessingBlob(
   ctx: ActionCtx,
   args: {
@@ -209,8 +165,19 @@ async function loadAttachmentProcessingBlob(
       throw new ConvexError('Stored file does not have an S3 backing object.');
     }
 
-    const object = await getCleanObject({ key: args.lifecycle.canonicalKey });
-    return await toBlob(object.Body, args.attachment.mimeType);
+    const presigned = await createDownloadPresignedStorageUrl({
+      bucketKind: 'clean',
+      key: args.lifecycle.canonicalKey,
+    });
+    const response = await fetch(presigned.url);
+    if (!response.ok) {
+      throw new ConvexError(
+        `Failed to fetch stored file: ${response.status} ${response.statusText}`,
+      );
+    }
+    return new Blob([await response.arrayBuffer()], {
+      type: response.headers.get('content-type') ?? args.attachment.mimeType,
+    });
   }
 
   const blob = await ctx.storage.get(args.attachment.storageId as Id<'_storage'>);

@@ -21,9 +21,8 @@ vi.mock('../src/lib/server/env.server', () => ({
   })),
 }));
 
-vi.mock('./lib/storageS3', () => ({
+vi.mock('./lib/storageS3Control', () => ({
   deleteStorageObject: deleteStorageObjectMock,
-  getCleanObject: vi.fn(),
   promoteQuarantineObject: promoteQuarantineObjectMock,
   putCleanObject: putCleanObjectMock,
 }));

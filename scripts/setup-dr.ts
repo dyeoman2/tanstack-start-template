@@ -45,6 +45,7 @@ import {
   type NetlifySite,
 } from './lib/netlify-cli';
 import { emitStructuredOutput, printStatusSummary } from './lib/script-ux';
+import { assertSecretTierAcknowledgment, SECRET_TIER_ACK_FLAG } from './lib/secret-tier';
 
 type CommandResult = {
   exitCode: number | null;
@@ -134,12 +135,17 @@ function printUsage() {
     '  --plan                Print a DR plan after discovery and exit before changing providers.',
   );
   console.log('  --json                Print the final summary as JSON.');
+  console.log(
+    `  ${SECRET_TIER_ACK_FLAG}     Acknowledge secret-tier production access for live changes.`,
+  );
   console.log('  -h, --help            Show this help text.');
   console.log('');
   console.log('Examples:');
-  console.log('  pnpm run dr:setup');
-  console.log('  pnpm run dr:setup -- --yes --skip-netlify');
-  console.log('  pnpm run dr:setup -- --hostname-strategy custom-domain --domain example.com');
+  console.log(`  pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`);
+  console.log(`  pnpm run dr:setup -- --yes --skip-netlify ${SECRET_TIER_ACK_FLAG}`);
+  console.log(
+    `  pnpm run dr:setup -- --hostname-strategy custom-domain --domain example.com ${SECRET_TIER_ACK_FLAG}`,
+  );
   console.log('  pnpm run dr:setup -- --plan --json');
   console.log('');
   console.log('Docs: docs/DISASTER_RECOVERY_CONFIG.md');
@@ -860,6 +866,13 @@ async function main() {
     printUsage();
     return;
   }
+  if (!flags.plan) {
+    assertSecretTierAcknowledgment({
+      command: 'pnpm run dr:setup --',
+      argv: process.argv,
+      env: process.env,
+    });
+  }
 
   console.log('🛟 Guided disaster recovery setup');
   console.log('');
@@ -1069,7 +1082,7 @@ async function main() {
         flags.skipEcs ? 'DR ECS deploy skipped' : 'Would preview/deploy DR ECS stack as confirmed',
         'Would reconcile DR Secrets Manager entries and backup stack as confirmed',
       ],
-      nextCommands: ['pnpm run dr:setup', 'pnpm run dr:netlify:setup'],
+      nextCommands: [`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`, 'pnpm run dr:netlify:setup'],
       targets: {
         repo: discoveredRepo ?? null,
         linkedNetlifySite: formatNetlifySiteSummary(linkedNetlifySite),

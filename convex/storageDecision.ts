@@ -7,12 +7,12 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
+import { enqueueStorageInspectionTask } from './lib/storageS3';
 import {
   deleteStorageObject,
-  enqueueStorageInspectionTask,
   promoteQuarantineObject,
   rejectQuarantineObject,
-} from './lib/storageS3';
+} from './lib/storageS3Control';
 import { buildPromotedStorageKey, buildRejectedStorageKey } from './storageS3Primary';
 import { inspectionReasonValidator, type InspectionReason } from './storageTypes';
 

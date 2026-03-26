@@ -1,21 +1,29 @@
 'use node';
 
 import { SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
 import {
   createDownloadPresignedStorageUrl,
   createQuarantineUploadPresignedUrl,
   deleteStorageObject,
   getStorageObject,
-  listStorageObjectVersions,
   listStorageObjects,
+  listStorageObjectVersions,
   promoteQuarantineObject,
   putCleanObject,
   putMirrorObject,
   rejectQuarantineObject,
 } from '../../../src/lib/server/storage-service-s3';
 import { getStorageBrokerRuntimeConfig } from '../../../src/lib/server/storage-service-env';
+import {
+  STORAGE_BROKER_SESSION_REFRESH_WINDOW_MS,
+  validateStorageBrokerSessionRequest,
+} from '../../../src/lib/shared/storage-broker-session';
 import type {
   DocumentParseQueueMessage,
+  StorageBrokerSessionRequest,
+  StorageBrokerSessionResponse,
+  StorageBrokerTrustTier,
   StorageInspectionQueueMessage,
   StorageServiceDeleteObjectRequest,
   StorageServiceDownloadUrlRequest,
@@ -26,6 +34,8 @@ import type {
   StorageServiceReadObjectRequest,
   StorageServiceUploadTargetRequest,
 } from '../../../src/lib/shared/storage-service-contract';
+
+const invokeSessionCache = new Map<StorageBrokerTrustTier, Promise<StorageBrokerSessionResponse>>();
 
 type ApiGatewayEvent = {
   body?: string | null;
@@ -105,12 +115,69 @@ function getAwsConfig() {
     awsRegion: config.awsRegion,
     brokerConfig: config,
     sqs: new SQSClient({ region: config.awsRegion }),
+    sts: new STSClient({ region: config.awsRegion }),
     storageConfig: {
       awsRegion: config.awsRegion,
       storageBuckets: config.storageBuckets,
       storageRoleArns: config.storageRoleArns,
     },
   };
+}
+
+async function issueInvokeSession(args: {
+  brokerConfig: ReturnType<typeof getStorageBrokerRuntimeConfig>;
+  sts: STSClient;
+  tier: StorageBrokerTrustTier;
+}): Promise<StorageBrokerSessionResponse> {
+  const response = await args.sts.send(
+    new AssumeRoleCommand({
+      DurationSeconds: 15 * 60,
+      RoleArn: args.brokerConfig.brokerInvokeRoleArns[args.tier],
+      RoleSessionName: `storage-broker-${args.tier}-${Date.now()}`,
+    }),
+  );
+  if (
+    !response.Credentials?.AccessKeyId ||
+    !response.Credentials.SecretAccessKey ||
+    !response.Credentials.SessionToken
+  ) {
+    throw new Error(`Storage broker could not mint ${args.tier} invoke credentials.`);
+  }
+
+  return {
+    accessKeyId: response.Credentials.AccessKeyId,
+    expiresAt: response.Credentials.Expiration?.getTime() ?? Date.now() + 15 * 60 * 1000,
+    secretAccessKey: response.Credentials.SecretAccessKey,
+    sessionToken: response.Credentials.SessionToken,
+  };
+}
+
+async function getInvokeSession(args: {
+  brokerConfig: ReturnType<typeof getStorageBrokerRuntimeConfig>;
+  sts: STSClient;
+  tier: StorageBrokerTrustTier;
+}): Promise<StorageBrokerSessionResponse> {
+  const cached = invokeSessionCache.get(args.tier);
+  if (cached) {
+    try {
+      const session = await cached;
+      if (session.expiresAt > Date.now() + STORAGE_BROKER_SESSION_REFRESH_WINDOW_MS) {
+        return session;
+      }
+      invokeSessionCache.delete(args.tier);
+    } catch {
+      invokeSessionCache.delete(args.tier);
+    }
+  }
+
+  const sessionPromise = issueInvokeSession(args);
+  invokeSessionCache.set(args.tier, sessionPromise);
+  try {
+    return await sessionPromise;
+  } catch (error) {
+    invokeSessionCache.delete(args.tier);
+    throw error;
+  }
 }
 
 async function enqueueMessage(
@@ -133,10 +200,32 @@ export async function handler(event: ApiGatewayEvent) {
   try {
     const path = event.path ?? event.rawPath ?? '/';
     const method = event.httpMethod ?? event.requestContext?.http?.method ?? 'GET';
-    const { brokerConfig, sqs, storageConfig } = getAwsConfig();
+    const { brokerConfig, sqs, storageConfig, sts } = getAwsConfig();
 
     if (method !== 'POST') {
       return json(405, { error: 'Method not allowed.' });
+    }
+
+    if (path === '/internal/storage/session/edge' || path === '/internal/storage/session/control') {
+      const tier = path.endsWith('/edge') ? 'edge' : 'control';
+      const body = parseJsonBody<StorageBrokerSessionRequest>(event);
+      const validationError = await validateStorageBrokerSessionRequest({
+        request: body,
+        secret: brokerConfig.brokerAssertionSecrets[tier],
+        tier,
+      });
+      if (validationError) {
+        return json(401, { error: validationError });
+      }
+
+      return json(
+        200,
+        await getInvokeSession({
+          brokerConfig,
+          sts,
+          tier,
+        }),
+      );
     }
 
     if (path === '/internal/storage/upload-target') {
@@ -204,27 +293,24 @@ export async function handler(event: ApiGatewayEvent) {
     }
 
     if (path === '/internal/storage/cleanup') {
-      const payload = parseJsonBody<
-        | ({ operation: 'deleteObject' } & StorageServiceDeleteObjectRequest)
-        | ({ operation: 'listObjects' } & StorageServiceListObjectsRequest)
-        | ({ operation: 'listObjectVersions' } & StorageServiceListObjectVersionsRequest)
-      >(event);
+      const payload = parseJsonBody<StorageServiceDeleteObjectRequest>(event);
+      await deleteStorageObject(storageConfig, payload);
+      return json(200, { ok: true });
+    }
 
-      if (payload.operation === 'deleteObject') {
-        await deleteStorageObject(storageConfig, payload);
-        return json(200, { ok: true });
-      }
+    if (path === '/internal/storage/list') {
+      const payload = parseJsonBody<StorageServiceListObjectsRequest>(event);
+      const result = await listStorageObjects(storageConfig, payload);
+      return json(200, {
+        contents: (result.Contents ?? []).map((entry) => ({
+          key: entry.Key ?? '',
+          lastModified: entry.LastModified?.getTime() ?? null,
+        })),
+      });
+    }
 
-      if (payload.operation === 'listObjects') {
-        const result = await listStorageObjects(storageConfig, payload);
-        return json(200, {
-          contents: (result.Contents ?? []).map((entry) => ({
-            key: entry.Key ?? '',
-            lastModified: entry.LastModified?.getTime() ?? null,
-          })),
-        });
-      }
-
+    if (path === '/internal/storage/list-object-versions') {
+      const payload = parseJsonBody<StorageServiceListObjectVersionsRequest>(event);
       const result = await listStorageObjectVersions(storageConfig, payload);
       return json(200, {
         versions: (result.Versions ?? []).map((entry) => ({

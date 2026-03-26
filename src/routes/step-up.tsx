@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
+import { api } from '@convex/_generated/api';
+import { useQuery } from 'convex/react';
 import { Fingerprint, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { z } from 'zod';
@@ -9,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/com
 import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
-import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
@@ -19,17 +20,7 @@ export const Route = createFileRoute('/step-up')({
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
-    redirectTo: z.string().optional(),
-    requirement: z.enum([
-      STEP_UP_REQUIREMENTS.accountEmailChange,
-      STEP_UP_REQUIREMENTS.auditExport,
-      STEP_UP_REQUIREMENTS.attachmentAccess,
-      STEP_UP_REQUIREMENTS.documentExport,
-      STEP_UP_REQUIREMENTS.documentDeletion,
-      STEP_UP_REQUIREMENTS.organizationAdmin,
-      STEP_UP_REQUIREMENTS.sessionAdministration,
-      STEP_UP_REQUIREMENTS.userAdministration,
-    ]),
+    challengeId: z.string().uuid(),
   }),
 });
 
@@ -53,15 +44,16 @@ function getRequirementMessage(
 }
 
 function StepUpPage() {
-  const { requirement, redirectTo } = Route.useSearch();
+  const { challengeId } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [isPasskeyPending, setIsPasskeyPending] = useState(false);
-  const redirectTarget = normalizeAppRedirectTarget(redirectTo);
+  const challenge = useQuery(api.stepUp.getCurrentChallenge, { challengeId });
+  const redirectTarget = challenge?.redirectTo ?? '/app';
 
-  if (isPending) {
+  if (isPending || challenge === undefined) {
     return <AuthSkeleton />;
   }
 
@@ -71,19 +63,31 @@ function StepUpPage() {
         replace
         to="/login"
         search={{
-          redirectTo: `/step-up?requirement=${encodeURIComponent(requirement)}${
-            redirectTarget !== '/app' ? `&redirectTo=${encodeURIComponent(redirectTarget)}` : ''
-          }`,
+          redirectTo: `/step-up?challengeId=${encodeURIComponent(challengeId)}`,
         }}
       />
+    );
+  }
+
+  if (challenge === null) {
+    return (
+      <AuthRouteShell>
+        <Card className="w-full max-w-xl">
+          <CardHeader>
+            <CardTitle className="text-3xl">Verification expired</CardTitle>
+            <CardDescription>
+              This verification challenge is no longer valid. Start the protected action again.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </AuthRouteShell>
     );
   }
 
   async function prepareStepUpCookie() {
     const response = await fetch('/api/auth/step-up', {
       body: JSON.stringify({
-        ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
-        requirement,
+        challengeId,
       }),
       headers: {
         'content-type': 'application/json',
@@ -107,7 +111,7 @@ function StepUpPage() {
       });
       await refreshAuthClientSession(queryClient);
       await router.invalidate();
-      await router.navigate({ replace: true, to: redirectTarget });
+      router.history.replace(redirectTarget);
     } catch (stepUpError) {
       setError(
         getBetterAuthUserFacingMessage(stepUpError, {
@@ -124,7 +128,7 @@ function StepUpPage() {
       <Card className="w-full max-w-xl">
         <CardHeader>
           <CardTitle className="text-3xl">Verify Your Account</CardTitle>
-          <CardDescription>{getRequirementMessage(requirement)}</CardDescription>
+          <CardDescription>{getRequirementMessage(challenge.requirement)}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error ? (
@@ -146,13 +150,7 @@ function StepUpPage() {
           </Button>
 
           <Button asChild className="w-full justify-start gap-2" size="lg" variant="outline">
-            <Link
-              search={{
-                ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
-                stepUpRequirement: requirement,
-              }}
-              to="/two-factor"
-            >
+            <Link search={{ challengeId }} to="/two-factor">
               <ShieldCheck className="size-4" />
               Verify with authenticator app
             </Link>

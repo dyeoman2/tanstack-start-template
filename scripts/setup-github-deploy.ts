@@ -62,6 +62,9 @@ async function main() {
   console.log('GitHub deploy environment setup');
   console.log('This configures the staging and production GitHub environments used by deploy.yml.');
   console.log('It also writes the repo-level CONVEX_DEPLOY_KEY required by the deploy workflows.');
+  console.log(
+    'Treat the production environment and CONVEX_DEPLOY_KEY as the same secret-tier approval lane.',
+  );
   console.log('Safe to rerun: yes; existing environment values can be refreshed.\n');
 
   const { repo } = await configureGitHubDeployEnvironments({});
@@ -74,6 +77,9 @@ async function main() {
   );
   console.log('- environment variable: DEPLOY_SMOKE_BASE_URL');
   console.log('- repo secret: CONVEX_DEPLOY_KEY');
+  console.log(
+    '- recommended: require reviewers on the production GitHub environment before deploy jobs run',
+  );
 }
 
 main().catch((error) => {

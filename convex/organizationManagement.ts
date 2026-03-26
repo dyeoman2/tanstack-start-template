@@ -98,7 +98,11 @@ import {
   resolveOrganizationEnterpriseAccess,
   type OrganizationSupportAccessScope,
 } from './lib/enterpriseAccess';
-import { ORGANIZATION_LEGAL_HOLD_STATUS_VALUES, RETENTION_EVENT_TYPES } from './lib/retention';
+import {
+  ORGANIZATION_LEGAL_HOLD_STATUS_VALUES,
+  RETENTION_EVENT_TYPES,
+  type HoldAwareOperationDecision,
+} from './lib/retention';
 import {
   requestAuditContextValidator,
   resolveAuditRequestContext,
@@ -169,6 +173,16 @@ type OrganizationInvitationRow = {
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function buildHoldAwareExportMetadata(decision: HoldAwareOperationDecision | null) {
+  return {
+    legalHoldActive: decision?.legalHoldActive ?? false,
+    legalHoldId: decision?.legalHoldId ?? null,
+    legalHoldReason: decision?.normalizedLegalHoldReason ?? null,
+    retentionScopeVersion: decision?.retentionScopeVersion ?? 'full_phi_record_set_v2',
+    sourceDataClassification: 'phi_record_set',
+  };
 }
 
 async function hashContent(value: string) {
@@ -3784,6 +3798,15 @@ export const exportOrganizationAuditCsv = action({
     const exportHash = await hashContent(csv);
     const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
     const exportId = crypto.randomUUID();
+    const holdDecision = exportedOrganizationId
+      ? ((await ctx.runQuery(internal.retention.getOrganizationHoldAwareOperationDecisionInternal, {
+          allowExportDuringHold: true,
+          operation: 'export',
+          organizationId: exportedOrganizationId,
+          resourceId: organizationName,
+          resourceType: 'audit_export',
+        })) as HoldAwareOperationDecision)
+      : null;
     const manifest = stringifyStable({
       actorUserId: currentUser.authUserId,
       contentHash: exportHash,
@@ -3804,6 +3827,7 @@ export const exportOrganizationAuditCsv = action({
         verified: integrityCheck.ok,
       },
       organizationScope: exportedOrganizationId ?? null,
+      ...buildHoldAwareExportMetadata(holdDecision),
       reviewStatusAtExport: 'reviewed',
       rowCount: rows.length,
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
@@ -3840,6 +3864,7 @@ export const exportOrganizationAuditCsv = action({
           search: args.search,
           startDate: args.startDate ?? null,
         },
+        ...buildHoldAwareExportMetadata(holdDecision),
         manifestHash,
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
@@ -3966,6 +3991,15 @@ export const exportOrganizationDirectoryCsv = action({
     const exportHash = await hashContent(csv);
     const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
     const exportId = crypto.randomUUID();
+    const holdDecision = exportedOrganizationId
+      ? ((await ctx.runQuery(internal.retention.getOrganizationHoldAwareOperationDecisionInternal, {
+          allowExportDuringHold: true,
+          operation: 'export',
+          organizationId: exportedOrganizationId,
+          resourceId: organizationName,
+          resourceType: 'directory_export',
+        })) as HoldAwareOperationDecision)
+      : null;
     const manifest = stringifyStable({
       actorUserId: currentUser.authUserId,
       contentHash: exportHash,
@@ -3986,6 +4020,7 @@ export const exportOrganizationDirectoryCsv = action({
         verified: integrityCheck.ok,
       },
       organizationScope: exportedOrganizationId ?? null,
+      ...buildHoldAwareExportMetadata(holdDecision),
       reviewStatusAtExport: 'reviewed',
       rowCount: rows.length,
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
@@ -4022,6 +4057,7 @@ export const exportOrganizationDirectoryCsv = action({
           sortBy: args.sortBy,
           sortOrder: args.sortOrder,
         },
+        ...buildHoldAwareExportMetadata(holdDecision),
         manifestHash,
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
@@ -4149,6 +4185,39 @@ export const prepareOrganizationCleanup = mutation({
     }
 
     const user = await getVerifiedCurrentUserOrThrow(ctx);
+    const holdDecision = (await ctx.runQuery(
+      internal.retention.getOrganizationHoldAwareOperationDecisionInternal,
+      {
+        operation: 'cleanup',
+        organizationId: args.organizationId,
+        resourceId: args.organizationId,
+        resourceType: 'organization_cleanup',
+      },
+    )) as HoldAwareOperationDecision;
+    if (!holdDecision.allowed) {
+      await recordUserAuditEvent(ctx, {
+        actorIdentifier: user.authUser.email ?? undefined,
+        actorUserId: user.authUserId,
+        emitter: 'organization.cleanup',
+        eventType: 'authorization_denied',
+        metadata: stringifyStable({
+          legalHoldActive: holdDecision.legalHoldActive,
+          legalHoldId: holdDecision.legalHoldId,
+          legalHoldReason: holdDecision.normalizedLegalHoldReason,
+          operation: holdDecision.operation,
+          resourceType: holdDecision.resourceType,
+        }),
+        organizationId: args.organizationId,
+        outcome: 'failure',
+        resourceId: args.organizationId,
+        resourceLabel: 'Organization cleanup',
+        resourceType: 'organization_cleanup',
+        severity: 'warning',
+        sourceSurface: 'organization.cleanup.prepare',
+        userId: user.authUserId,
+      });
+      throwConvexError('FORBIDDEN', 'Organization legal hold is active. Cleanup is blocked.');
+    }
     const createdAt = Date.now();
     const expiresAt = createdAt + ORGANIZATION_CLEANUP_REQUEST_TTL_MS;
     const cleanupRequestId = await ctx.db.insert('organizationCleanupRequests', {
@@ -4212,6 +4281,12 @@ export const cleanupOrganizationDataInternal = internalAction({
   },
   returns: organizationCleanupResultValidator,
   handler: async (ctx, args): Promise<OrganizationCleanupResult> => {
+    await ctx.runQuery(internal.retention.assertOrganizationHoldAllowsOperationInternal, {
+      operation: 'cleanup',
+      organizationId: args.organizationId,
+      resourceId: args.organizationId,
+      resourceType: 'organization_cleanup',
+    });
     let deletedThreads = 0;
     let deletedStandaloneAttachments = 0;
     let deletedPersonas = 0;
@@ -4313,6 +4388,41 @@ export const executePreparedOrganizationCleanup = action({
     const organization = await findBetterAuthOrganizationById(ctx, request.organizationId);
     if (organization) {
       throw new Error('Delete the Better Auth organization before running app cleanup');
+    }
+
+    const holdDecision = (await ctx.runQuery(
+      internal.retention.getOrganizationHoldAwareOperationDecisionInternal,
+      {
+        operation: 'cleanup',
+        organizationId: request.organizationId,
+        resourceId: request.organizationId,
+        resourceType: 'organization_cleanup',
+      },
+    )) as HoldAwareOperationDecision;
+    if (!holdDecision.allowed) {
+      await recordUserAuditEvent(ctx, {
+        actorIdentifier: user.authUser.email ?? undefined,
+        actorUserId: user.authUserId,
+        emitter: 'organization.cleanup',
+        eventType: 'authorization_denied',
+        metadata: stringifyStable({
+          legalHoldActive: holdDecision.legalHoldActive,
+          legalHoldId: holdDecision.legalHoldId,
+          legalHoldReason: holdDecision.normalizedLegalHoldReason,
+          operation: holdDecision.operation,
+          resourceType: holdDecision.resourceType,
+        }),
+        organizationId: request.organizationId,
+        outcome: 'failure',
+        resourceId: request.organizationId,
+        resourceLabel: 'Organization cleanup',
+        resourceType: 'organization_cleanup',
+        severity: 'warning',
+        sessionId: user.authSession?.id ?? undefined,
+        sourceSurface: 'organization.cleanup.execute',
+        userId: user.authUserId,
+      });
+      throw new Error('Organization legal hold is active. Cleanup is blocked.');
     }
 
     const result = await ctx.runAction(

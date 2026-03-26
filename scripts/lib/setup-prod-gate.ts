@@ -46,13 +46,13 @@ export function filterSetupProdNextCommands(input: {
     if (command === 'pnpm run deploy:doctor -- --prod') {
       return input.readiness.validation !== 'ready';
     }
-    if (command === 'pnpm run storage:setup:prod') {
+    if (command.startsWith('pnpm run storage:setup:prod')) {
       return input.readiness.storage !== 'ready';
     }
-    if (command === 'pnpm run audit-archive:setup -- --prod') {
+    if (command.startsWith('pnpm run audit-archive:setup -- --prod')) {
       return input.readiness.auditArchive !== 'ready' && input.readiness.auditArchive !== 'skipped';
     }
-    if (command === 'pnpm run dr:setup') {
+    if (command.startsWith('pnpm run dr:setup')) {
       return input.readiness.dr !== 'ready' && input.readiness.dr !== 'skipped';
     }
     return true;

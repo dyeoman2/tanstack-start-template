@@ -15,12 +15,12 @@ import {
   finalizeS3PrimaryUpload,
   generateS3PrimaryUploadTarget,
 } from './storageS3Primary';
+import { createDownloadPresignedStorageUrl } from './lib/storageS3';
 import {
   deleteStorageObject,
-  getCleanObject,
   promoteQuarantineObject,
   putCleanObject,
-} from './lib/storageS3';
+} from './lib/storageS3Control';
 import {
   type CreateUploadTargetArgs,
   type DeleteStoredFileArgs,
@@ -119,29 +119,20 @@ async function loadS3ObjectBlob(
     key: string;
   },
 ) {
-  const object = await getCleanObject({ key: args.key });
-  const body = object.Body;
-  if (!body) {
+  const presigned = await createDownloadPresignedStorageUrl({
+    bucketKind: 'clean',
+    key: args.key,
+  });
+  const response = await fetch(presigned.url);
+  if (response.status === 404) {
     return null;
   }
-  if (body instanceof Blob) {
-    return body;
+  if (!response.ok) {
+    throw new Error(`Failed to fetch S3-backed file: ${response.status} ${response.statusText}`);
   }
-  if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
-    const bytes = await (
-      body as {
-        transformToByteArray: () => Promise<Uint8Array>;
-      }
-    ).transformToByteArray();
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    return new Blob([copy], { type: args.fallbackMimeType });
-  }
-  if (typeof body === 'object' && body !== null && 'transformToString' in body) {
-    const text = await (body as { transformToString: () => Promise<string> }).transformToString();
-    return new Blob([text], { type: args.fallbackMimeType });
-  }
-  return null;
+
+  const contentType = response.headers.get('content-type') ?? args.fallbackMimeType;
+  return new Blob([await response.arrayBuffer()], { type: contentType });
 }
 
 export async function loadStoredFileBlobWithMode(

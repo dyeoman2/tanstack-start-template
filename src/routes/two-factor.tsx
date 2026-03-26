@@ -1,4 +1,6 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
+import { api } from '@convex/_generated/api';
+import { useQuery } from 'convex/react';
 import { CheckIcon, CopyIcon, Loader2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import type { FormEvent } from 'react';
@@ -12,8 +14,6 @@ import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
-import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
-import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
 export const Route = createFileRoute('/two-factor')({
   staticData: true,
@@ -21,19 +21,7 @@ export const Route = createFileRoute('/two-factor')({
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
-    redirectTo: z.string().optional(),
-    stepUpRequirement: z
-      .enum([
-        STEP_UP_REQUIREMENTS.accountEmailChange,
-        STEP_UP_REQUIREMENTS.auditExport,
-        STEP_UP_REQUIREMENTS.attachmentAccess,
-        STEP_UP_REQUIREMENTS.documentExport,
-        STEP_UP_REQUIREMENTS.documentDeletion,
-        STEP_UP_REQUIREMENTS.organizationAdmin,
-        STEP_UP_REQUIREMENTS.sessionAdministration,
-        STEP_UP_REQUIREMENTS.userAdministration,
-      ])
-      .optional(),
+    challengeId: z.string().uuid().optional(),
     totpURI: z.string().optional(),
   }),
 });
@@ -76,7 +64,7 @@ function getTotpMetadata(totpUri?: string) {
 }
 
 function TwoFactorPage() {
-  const { redirectTo, stepUpRequirement, totpURI } = Route.useSearch();
+  const { challengeId, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();
   const { data: sessionData } = useSession();
@@ -88,7 +76,11 @@ function TwoFactorPage() {
   const [qrCodeFailed, setQrCodeFailed] = useState(false);
   const [showManualSetupKey, setShowManualSetupKey] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
-  const redirectTarget = normalizeAppRedirectTarget(redirectTo);
+  const challenge = useQuery(
+    api.stepUp.getCurrentChallenge,
+    challengeId ? { challengeId } : 'skip',
+  );
+  const redirectTarget = challenge?.redirectTo ?? '/app';
 
   const setupKey = useMemo(() => getManualEntryCode(totpURI), [totpURI]);
   const formattedSetupKey = useMemo(() => (setupKey ? formatSetupKey(setupKey) : null), [setupKey]);
@@ -146,11 +138,10 @@ function TwoFactorPage() {
     setIsSubmitting(true);
 
     try {
-      if (stepUpRequirement) {
+      if (challengeId) {
         const stepUpResponse = await fetch('/api/auth/step-up', {
           body: JSON.stringify({
-            ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
-            requirement: stepUpRequirement,
+            challengeId,
           }),
           headers: {
             'content-type': 'application/json',
@@ -181,7 +172,7 @@ function TwoFactorPage() {
           return;
         }
 
-        void router.navigate({ to: redirectTarget, replace: true });
+        router.history.replace(redirectTarget);
       }, 900);
     } catch (error) {
       const message = getBetterAuthUserFacingMessage(error, {
@@ -207,6 +198,25 @@ function TwoFactorPage() {
     window.setTimeout(() => {
       setDidCopySetupKey(false);
     }, 2000);
+  }
+
+  if (challengeId && challenge === undefined) {
+    return <AuthSkeleton />;
+  }
+
+  if (challengeId && challenge === null) {
+    return (
+      <AuthRouteShell>
+        <Card className="w-full max-w-xl">
+          <CardHeader>
+            <CardTitle className="text-3xl">Verification expired</CardTitle>
+            <CardDescription>
+              This verification challenge is no longer valid. Start the protected action again.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </AuthRouteShell>
+    );
   }
 
   return (

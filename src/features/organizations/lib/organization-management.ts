@@ -169,7 +169,7 @@ export type OrganizationEnterpriseProviderStatus =
   (typeof ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES)[number];
 export type OrganizationSupportAccessScope = 'read_only' | 'read_write';
 export type OrganizationLegalHoldStatus = 'active' | 'released';
-export type RetentionDeletionJobKind = 'temporary_artifact_purge';
+export type RetentionDeletionJobKind = 'temporary_artifact_purge' | 'phi_record_purge';
 
 export type OrganizationEnterpriseProviderOption = {
   key: OrganizationEnterpriseProviderKey;

@@ -28,18 +28,19 @@ Automation-focused JSON/plan usage lives in [SCRIPT_AUTOMATION.md](./SCRIPT_AUTO
 
 - Check deploy readiness: `pnpm run deploy:doctor`
 - Check deploy readiness including prod access: `pnpm run deploy:doctor -- --prod`
-- Guided production setup: `pnpm run setup:prod`
+- Guided production setup: `pnpm run setup:prod -- --ack-secret-tier`
 - Preview the production setup plan: `pnpm run setup:prod -- --plan --json`
 - GitHub deploy environment wiring only: `pnpm run setup:github-deploy`
 - Remove known-unused Convex env vars: `pnpm run convex:env:hygiene`
 - Remove known-unused Convex env vars in prod: `pnpm run convex:env:hygiene -- --apply --prod`
 - Refresh Convex JWKS in prod: `pnpm run convex:jwks:sync -- --prod`
+- Break-glass Better Auth Session purge in prod: `pnpm run auth:sessions:purge -- --prod --ack-secret-tier`
 
 ## Storage
 
 - Guided local storage setup: `pnpm run storage:setup`
-- Guided production storage setup: `pnpm run storage:setup:prod`
-- Guided immutable audit archive setup: `pnpm run audit-archive:setup -- --prod`
+- Guided production storage setup: `pnpm run storage:setup:prod -- --ack-secret-tier`
+- Guided immutable audit archive setup: `pnpm run audit-archive:setup -- --prod --ack-secret-tier`
 - Preview immutable audit archive infra: `pnpm run audit-archive:preview`
 - Deploy immutable audit archive infra: `pnpm run audit-archive:deploy`
 - Destroy all repo-managed AWS resources: `pnpm run aws:destroy:all`
@@ -54,7 +55,7 @@ Automation-focused JSON/plan usage lives in [SCRIPT_AUTOMATION.md](./SCRIPT_AUTO
 
 ## Disaster recovery
 
-- Guided end-to-end DR setup: `pnpm run dr:setup`
+- Guided end-to-end DR setup: `pnpm run dr:setup -- --ack-secret-tier`
 - Preview the DR setup plan: `pnpm run dr:setup -- --plan --json`
 - DR frontend/Netlify-only setup: `pnpm run dr:netlify:setup`
 - DR frontend/Netlify-only alias: `pnpm run dr:netlify`

@@ -51,5 +51,6 @@ This is an alias for clearer CI/operator usage.
 ## Notes
 
 - Prefer `--plan --json` before using a live mutating operator flow in CI or scripted automation.
+- Production-mutating operator flows require `--ack-secret-tier` or `CONVEX_SECRET_TIER_ACK=1`.
 - For mutating scripts, treat the JSON payload as a summary contract, not a full event stream.
 - `setup:prod` now runs a final `deploy:doctor -- --prod --json` validation gate and exits non-zero when required production checks still fail.

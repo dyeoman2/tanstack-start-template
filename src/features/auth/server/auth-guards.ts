@@ -13,6 +13,7 @@ import { normalizeUserId } from '~/lib/shared/user-id';
 import type { UserRole } from '../types';
 import { normalizeAppRedirectTarget } from '../lib/account-setup-routing';
 import { convexAuthReactStart } from './convex-better-auth-react-start';
+import { createStepUpChallengeForCurrentUser } from './step-up.server';
 
 export interface AuthenticatedUser {
   id: UserId;
@@ -153,9 +154,13 @@ export async function requireRecentStepUp(
   const isSatisfied = await hasStepUpClaimForCurrentRequest(requirement).catch(() => false);
 
   if (!isSatisfied) {
+    const challenge = await createStepUpChallengeForCurrentUser({
+      redirectTo: '/app/profile',
+      requirement,
+    });
     throw redirect({
       to: '/app/profile',
-      search: buildStepUpRedirectSearch(requirement),
+      search: buildStepUpRedirectSearch(challenge.challengeId),
     });
   }
 

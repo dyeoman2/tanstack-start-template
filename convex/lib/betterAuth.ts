@@ -203,6 +203,12 @@ export async function fetchAllBetterAuthPasskeys(
   return await fetchAllRecords<BetterAuthPasskeyRecord>(ctx, 'passkey');
 }
 
+export async function fetchAllBetterAuthSessions(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthSessionRecord[]> {
+  return await fetchAllRecords<BetterAuthSessionRecord>(ctx, 'session');
+}
+
 export async function fetchBetterAuthUsersByIds(
   ctx: GenericCtx<DataModel>,
   userIds: string[],

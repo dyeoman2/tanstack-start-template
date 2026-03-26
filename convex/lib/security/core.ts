@@ -373,10 +373,15 @@ type ExportManifest = {
     failureCount: number;
     verified: boolean;
   };
+  legalHoldActive: boolean;
+  legalHoldId: string | null;
+  legalHoldReason: string | null;
   organizationScope: string | null;
+  retentionScopeVersion: string;
   reviewStatusAtExport: 'pending' | 'reviewed' | 'needs_follow_up' | null;
   rowCount: number;
   schemaVersion: string;
+  sourceDataClassification: string;
   sourceReportId: string | null;
 };
 
@@ -392,9 +397,14 @@ export function buildExportManifest(input: {
     failureCount: number;
     verified: boolean;
   };
+  legalHoldActive: boolean;
+  legalHoldId: string | null;
+  legalHoldReason: string | null;
   organizationScope: string | null;
+  retentionScopeVersion: string;
   reviewStatusAtExport: 'pending' | 'reviewed' | 'needs_follow_up' | null;
   rowCount: number;
+  sourceDataClassification: string;
   sourceReportId: string | null;
 }): ExportManifest {
   return {
@@ -412,10 +422,15 @@ export function buildExportManifest(input: {
       failureCount: input.integritySummary.failureCount,
       verified: input.integritySummary.verified,
     },
+    legalHoldActive: input.legalHoldActive,
+    legalHoldId: input.legalHoldId,
+    legalHoldReason: input.legalHoldReason,
     organizationScope: input.organizationScope,
+    retentionScopeVersion: input.retentionScopeVersion,
     reviewStatusAtExport: input.reviewStatusAtExport,
     rowCount: input.rowCount,
     schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+    sourceDataClassification: input.sourceDataClassification,
     sourceReportId: input.sourceReportId,
   };
 }

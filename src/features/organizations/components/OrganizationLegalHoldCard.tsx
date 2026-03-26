@@ -34,9 +34,8 @@ export function OrganizationLegalHoldCard({
       <CardHeader>
         <CardTitle>Retention hold</CardTitle>
         <CardDescription>
-          Pause timed deletion of temporary customer artifacts for this organization. In v1 this
-          does not auto-delete primary chats or messages; it only governs temporary artifacts and
-          derived files.
+          Block destructive retention work across PHI-bearing chat records for this organization.
+          Audited exports remain available while a hold is active.
         </CardDescription>
       </CardHeader>
       <div className="space-y-4 px-6 pb-6">
@@ -47,7 +46,7 @@ export function OrganizationLegalHoldCard({
           <p className="text-sm text-muted-foreground">
             {isActive
               ? `Opened ${new Date(hold.openedAt).toLocaleString()}`
-              : 'Timed temporary-artifact deletion will continue on schedule.'}
+              : 'Timed PHI record retention and cleanup will continue on schedule.'}
           </p>
           {isActive ? <p className="mt-2 text-sm text-muted-foreground">{hold.reason}</p> : null}
         </div>

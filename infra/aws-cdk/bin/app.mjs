@@ -34,6 +34,7 @@ function createStageConfig(projectSlug, stage) {
   return {
     alertEmailAddress: readTrimmedEnv('AWS_STORAGE_ALERT_EMAIL') || undefined,
     cleanBucketName: readTrimmedEnv('AWS_S3_CLEAN_BUCKET_NAME'),
+    controlAssertionSecret: readTrimmedEnv('AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET'),
     convexCallbackBaseUrl: readTrimmedEnv('AWS_CONVEX_STORAGE_CALLBACK_BASE_URL'),
     decisionCallbackSharedSecret: readTrimmedEnv(
       'AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET',
@@ -41,6 +42,7 @@ function createStageConfig(projectSlug, stage) {
     documentResultCallbackSharedSecret: readTrimmedEnv(
       'AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET',
     ),
+    edgeAssertionSecret: readTrimmedEnv('AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET'),
     env: {
       account: process.env.CDK_DEFAULT_ACCOUNT,
       region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-1',
@@ -80,14 +82,16 @@ if (storageStage === 'dev' || storageStage === 'prod') {
     !config.cleanBucketName ||
     !config.rejectedBucketName ||
     !config.mirrorBucketName ||
+    !config.controlAssertionSecret ||
     !config.convexCallbackBaseUrl ||
     !config.decisionCallbackSharedSecret ||
     !config.documentResultCallbackSharedSecret ||
+    !config.edgeAssertionSecret ||
     !config.fileServeSigningSecret ||
     !config.inspectionCallbackSharedSecret
   ) {
     throw new Error(
-      'AWS_S3_QUARANTINE_BUCKET_NAME, AWS_S3_CLEAN_BUCKET_NAME, AWS_S3_REJECTED_BUCKET_NAME, AWS_S3_MIRROR_BUCKET_NAME, AWS_FILE_SERVE_SIGNING_SECRET, AWS_CONVEX_STORAGE_CALLBACK_BASE_URL, AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET, AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET, and AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET are required when STORAGE_STAGE is set.',
+      'AWS_S3_QUARANTINE_BUCKET_NAME, AWS_S3_CLEAN_BUCKET_NAME, AWS_S3_REJECTED_BUCKET_NAME, AWS_S3_MIRROR_BUCKET_NAME, AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET, AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET, AWS_FILE_SERVE_SIGNING_SECRET, AWS_CONVEX_STORAGE_CALLBACK_BASE_URL, AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET, AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET, and AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET are required when STORAGE_STAGE is set.',
     );
   }
 

@@ -3,11 +3,13 @@ import { tryFinalizeStorageDecision } from './storageDecision';
 
 const {
   deleteStorageObjectMock,
+  enqueueStorageInspectionTaskMock,
   getStorageRuntimeConfigMock,
   promoteQuarantineObjectMock,
   rejectQuarantineObjectMock,
 } = vi.hoisted(() => ({
   deleteStorageObjectMock: vi.fn(async () => undefined),
+  enqueueStorageInspectionTaskMock: vi.fn(async () => undefined),
   getStorageRuntimeConfigMock: vi.fn(() => ({
     fileUploadMaxBytes: 10 * 1024 * 1024,
     storageBuckets: {
@@ -24,8 +26,11 @@ vi.mock('../src/lib/server/env.server', () => ({
 }));
 
 vi.mock('./lib/storageS3', () => ({
+  enqueueStorageInspectionTask: enqueueStorageInspectionTaskMock,
+}));
+
+vi.mock('./lib/storageS3Control', () => ({
   deleteStorageObject: deleteStorageObjectMock,
-  getQuarantineObject: vi.fn(),
   promoteQuarantineObject: promoteQuarantineObjectMock,
   rejectQuarantineObject: rejectQuarantineObjectMock,
 }));

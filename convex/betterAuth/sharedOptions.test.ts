@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_PROXY_IP_HEADER } from '../../src/lib/server/better-auth/http';
+import { STEP_UP_COOKIE_NAME } from '../../src/lib/server/step-up-cookie.server';
 import {
   AUTH_SESSION_EXPIRES_IN_SECONDS,
   AUTH_SESSION_FRESH_AGE_SECONDS,
@@ -11,8 +12,12 @@ const ORIGINAL_ENV = { ...process.env };
 
 function createOptions() {
   return createSharedBetterAuthOptions({
+    completeStepUpChallenge: async () => ({
+      ok: false,
+      reason: 'Step-up challenge is invalid or expired.',
+      requirement: null,
+    }),
     consumeStepUpClaim: async () => {},
-    issueStepUpClaim: async () => {},
     recordStepUpCompletion: async () => {},
     recordStepUpConsumed: async () => {},
     recordStepUpFailure: async () => {},
@@ -331,8 +336,11 @@ describe('createSharedBetterAuthOptions', () => {
 
   it('allows change-email through the before hook when the step-up claim exists', async () => {
     const options = createSharedBetterAuthOptions({
+      completeStepUpChallenge: async () => ({
+        ok: true,
+        requirement: 'account_email_change',
+      }),
       consumeStepUpClaim: async () => {},
-      issueStepUpClaim: async () => {},
       recordStepUpCompletion: async () => {},
       recordStepUpConsumed: async () => {},
       recordStepUpFailure: async () => {},
@@ -617,6 +625,121 @@ describe('createSharedBetterAuthOptions', () => {
     expect(updateSession).toHaveBeenCalledWith('session_token', {
       mfaVerified: true,
     });
+  });
+
+  it('completes a prepared step-up challenge from the opaque cookie and clears it', async () => {
+    const completeStepUpChallenge = vi.fn(async () => ({
+      ok: true as const,
+      requirement: 'organization_admin' as const,
+    }));
+    const recordStepUpCompletion = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      completeStepUpChallenge,
+      consumeStepUpClaim: async () => {},
+      recordStepUpCompletion,
+      recordStepUpConsumed: async () => {},
+      recordStepUpFailure: async () => {},
+      recordStepUpRequired: async () => {},
+      resolveStepUpClaimStatus: async () => false,
+      sendChangeEmailConfirmation: async () => {},
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const updateSession = vi.fn(async () => {});
+    const responseHeaders = new Headers();
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            id: 'session_1',
+            token: 'session_token',
+          },
+          user: {
+            id: 'user_1',
+          },
+        },
+        responseHeaders,
+        returned: new Response('{}', { status: 200 }),
+      },
+      headers: new Headers({
+        cookie: `${STEP_UP_COOKIE_NAME}=550e8400-e29b-41d4-a716-446655440000`,
+      }),
+      path: '/sign-in/passkey',
+    } as never);
+
+    expect(completeStepUpChallenge).toHaveBeenCalledWith({
+      challengeId: '550e8400-e29b-41d4-a716-446655440000',
+      method: 'passkey',
+      sessionId: 'session_1',
+      userId: 'user_1',
+    });
+    expect(recordStepUpCompletion).toHaveBeenCalledWith({
+      method: 'passkey',
+      path: '/sign-in/passkey',
+      requirement: 'organization_admin',
+      sessionId: 'session_1',
+      userId: 'user_1',
+    });
+    expect(responseHeaders.get('set-cookie')).toContain(`${STEP_UP_COOKIE_NAME}=`);
+  });
+
+  it('clears legacy unsigned step-up cookie payloads without completing a challenge', async () => {
+    const completeStepUpChallenge = vi.fn(async () => ({
+      ok: true as const,
+      requirement: 'organization_admin' as const,
+    }));
+    const options = createSharedBetterAuthOptions({
+      completeStepUpChallenge,
+      consumeStepUpClaim: async () => {},
+      recordStepUpCompletion: async () => {},
+      recordStepUpConsumed: async () => {},
+      recordStepUpFailure: async () => {},
+      recordStepUpRequired: async () => {},
+      resolveStepUpClaimStatus: async () => false,
+      sendChangeEmailConfirmation: async () => {},
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const responseHeaders = new Headers();
+    const legacyCookieValue = Buffer.from(
+      JSON.stringify({
+        redirectTo: '/app',
+        requirement: 'organization_admin',
+        startedAt: Date.now(),
+      }),
+    ).toString('base64url');
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession: async () => {},
+        },
+        newSession: {
+          session: {
+            id: 'session_1',
+            token: 'session_token',
+          },
+          user: {
+            id: 'user_1',
+          },
+        },
+        responseHeaders,
+        returned: new Response('{}', { status: 200 }),
+      },
+      headers: new Headers({
+        cookie: `${STEP_UP_COOKIE_NAME}=${legacyCookieValue}`,
+      }),
+      path: '/sign-in/passkey',
+    } as never);
+
+    expect(completeStepUpChallenge).not.toHaveBeenCalled();
+    expect(responseHeaders.get('set-cookie')).toContain(`${STEP_UP_COOKIE_NAME}=`);
   });
 
   it('uses the configured app name as the two-factor issuer', () => {

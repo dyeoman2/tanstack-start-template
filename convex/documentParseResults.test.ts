@@ -13,7 +13,7 @@ vi.mock('../src/lib/server/env.server', () => ({
   })),
 }));
 
-vi.mock('./lib/storageS3', () => ({
+vi.mock('./lib/storageS3Control', () => ({
   deleteStorageObject: vi.fn(async () => undefined),
   getQuarantineObject: getQuarantineObjectMock,
 }));

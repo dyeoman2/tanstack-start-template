@@ -80,6 +80,7 @@
     "convex:env:hygiene": "tsx scripts/convex-env-hygiene.ts",
     "convex:env:verify": "tsx scripts/verify-convex-env-sync.ts",
     "convex:jwks:sync": "tsx scripts/sync-convex-jwks.ts",
+    "auth:sessions:purge": "tsx scripts/purge-auth-sessions.ts",
     "setup:dev": "tsx scripts/setup-dev.ts",
     "setup:prod": "tsx scripts/setup-prod.ts",
     "deploy:doctor": "tsx scripts/deploy-doctor.ts",

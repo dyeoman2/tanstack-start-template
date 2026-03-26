@@ -515,9 +515,14 @@ describe('audit evidence helpers', () => {
       exportId: 'export-1',
       exportedAt: Date.parse('2026-03-18T00:05:00.000Z'),
       integritySummary,
+      legalHoldActive: false,
+      legalHoldId: null,
+      legalHoldReason: null,
       organizationScope: 'org-1',
+      retentionScopeVersion: 'temporary_artifacts_only_v1',
       reviewStatusAtExport: 'reviewed',
       rowCount: 12,
+      sourceDataClassification: 'audit_evidence',
       sourceReportId: 'report-1',
     });
     const right = buildExportManifestFn({
@@ -531,9 +536,14 @@ describe('audit evidence helpers', () => {
       exportId: 'export-1',
       exportedAt: Date.parse('2026-03-18T00:05:00.000Z'),
       integritySummary,
+      legalHoldActive: false,
+      legalHoldId: null,
+      legalHoldReason: null,
       organizationScope: 'org-1',
+      retentionScopeVersion: 'temporary_artifacts_only_v1',
       reviewStatusAtExport: 'reviewed',
       rowCount: 12,
+      sourceDataClassification: 'audit_evidence',
       sourceReportId: 'report-1',
     });
 
@@ -1804,7 +1814,23 @@ describe('audit evidence helpers', () => {
       reviewStatus: 'reviewed',
       reviewedAt: Date.parse('2026-03-18T15:45:00.000Z'),
     };
-    const runQuery = vi.fn(async () => reportRecord);
+    const runQuery = vi.fn(async (_ref: unknown, _args?: unknown) => {
+      if (runQuery.mock.calls.length === 2) {
+        return {
+          allowed: true,
+          legalHoldActive: true,
+          legalHoldId: 'hold-1',
+          legalHoldReason: 'Preserve records',
+          normalizedLegalHoldReason: 'active_legal_hold',
+          operation: 'export',
+          resourceId: 'report-1',
+          resourceType: 'evidence_report_export',
+          retentionScopeVersion: 'full_phi_record_set_v2',
+        };
+      }
+
+      return reportRecord;
+    });
     const runAction = vi.fn(async () => ({
       checkedAt: Date.parse('2026-03-18T15:59:00.000Z'),
       failures: [{ id: 'failure-1' }],
@@ -1858,9 +1884,14 @@ describe('audit evidence helpers', () => {
       actorUserId: 'admin-user',
       contentHash: 'content-hash',
       exportId: '00000000-0000-4000-8000-000000000123',
+      legalHoldActive: true,
+      legalHoldId: 'hold-1',
+      legalHoldReason: 'active_legal_hold',
       organizationScope: 'org-1',
+      retentionScopeVersion: 'full_phi_record_set_v2',
       reviewStatusAtExport: 'reviewed',
       rowCount: 1,
+      sourceDataClassification: 'phi_record_set',
       sourceReportId: 'report-1',
     });
     expect(manifest.exactFilters).toMatchObject({
@@ -1871,6 +1902,7 @@ describe('audit evidence helpers', () => {
     expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
       eventType: 'evidence_report_exported',
       ipAddress: '203.0.113.9',
+      metadata: expect.stringContaining('"legalHoldActive": true'),
       requestId: 'req-123',
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',

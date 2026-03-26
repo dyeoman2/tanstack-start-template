@@ -10,6 +10,17 @@ function getResourcesByType(
   return Object.entries(template.Resources ?? {}).filter(([, resource]) => resource.Type === type);
 }
 
+function getInlinePolicyResourcesForRole(
+  template: {
+    Resources?: Record<string, { Properties?: Record<string, unknown>; Type?: string }>;
+  },
+  roleLogicalIdFragment: string,
+) {
+  return getResourcesByType(template, 'AWS::IAM::Policy').filter(([, resource]) =>
+    JSON.stringify(resource.Properties?.Roles ?? []).includes(roleLogicalIdFragment),
+  );
+}
+
 describe('storage stack synth', () => {
   it('trusts only the dedicated broker and private worker runtime roles for storage capabilities', () => {
     const { template } = synthesizeStorageStackTemplate({ stage: 'dev' });
@@ -99,9 +110,62 @@ describe('storage stack synth', () => {
     const { template } = synthesizeStorageStackTemplate({ stage: 'dev' });
     const functionUrls = getResourcesByType(template, 'AWS::Lambda::Url');
     const apis = getResourcesByType(template, 'AWS::ApiGateway::RestApi');
+    const iamUsers = getResourcesByType(template, 'AWS::IAM::User');
+    const accessKeys = getResourcesByType(template, 'AWS::IAM::AccessKey');
+    const roleMap = new Map(
+      getResourcesByType(template, 'AWS::IAM::Role').map(([, resource]) => [
+        String(resource.Properties?.RoleName ?? ''),
+        resource,
+      ]),
+    );
+    const methodResources = getResourcesByType(template, 'AWS::ApiGateway::Method');
 
     expect(functionUrls).toHaveLength(0);
     expect(apis).toHaveLength(1);
+    expect(iamUsers).toHaveLength(0);
+    expect(accessKeys).toHaveLength(0);
+
+    expect(
+      roleMap.get('tanstack-start-template-dev-storage-broker-edge-invoke')?.Properties
+        ?.AssumeRolePolicyDocument,
+    ).toMatchObject({
+      Statement: [
+        expect.objectContaining({
+          Principal: {
+            AWS: {
+              'Fn::GetAtt': [expect.stringContaining('StorageBrokerRuntimeRole'), 'Arn'],
+            },
+          },
+        }),
+      ],
+    });
+    expect(
+      roleMap.get('tanstack-start-template-dev-storage-broker-control-invoke')?.Properties
+        ?.AssumeRolePolicyDocument,
+    ).toMatchObject({
+      Statement: [
+        expect.objectContaining({
+          Principal: {
+            AWS: {
+              'Fn::GetAtt': [expect.stringContaining('StorageBrokerRuntimeRole'), 'Arn'],
+            },
+          },
+        }),
+      ],
+    });
+
+    const edgePolicies = getInlinePolicyResourcesForRole(template, 'StorageBrokerEdgeInvokeRole');
+    expect(JSON.stringify(edgePolicies)).toContain('/internal/storage/upload-target');
+    expect(JSON.stringify(edgePolicies)).not.toContain('/internal/storage/promote');
+
+    const sessionMethods = methodResources.filter(
+      ([, resource]) => resource.Properties?.AuthorizationType === 'NONE',
+    );
+    const iamMethods = methodResources.filter(
+      ([, resource]) => resource.Properties?.AuthorizationType === 'AWS_IAM',
+    );
+    expect(sessionMethods).toHaveLength(2);
+    expect(iamMethods.length).toBeGreaterThanOrEqual(13);
   });
 
   it('includes SNS email alerting and quarantine stuck alarms in production', () => {

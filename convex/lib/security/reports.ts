@@ -13,6 +13,7 @@ import {
   EXPORT_ARTIFACT_SCHEMA_VERSION,
   REVIEW_RUN_SOURCE_SURFACE,
 } from './securityReviewConfig';
+import type { HoldAwareOperationDecision } from '../retention';
 import {
   addDays,
   buildExportManifest,
@@ -56,6 +57,16 @@ export async function exportEvidenceReportHandler(
 
   const exportedAt = Date.now();
   const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
+  const holdDecision =
+    report.organizationId === undefined || report.organizationId === null
+      ? null
+      : ((await ctx.runQuery(anyApi.retention.getOrganizationHoldAwareOperationDecisionInternal, {
+          allowExportDuringHold: true,
+          operation: 'export',
+          organizationId: report.organizationId,
+          resourceId: String(report._id),
+          resourceType: 'evidence_report_export',
+        })) as HoldAwareOperationDecision);
   const exportBundle = stringifyStable({
     contentHash: report.contentHash,
     exportedAt: new Date(exportedAt).toISOString(),
@@ -82,9 +93,14 @@ export async function exportEvidenceReportHandler(
     exportId,
     exportedAt,
     integritySummary: summarizeIntegrityCheck(integrityCheck),
+    legalHoldActive: holdDecision?.legalHoldActive ?? false,
+    legalHoldId: holdDecision?.legalHoldId ?? null,
+    legalHoldReason: holdDecision?.normalizedLegalHoldReason ?? null,
     organizationScope: report.organizationId ?? currentUser.activeOrganizationId ?? null,
+    retentionScopeVersion: holdDecision?.retentionScopeVersion ?? 'full_phi_record_set_v2',
     reviewStatusAtExport: report.reviewStatus,
     rowCount: 1,
+    sourceDataClassification: 'phi_record_set',
     sourceReportId: report._id,
   });
   const manifestJson = stringifyStable(manifest);
@@ -110,6 +126,9 @@ export async function exportEvidenceReportHandler(
       exportHash,
       exportId,
       filters: manifest.exactFilters,
+      legalHoldActive: holdDecision?.legalHoldActive ?? false,
+      legalHoldId: holdDecision?.legalHoldId ?? null,
+      legalHoldReason: holdDecision?.normalizedLegalHoldReason ?? null,
       manifestHash,
       rowCount: manifest.rowCount,
       scope: manifest.organizationScope,

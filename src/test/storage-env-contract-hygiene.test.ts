@@ -57,6 +57,14 @@ function isAllowedLegacyReference(relativePath: string, token: string) {
     return ['scripts/setup-storage.ts', 'scripts/setup-storage-prod.ts'].includes(relativePath);
   }
 
+  if (
+    token === 'STORAGE_BROKER_ACCESS_KEY_ID' ||
+    token === 'STORAGE_BROKER_SECRET_ACCESS_KEY' ||
+    token === 'STORAGE_BROKER_SESSION_TOKEN'
+  ) {
+    return ['scripts/setup-storage.ts', 'scripts/setup-storage-prod.ts'].includes(relativePath);
+  }
+
   if (token === 'CONVEX_STORAGE_CALLBACK_SHARED_SECRET') {
     return ['scripts/setup-storage.ts', 'scripts/setup-storage-prod.ts'].includes(relativePath);
   }

@@ -22,11 +22,11 @@ import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
-  getAppStepUpSearch,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { beginAuthenticatorOnboardingServerFn } from '~/features/auth/server/onboarding';
+import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import { cn } from '~/lib/utils';
 
 function getEnrollmentErrorMessage(error: unknown) {
@@ -238,6 +238,7 @@ export function AccountSetupPage({
   const isBackgroundRefreshInFlightRef = useRef(false);
   const hasAttemptedSessionContinuationRef = useRef(false);
   const hasResolvedInitialAuthRef = useRef(false);
+  const stepUpRedirectRef = useRef(false);
   const hasRecoveredVerifiedSession = sessionContinuationState === 'verified';
   const isContinuingSession = sessionContinuationState === 'checking';
 
@@ -263,6 +264,42 @@ export function AccountSetupPage({
       setSessionContinuationState('idle');
     }
   }, [hasVerificationCallback, hasVerifiedEmailInSession]);
+
+  useEffect(() => {
+    if (!isAuthenticated || requiresEmailVerification || requiresMfaSetup) {
+      stepUpRedirectRef.current = false;
+      return;
+    }
+
+    if (!requiresMfaVerification || stepUpRedirectRef.current) {
+      return;
+    }
+
+    stepUpRedirectRef.current = true;
+    void (async () => {
+      try {
+        const challenge = await createOrganizationAdminStepUpChallengeServerFn({
+          data: {
+            redirectTo: redirectTarget,
+          },
+        });
+        await router.navigate({
+          to: '/step-up',
+          search: { challengeId: challenge.challengeId },
+          replace: true,
+        });
+      } catch {
+        stepUpRedirectRef.current = false;
+      }
+    })();
+  }, [
+    isAuthenticated,
+    redirectTarget,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    requiresMfaVerification,
+    router,
+  ]);
 
   useEffect(() => {
     if (resendCooldownSeconds <= 0) {
@@ -405,13 +442,7 @@ export function AccountSetupPage({
 
   if (isAuthenticated && !requiresEmailVerification && !requiresMfaSetup) {
     if (requiresMfaVerification) {
-      return (
-        <Navigate
-          to="/step-up"
-          search={getAppStepUpSearch({ redirectTo: redirectTarget })}
-          replace
-        />
-      );
+      return <AuthSkeleton />;
     }
 
     return <Navigate to={redirectTarget} replace />;

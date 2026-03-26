@@ -38,7 +38,17 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Session expiry, refresh cadence, and freshness windows are set via the shared Better Auth configuration to enforce short-lived credentials in regulated deployments.
 - Session policy is explicit: 24-hour expiry, 4-hour refresh cadence, and 15-minute freshness windows for step-up protected actions.
 - Better Auth session metadata is normalized after sign-in so downstream policy code can distinguish password, passkey, social, and enterprise authentication paths consistently.
+- Production Convex operator/component access is **secret-tier production access** because it can expose active session rows, Better Auth JWKS private keys, populated OAuth secrets when present, and production env/deploy credentials.
 - This repo intentionally keeps Better Auth sessions database-backed so revocation and admin session workflows reflect server state immediately. Treat active session rows as bearer-equivalent credentials and restrict operational access accordingly.
 - A database compromise still implies session compromise for active sessions. That tradeoff is accepted in this incremental hardening baseline and should be countered with platform access controls, monitoring, and rapid revocation procedures.
 - Break-glass password fallback is disabled by default for organization policies.
 - Infrastructure-level controls beyond the shipped baseline (for example network isolation, secret rotation cadence, and hardware-backed secret custody) remain deployer responsibilities.
+
+### Secret-Tier Operations
+
+- Only named operators and CI may hold production Convex access; shared human accounts are out of policy.
+- MFA is mandatory for every human path that can reach production Convex state or Better Auth component data.
+- `CONVEX_DEPLOY_KEY` is treated as a production secret, not a convenience token.
+- `.env.local` remains development-only, and `.env.prod` must not become the default home for long-lived deploy keys.
+- Any uncertain or unauthorized production Convex access is handled as a secret-exposure incident.
+- See [`docs/CONVEX_SECRET_TIER_ACCESS.md`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/CONVEX_SECRET_TIER_ACCESS.md) for grant/revoke/review rules, Session purge, and the break-glass rotation order.

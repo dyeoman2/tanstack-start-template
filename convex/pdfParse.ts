@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import { internalMutation, internalQuery } from './_generated/server';
 
 const pdfParseJobStatusValidator = v.union(
@@ -79,5 +80,27 @@ export const upsertPdfParseJobInternal = internalMutation({
       storageId: args.storageId,
       updatedAt: args.updatedAt,
     });
+  },
+});
+
+export const deletePdfParseJobInternal = internalMutation({
+  args: {
+    jobId: v.id('pdfParseJobs'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) {
+      return null;
+    }
+
+    await ctx.runQuery(internal.retention.assertOrganizationHoldAllowsOperationInternal, {
+      operation: 'delete',
+      organizationId: job.organizationId,
+      resourceId: String(job._id),
+      resourceType: 'pdf_parse_job',
+    });
+    await ctx.db.delete(args.jobId);
+    return null;
   },
 });

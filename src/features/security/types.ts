@@ -308,7 +308,11 @@ export type AuditReadinessOverview = {
   latestRetentionJob: {
     createdAt: number;
     details?: string;
-    jobKind: 'attachment_purge' | 'quarantine_cleanup' | 'temporary_artifact_purge';
+    jobKind:
+      | 'attachment_purge'
+      | 'quarantine_cleanup'
+      | 'temporary_artifact_purge'
+      | 'phi_record_purge';
     processedCount: number;
     status: 'failure' | 'success';
   } | null;

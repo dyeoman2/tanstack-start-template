@@ -20,7 +20,7 @@ vi.mock('../src/lib/server/env.server', () => ({
   getStorageRuntimeConfig: () => runtimeConfigMock,
 }));
 
-vi.mock('./lib/storageS3', () => ({
+vi.mock('./lib/storageS3Control', () => ({
   deleteStorageObject: deleteStorageObjectMock,
   listStorageObjects: listStorageObjectsMock,
   putMirrorObject: vi.fn(),

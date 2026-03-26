@@ -9,6 +9,7 @@ const {
   navigateMock,
   showToastMock,
   useSearchMock,
+  useQueryMock,
   verifyTotpMock,
   useSessionMock,
   toDataUrlMock,
@@ -17,6 +18,7 @@ const {
   navigateMock: vi.fn(),
   showToastMock: vi.fn(),
   useSearchMock: vi.fn(),
+  useQueryMock: vi.fn(),
   verifyTotpMock: vi.fn(),
   useSessionMock: vi.fn(),
   toDataUrlMock: vi.fn(),
@@ -59,6 +61,10 @@ vi.mock('qrcode', () => ({
   },
 }));
 
+vi.mock('convex/react', () => ({
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
 vi.mock('~/components/ui/toast', () => ({
   useToast: () => ({
     showToast: showToastMock,
@@ -84,6 +90,7 @@ describe('TwoFactorPage', () => {
     verifyTotpMock.mockResolvedValue({ success: true });
     invalidateMock.mockResolvedValue(undefined);
     navigateMock.mockResolvedValue(undefined);
+    useQueryMock.mockReturnValue(null);
     useSessionMock.mockReturnValue({
       data: {
         user: {

@@ -12,14 +12,14 @@ This template documents the implemented safeguards that ship out of the box and 
 
 - Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, MFA-gated admin access, and repo-pinned edge security headers; deployers still need to operate WAF, TLS certs, and key rotation.
 - Transmission and access protection: strict trusted-origin checks, canonical Better Auth base URL validation, short-lived session freshness, and policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
-- Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need centralized log aggregation, retention, and review processes.
+- Audit controls: hash-linked audit events, export logging with legal-hold context, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need centralized log aggregation, retention, and review processes.
 - Integrity: file-type/signature verification plus quarantining hooks support the document flow, and the shipped regulated upload boundary is limited to PDF, plain text, CSV, and JPEG/PNG/GIF/WEBP images; broader Office-style intake and production malware/DLP scanning are outside the shipped baseline and remain the deployer’s responsibility.
 
 ### Operational evidence
 
 - `/app/admin/security` exposes posture summaries for MFA coverage, scan outcomes, retention jobs, backup verification, and audit integrity; it is intended for internal walkthroughs, not third-party attestations.
 - `api.securityReports.generateEvidenceReport` emits a structured evidence snapshot and persists it to `evidenceReports` so teams can package compliance-ready exports.
-- `retentionJobs`, `documentScanEvents`, and `backupVerificationReports` provide timestamped evidence records that operators should link with their deployment runbooks.
+- `retentionJobs`, `documentScanEvents`, and `backupVerificationReports` provide timestamped evidence records that operators should link with their deployment runbooks. Active legal holds block destructive PHI-record retention and cleanup while preserving hold-aware export evidence.
 
 ### Important limitations
 

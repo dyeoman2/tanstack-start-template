@@ -943,6 +943,40 @@ export const authStepUpClaimsDocValidator = v.object({
   verifiedAt: v.number(),
 });
 
+export const authStepUpChallengeDocValidator = v.object({
+  _id: v.id('authStepUpChallenges'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  challengeId: v.string(),
+  consumedAt: v.union(v.number(), v.null()),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  failureReason: v.union(v.string(), v.null()),
+  preparedAt: v.union(v.number(), v.null()),
+  redirectTo: v.string(),
+  requirement: stepUpRequirementValidator,
+  sessionId: v.string(),
+  updatedAt: v.number(),
+});
+
+export const stepUpChallengeSummaryValidator = v.object({
+  challengeId: v.string(),
+  redirectTo: v.string(),
+  requirement: stepUpRequirementValidator,
+});
+
+export const stepUpChallengeCompletionResultValidator = v.union(
+  v.object({
+    ok: v.literal(true),
+    requirement: stepUpRequirementValidator,
+  }),
+  v.object({
+    ok: v.literal(false),
+    reason: v.string(),
+    requirement: v.union(stepUpRequirementValidator, v.null()),
+  }),
+);
+
 export const currentUserProfileValidator = v.object({
   id: v.string(),
   email: v.string(),
@@ -1066,7 +1100,7 @@ export const organizationLegalHoldSummaryValidator = v.object({
 export const retentionDeletionBatchValidator = v.object({
   id: v.id('retentionDeletionBatches'),
   organizationId: v.string(),
-  jobKind: v.literal('temporary_artifact_purge'),
+  jobKind: v.union(v.literal('temporary_artifact_purge'), v.literal('phi_record_purge')),
   policySnapshotJson: v.string(),
   startedAt: v.number(),
   completedAt: v.number(),

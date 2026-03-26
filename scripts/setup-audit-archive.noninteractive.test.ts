@@ -108,6 +108,7 @@ describe('audit archive setup non-interactive', () => {
           AWS_REGION: 'us-west-1',
           AWS_AUDIT_ARCHIVE_PROJECT_SLUG: 'demo',
           AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN: 'arn:aws:iam::123456789012:role/test-principal',
+          CONVEX_SECRET_TIER_ACK: '1',
         },
       },
     );
@@ -151,6 +152,7 @@ describe('audit archive setup non-interactive', () => {
           PATH: `${workspace.binDir}:${process.env.PATH ?? ''}`,
           AWS_REGION: 'us-west-1',
           AWS_AUDIT_ARCHIVE_PROJECT_SLUG: 'demo',
+          CONVEX_SECRET_TIER_ACK: '1',
         },
       },
     );

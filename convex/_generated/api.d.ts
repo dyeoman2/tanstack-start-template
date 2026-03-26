@@ -69,7 +69,9 @@ import type * as lib_security_securityWorkspaceOverview from "../lib/security/se
 import type * as lib_security_validators from "../lib/security/validators.js";
 import type * as lib_security_vendors_core from "../lib/security/vendors_core.js";
 import type * as lib_security_workspace from "../lib/security/workspace.js";
+import type * as lib_storageBrokerClient from "../lib/storageBrokerClient.js";
 import type * as lib_storageS3 from "../lib/storageS3.js";
+import type * as lib_storageS3Control from "../lib/storageS3Control.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as pdfParse from "../pdfParse.js";
@@ -167,7 +169,9 @@ declare const fullApi: ApiFromModules<{
   "lib/security/validators": typeof lib_security_validators;
   "lib/security/vendors_core": typeof lib_security_vendors_core;
   "lib/security/workspace": typeof lib_security_workspace;
+  "lib/storageBrokerClient": typeof lib_storageBrokerClient;
   "lib/storageS3": typeof lib_storageS3;
+  "lib/storageS3Control": typeof lib_storageS3Control;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
   pdfParse: typeof pdfParse;

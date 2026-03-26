@@ -76,6 +76,11 @@ import {
   routeLogsToStderrWhenJson,
 } from './lib/script-ux';
 import { isS3BackedStorageBackend, type DeployDoctorCheck } from './lib/deploy-doctor-checks';
+import {
+  assertSecretTierAcknowledgment,
+  SECRET_TIER_ACK_ENV,
+  SECRET_TIER_ACK_FLAG,
+} from './lib/secret-tier';
 
 type ProdCliOptions = {
   createNetlifySite: string | null;
@@ -89,15 +94,17 @@ type ProdCliOptions = {
 
 function printUsage() {
   console.log(
-    'Usage: pnpm run setup:prod -- [--yes] [--env-file <path>] [--skip-github-deploy] [--create-netlify-site <name>] [--smoke-base-url <url>] [--plan] [--json]',
+    'Usage: pnpm run setup:prod -- [--yes] [--env-file <path>] [--skip-github-deploy] [--create-netlify-site <name>] [--smoke-base-url <url>] [--plan] [--json] [--ack-secret-tier]',
   );
   console.log('');
   console.log('Examples:');
-  console.log('- pnpm run setup:prod');
+  console.log('- pnpm run setup:prod -- --ack-secret-tier');
   console.log(
-    '- pnpm run setup:prod -- --yes --env-file .env.production.local --smoke-base-url https://app.example.com',
+    '- pnpm run setup:prod -- --yes --env-file .env.production.local --smoke-base-url https://app.example.com --ack-secret-tier',
   );
-  console.log('- pnpm run setup:prod -- --skip-github-deploy --create-netlify-site my-prod-site');
+  console.log(
+    '- pnpm run setup:prod -- --skip-github-deploy --create-netlify-site my-prod-site --ack-secret-tier',
+  );
   console.log('- pnpm run setup:prod -- --plan --json');
   console.log('');
   console.log(
@@ -106,6 +113,7 @@ function printUsage() {
   console.log(
     'Use this instead of setup:github-deploy when you want the full Convex + Netlify + GitHub production path.',
   );
+  console.log(`Production mutation requires ${SECRET_TIER_ACK_FLAG} or ${SECRET_TIER_ACK_ENV}=1.`);
   console.log('Docs: docs/DEPLOY_ENVIRONMENT.md');
   console.log('Safe to rerun: mostly yes; it updates prod env/config state across providers.');
 }
@@ -502,6 +510,13 @@ async function main() {
   }
 
   const opts = parseProdCliArgs();
+  if (!opts.plan) {
+    assertSecretTierAcknowledgment({
+      command: 'pnpm run setup:prod --',
+      argv: process.argv,
+      env: process.env,
+    });
+  }
   routeLogsToStderrWhenJson(opts.json);
   const changedLocally: string[] = [];
   const changedRemotely: string[] = [];
@@ -568,7 +583,10 @@ async function main() {
             ? 'GitHub deploy environments skipped'
             : 'GitHub environments/secrets/vars for staging and production',
         ],
-        nextCommands: ['pnpm run setup:prod', 'pnpm run deploy:doctor -- --prod'],
+        nextCommands: [
+          'pnpm run setup:prod -- --ack-secret-tier',
+          'pnpm run deploy:doctor -- --prod',
+        ],
         readiness: {
           ai:
             planEnvFromFile.OPENROUTER_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim()
@@ -658,7 +676,9 @@ async function main() {
           false,
         );
         if (!continueWithoutResend) {
-          console.log('ℹ️  Finish Resend setup, then rerun `pnpm run setup:prod`.');
+          console.log(
+            `ℹ️  Finish Resend setup, then rerun \`pnpm run setup:prod -- ${SECRET_TIER_ACK_FLAG}\`.`,
+          );
           console.log('   Docs: docs/RESEND_SETUP.md');
           return;
         }
@@ -887,10 +907,10 @@ async function main() {
         '- GitHub environment secrets configured: CONVEX_DEPLOY_KEY, NETLIFY_BUILD_HOOK_URL, NETLIFY_AUTH_TOKEN, NETLIFY_SITE_ID',
       );
       console.log('- GitHub environment variable configured: DEPLOY_SMOKE_BASE_URL');
-      console.log('- DR setup remains separate: pnpm run dr:setup');
+      console.log(`- DR setup remains separate: pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`);
       changedRemotely.push(`Configured GitHub deploy environments for ${repo}`);
       nextCommands.push('pnpm run deploy:doctor -- --prod');
-      nextCommands.push('pnpm run dr:setup');
+      nextCommands.push(`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`);
       readiness.github = 'ready';
     } else {
       console.log('\n🎊 Production Convex / Netlify steps finished (GitHub deploy setup skipped).');
@@ -908,8 +928,11 @@ async function main() {
     console.log('\n📦 Production storage setup');
     try {
       const storageSummary = runInteractiveCommandWithSummary(
-        opts.yes ? 'pnpm run storage:setup:prod -- --yes' : 'pnpm run storage:setup:prod',
+        opts.yes
+          ? `pnpm run storage:setup:prod -- --yes ${SECRET_TIER_ACK_FLAG}`
+          : `pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}`,
         {
+          [SECRET_TIER_ACK_ENV]: '1',
           ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
           ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
         },
@@ -927,7 +950,7 @@ async function main() {
       }
     } catch {
       console.log(
-        '⚠️  Production storage setup did not complete. You can rerun `pnpm run storage:setup:prod` later.',
+        `⚠️  Production storage setup did not complete. You can rerun \`pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}\` later.`,
       );
       readiness.storage = 'needs attention';
       warnings.push('Production storage setup was started but did not complete.');
@@ -951,8 +974,11 @@ async function main() {
       try {
         const auditArchiveSummary = runInteractiveCommandWithSummary(
           opts.yes
-            ? 'pnpm run audit-archive:setup -- --prod --yes'
-            : 'pnpm run audit-archive:setup -- --prod',
+            ? `pnpm run audit-archive:setup -- --prod --yes ${SECRET_TIER_ACK_FLAG}`
+            : `pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`,
+          {
+            [SECRET_TIER_ACK_ENV]: '1',
+          },
         );
         changedRemotely.push('Ran guided audit archive setup');
         appendUnique(changedLocally, auditArchiveSummary?.changedLocally);
@@ -969,7 +995,7 @@ async function main() {
         }
       } catch {
         console.log(
-          '⚠️  Audit archive setup did not complete. You can rerun `pnpm run audit-archive:setup -- --prod` later.',
+          `⚠️  Audit archive setup did not complete. You can rerun \`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}\` later.`,
         );
         readiness.auditArchive = archiveRequired ? 'failed' : 'needs attention';
         warnings.push('Audit archive setup was started but did not complete.');
@@ -982,7 +1008,7 @@ async function main() {
       );
     } else {
       console.log(
-        'ℹ️  Skipping immutable audit archive setup. Run `pnpm run audit-archive:setup -- --prod` any time.',
+        `ℹ️  Skipping immutable audit archive setup. Run \`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}\` any time.`,
       );
       readiness.auditArchive = 'skipped';
     }
@@ -996,46 +1022,61 @@ async function main() {
 
       if (shouldSetupDr) {
         try {
-          runInteractiveCommand('pnpm run dr:setup');
+          runInteractiveCommand(`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`, {
+            [SECRET_TIER_ACK_ENV]: '1',
+          });
           changedRemotely.push('Ran guided disaster recovery setup');
           readiness.dr = 'ready';
         } catch {
           console.log(
-            '⚠️  Disaster recovery setup did not complete. You can rerun `pnpm run dr:setup` later.',
+            `⚠️  Disaster recovery setup did not complete. You can rerun \`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}\` later.`,
           );
           readiness.dr = 'needs attention';
           warnings.push('Disaster recovery setup was started but did not complete.');
         }
       } else {
-        console.log('ℹ️  Skipping disaster recovery setup. Run `pnpm run dr:setup` any time.');
+        console.log(
+          `ℹ️  Skipping disaster recovery setup. Run \`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}\` any time.`,
+        );
         readiness.dr = 'skipped';
-        warnings.push('Disaster recovery remains unconfigured until `pnpm run dr:setup` runs.');
+        warnings.push(
+          `Disaster recovery remains unconfigured until \`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}\` runs.`,
+        );
       }
     } else {
       console.log('ℹ️  Skipping optional disaster recovery setup in non-interactive mode.');
-      console.log('   Run `pnpm run dr:setup` if you need disaster recovery wiring.');
+      console.log(
+        `   Run \`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}\` if you need disaster recovery wiring.`,
+      );
     }
     if (opts.yes) {
       warnings.push('Disaster recovery setup was skipped in non-interactive mode.');
     }
 
-    if (readiness.storage !== 'ready' && !nextCommands.includes('pnpm run storage:setup:prod')) {
-      nextCommands.push('pnpm run storage:setup:prod');
+    if (
+      readiness.storage !== 'ready' &&
+      !nextCommands.includes(`pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}`)
+    ) {
+      nextCommands.push(`pnpm run storage:setup:prod -- ${SECRET_TIER_ACK_FLAG}`);
     }
     if (
       readiness.auditArchive !== 'ready' &&
       readiness.auditArchive !== 'skipped' &&
-      !nextCommands.includes('pnpm run audit-archive:setup -- --prod')
+      !nextCommands.includes(`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`)
     ) {
-      nextCommands.push('pnpm run audit-archive:setup -- --prod');
+      nextCommands.push(`pnpm run audit-archive:setup -- --prod ${SECRET_TIER_ACK_FLAG}`);
     }
-    if (readiness.dr !== 'ready' && !nextCommands.includes('pnpm run dr:setup')) {
-      nextCommands.push('pnpm run dr:setup');
+    if (
+      readiness.dr !== 'ready' &&
+      !nextCommands.includes(`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`)
+    ) {
+      nextCommands.push(`pnpm run dr:setup -- ${SECRET_TIER_ACK_FLAG}`);
     }
     const doctorResult = runJsonCommand(
       'pnpm',
       ['run', 'deploy:doctor', '--', '--prod', '--json'],
       {
+        [SECRET_TIER_ACK_ENV]: '1',
         ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
         ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
       },

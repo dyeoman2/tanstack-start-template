@@ -6,6 +6,7 @@ const redirectMock = vi.fn((options: unknown) => {
   return new Response(JSON.stringify(options), { status: 302 });
 });
 const hasStepUpClaimForCurrentRequestMock = vi.fn();
+const createStepUpChallengeForCurrentUserMock = vi.fn();
 
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: () => getRequestMock(),
@@ -36,6 +37,11 @@ vi.mock('~/lib/server/better-auth/fresh-session.server', () => ({
   hasStepUpClaimForCurrentRequest: () => hasStepUpClaimForCurrentRequestMock(),
 }));
 
+vi.mock('./step-up.server', () => ({
+  createStepUpChallengeForCurrentUser: (...args: unknown[]) =>
+    createStepUpChallengeForCurrentUserMock(...args),
+}));
+
 import { USER_ROLES } from '../types';
 import { requireAdmin, requireAuth, requireRecentStepUp } from './auth-guards';
 
@@ -52,6 +58,11 @@ describe('auth-guards', () => {
     );
     getRequestMock.mockReturnValue(new Request('http://127.0.0.1:3000/app'));
     hasStepUpClaimForCurrentRequestMock.mockResolvedValue(false);
+    createStepUpChallengeForCurrentUserMock.mockResolvedValue({
+      challengeId: '550e8400-e29b-41d4-a716-446655440000',
+      redirectTo: '/app/profile',
+      requirement: 'organization_admin',
+    });
   });
 
   it('redirects to login when the profile is missing required session fields', async () => {
@@ -132,7 +143,7 @@ describe('auth-guards', () => {
     expect(redirectMock).toHaveBeenCalledWith({
       to: '/app/profile',
       search: {
-        requirement: 'organization_admin',
+        challengeId: '550e8400-e29b-41d4-a716-446655440000',
         security: 'step-up-required',
       },
     });

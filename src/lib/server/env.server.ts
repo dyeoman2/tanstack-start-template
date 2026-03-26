@@ -448,9 +448,8 @@ export type StorageRoleConfig = Record<StorageCapability, string | null>;
 export type StorageServiceRuntimeConfig = {
   broker: {
     baseUrl: string | null;
-    accessKeyId: string | null;
-    secretAccessKey: string | null;
-    sessionToken: string | null;
+    controlAssertionSecret: string | null;
+    edgeAssertionSecret: string | null;
   };
   callbacks: {
     decision: {
@@ -614,9 +613,8 @@ function readStorageServiceRuntimeConfig(): StorageServiceRuntimeConfig {
   return {
     broker: {
       baseUrl: readOptionalServerEnv('STORAGE_BROKER_URL'),
-      accessKeyId: readOptionalServerEnv('STORAGE_BROKER_ACCESS_KEY_ID'),
-      secretAccessKey: readOptionalServerEnv('STORAGE_BROKER_SECRET_ACCESS_KEY'),
-      sessionToken: readOptionalServerEnv('STORAGE_BROKER_SESSION_TOKEN'),
+      controlAssertionSecret: readOptionalServerEnv('STORAGE_BROKER_CONTROL_ASSERTION_SECRET'),
+      edgeAssertionSecret: readOptionalServerEnv('STORAGE_BROKER_EDGE_ASSERTION_SECRET'),
     },
     callbacks: {
       decision: {
@@ -658,14 +656,14 @@ function requireStorageServiceConfig(
       `STORAGE_BROKER_URL environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.broker.accessKeyId) {
+  if (!services.broker.edgeAssertionSecret) {
     throw new Error(
-      `STORAGE_BROKER_ACCESS_KEY_ID environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `STORAGE_BROKER_EDGE_ASSERTION_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.broker.secretAccessKey) {
+  if (!services.broker.controlAssertionSecret) {
     throw new Error(
-      `STORAGE_BROKER_SECRET_ACCESS_KEY environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `STORAGE_BROKER_CONTROL_ASSERTION_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
   if (!services.callbacks.decision.currentSecret) {

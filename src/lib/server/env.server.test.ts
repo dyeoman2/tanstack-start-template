@@ -243,7 +243,7 @@ describe('Better Auth env helpers', () => {
     );
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
     expect(config.services.broker.baseUrl).toBeNull();
-    expect(config.services.broker.accessKeyId).toBeNull();
+    expect(config.services.broker.edgeAssertionSecret).toBeNull();
   });
 
   it('rejects the legacy shared storage webhook secret', () => {
@@ -255,7 +255,7 @@ describe('Better Auth env helpers', () => {
     );
   });
 
-  it('requires broker credentials and callback secrets for s3-backed storage', () => {
+  it('requires broker assertion secrets and callback secrets for s3-backed storage', () => {
     process.env.FILE_STORAGE_BACKEND = 's3-primary';
     process.env.AWS_REGION = 'us-west-1';
     process.env.CONVEX_SITE_URL = 'https://example.convex.site';
@@ -279,8 +279,10 @@ describe('Better Auth env helpers', () => {
     );
 
     process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
-    process.env.STORAGE_BROKER_ACCESS_KEY_ID = 'broker-access-key';
-    process.env.STORAGE_BROKER_SECRET_ACCESS_KEY = 'broker-secret-key';
+    process.env.STORAGE_BROKER_EDGE_ASSERTION_SECRET =
+      'edge-session-secret-abcdefghijklmnopqrstuvwxyz';
+    process.env.STORAGE_BROKER_CONTROL_ASSERTION_SECRET =
+      'control-session-secret-abcdefghijklmnopqrstuvwxyz';
     process.env.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET = 'decision-secret';
     process.env.CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET = 'document-secret';
     process.env.CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET = 'inspection-secret';
@@ -293,8 +295,12 @@ describe('Better Auth env helpers', () => {
     expect(config.storageBuckets.mirror.bucket).toBe('mirror-bucket');
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
     expect(config.services.broker.baseUrl).toBe('https://broker.example.com');
-    expect(config.services.broker.accessKeyId).toBe('broker-access-key');
-    expect(config.services.broker.secretAccessKey).toBe('broker-secret-key');
+    expect(config.services.broker.edgeAssertionSecret).toBe(
+      'edge-session-secret-abcdefghijklmnopqrstuvwxyz',
+    );
+    expect(config.services.broker.controlAssertionSecret).toBe(
+      'control-session-secret-abcdefghijklmnopqrstuvwxyz',
+    );
     expect(config.services.callbacks.decision.currentSecret).toBe('decision-secret');
     expect(config.services.callbacks.document.currentSecret).toBe('document-secret');
     expect(config.services.callbacks.inspection.currentSecret).toBe('inspection-secret');
@@ -313,8 +319,10 @@ describe('Better Auth env helpers', () => {
     process.env.CONVEX_SITE_URL = 'https://example.convex.site';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
     process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
-    process.env.STORAGE_BROKER_ACCESS_KEY_ID = 'broker-access-key';
-    process.env.STORAGE_BROKER_SECRET_ACCESS_KEY = 'broker-secret-key';
+    process.env.STORAGE_BROKER_EDGE_ASSERTION_SECRET =
+      'edge-session-secret-abcdefghijklmnopqrstuvwxyz';
+    process.env.STORAGE_BROKER_CONTROL_ASSERTION_SECRET =
+      'control-session-secret-abcdefghijklmnopqrstuvwxyz';
     process.env.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET = 'decision-secret';
     process.env.CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET = 'document-secret';
     process.env.CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET = 'inspection-secret';

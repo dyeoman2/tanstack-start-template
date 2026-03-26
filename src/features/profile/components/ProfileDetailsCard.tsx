@@ -19,8 +19,9 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '~/compo
 import { Input } from '~/components/ui/input';
 import { Spinner } from '~/components/ui/spinner';
 import { authClient } from '~/features/auth/auth-client';
+import { createProfileEmailChangeStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import type { ProfileData } from '~/features/profile/hooks/useProfile';
-import { buildStepUpRedirectSearch, STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
+import { buildStepUpRedirectSearch } from '~/lib/shared/auth-policy';
 
 const nameMaxLength = 32;
 
@@ -155,9 +156,14 @@ export function ProfileDetailsCard({ profile }: ProfileDetailsCardProps) {
       setSubmitState(null);
 
       if (emailChanged && (profile.recentStepUpValidUntil ?? 0) <= Date.now()) {
+        const challenge = await createProfileEmailChangeStepUpChallengeServerFn({
+          data: {
+            redirectTo: '/app/profile',
+          },
+        });
         await navigate({
           to: '/app/profile',
-          search: buildStepUpRedirectSearch(STEP_UP_REQUIREMENTS.accountEmailChange),
+          search: buildStepUpRedirectSearch(challenge.challengeId),
           replace: true,
         });
         return;

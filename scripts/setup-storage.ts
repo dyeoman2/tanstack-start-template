@@ -159,35 +159,41 @@ function buildScopedBucketNames(bucketBase: string) {
 }
 
 function getStorageSetupReadiness(input: {
-  brokerAccessKeyId?: string;
+  brokerControlAssertionSecret?: string;
+  brokerEdgeAssertionSecret?: string;
   brokerRuntimeUrl?: string;
   storageMode: StorageMode;
-  brokerSecretAccessKey?: string;
 }) {
   if (input.storageMode === 'convex') {
     return 'ready';
   }
 
-  return input.brokerRuntimeUrl && input.brokerAccessKeyId && input.brokerSecretAccessKey
+  return input.brokerRuntimeUrl &&
+    input.brokerEdgeAssertionSecret &&
+    input.brokerControlAssertionSecret
     ? 'ready'
     : 'needs attention';
 }
 
 function getStorageRuntimeUrlWarning(input: {
-  brokerAccessKeyId?: string;
+  brokerControlAssertionSecret?: string;
+  brokerEdgeAssertionSecret?: string;
   brokerRuntimeUrl?: string;
   storageMode: StorageMode;
-  brokerSecretAccessKey?: string;
 }) {
   if (input.storageMode === 'convex') {
     return null;
   }
 
-  if (input.brokerRuntimeUrl && input.brokerAccessKeyId && input.brokerSecretAccessKey) {
+  if (
+    input.brokerRuntimeUrl &&
+    input.brokerEdgeAssertionSecret &&
+    input.brokerControlAssertionSecret
+  ) {
     return null;
   }
 
-  return 'S3-backed storage is configured locally, but STORAGE_BROKER_URL plus broker access key outputs still need to be discovered from the deployed AWS storage stack or entered manually.';
+  return 'S3-backed storage is configured locally, but STORAGE_BROKER_URL plus broker assertion secrets still need to be configured before the runtime can mint scoped broker sessions.';
 }
 
 function run(command: string, env?: NodeJS.ProcessEnv) {
@@ -209,6 +215,8 @@ function buildStorageDeployEnv(input: {
   alertEmailAddress?: string;
   awsRegion: string;
   awsProfile?: string;
+  brokerControlAssertionSecret: string;
+  brokerEdgeAssertionSecret: string;
   buckets: ReturnType<typeof buildScopedBucketNames>;
   decisionCallbackSharedSecret: string;
   documentResultCallbackSharedSecret: string;
@@ -221,6 +229,8 @@ function buildStorageDeployEnv(input: {
     ...(input.awsProfile ? { AWS_PROFILE: input.awsProfile } : {}),
     ...(input.alertEmailAddress ? { AWS_STORAGE_ALERT_EMAIL: input.alertEmailAddress } : {}),
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
+    AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET: input.brokerControlAssertionSecret,
+    AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET: input.brokerEdgeAssertionSecret,
     AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(input.convexSiteUrl),
     AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: input.decisionCallbackSharedSecret,
     AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: input.documentResultCallbackSharedSecret,
@@ -548,23 +558,11 @@ async function main() {
     }) ?? {};
   const discoveredBrokerRuntimeUrl =
     stackOutputs[STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl] ?? '';
-  const discoveredBrokerAccessKeyId =
-    stackOutputs[STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId] ?? '';
-  const discoveredBrokerSecretAccessKey =
-    stackOutputs[STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey] ?? '';
-  if (
-    discoveredBrokerRuntimeUrl ||
-    discoveredBrokerAccessKeyId ||
-    discoveredBrokerSecretAccessKey
-  ) {
+  if (discoveredBrokerRuntimeUrl) {
     console.log('\nDetected existing storage stack runtime outputs:');
     console.log(
       `   ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}=${discoveredBrokerRuntimeUrl || '[missing]'}`,
     );
-    console.log(
-      `   ${STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId}=${discoveredBrokerAccessKeyId || '[missing]'}`,
-    );
-    console.log('   StorageBrokerSecretAccessKey=[set from CloudFormation output]');
   } else {
     console.log(`\nNo deployed storage stack outputs found yet for ${storageStackName}.`);
   }
@@ -692,6 +690,15 @@ async function main() {
     'AWS file serve signing secret',
     readEnvValue(envContent, 'AWS_FILE_SERVE_SIGNING_SECRET') ?? (await generateSecret(32)),
   );
+  const brokerEdgeAssertionSecret = await askWithDefault(
+    'Storage broker edge assertion secret',
+    readEnvValue(envContent, 'STORAGE_BROKER_EDGE_ASSERTION_SECRET') ?? (await generateSecret(32)),
+  );
+  const brokerControlAssertionSecret = await askWithDefault(
+    'Storage broker control assertion secret',
+    readEnvValue(envContent, 'STORAGE_BROKER_CONTROL_ASSERTION_SECRET') ??
+      (await generateSecret(32)),
+  );
   const decisionCallbackSharedSecret = await askWithDefault(
     'Convex storage decision callback shared secret',
     readEnvValue(envContent, 'CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET') ??
@@ -715,28 +722,6 @@ async function main() {
     await ask(
       'Storage broker runtime URL (leave empty until after infra deploy): ',
       discoveredBrokerRuntimeUrl || readEnvValue(envContent, 'STORAGE_BROKER_URL') || undefined,
-    )
-  ).trim();
-  let brokerAccessKeyId = (
-    await ask(
-      'Storage broker access key id (leave empty until after infra deploy): ',
-      discoveredBrokerAccessKeyId ||
-        readEnvValue(envContent, 'STORAGE_BROKER_ACCESS_KEY_ID') ||
-        undefined,
-    )
-  ).trim();
-  let brokerSecretAccessKey = (
-    await ask(
-      'Storage broker secret access key (leave empty until after infra deploy): ',
-      discoveredBrokerSecretAccessKey ||
-        readEnvValue(envContent, 'STORAGE_BROKER_SECRET_ACCESS_KEY') ||
-        undefined,
-    )
-  ).trim();
-  const brokerSessionToken = (
-    await ask(
-      'Storage broker session token (optional, leave empty for long-lived access keys): ',
-      readEnvValue(envContent, 'STORAGE_BROKER_SESSION_TOKEN') || undefined,
     )
   ).trim();
   const alertEmailAddress = (
@@ -801,6 +786,22 @@ async function main() {
       sectionMarker: '# STORAGE',
     },
   );
+  envContent = upsertStructuredEnvValue(
+    envContent,
+    'STORAGE_BROKER_EDGE_ASSERTION_SECRET',
+    maybeQuote(brokerEdgeAssertionSecret),
+    {
+      sectionMarker: '# STORAGE',
+    },
+  );
+  envContent = upsertStructuredEnvValue(
+    envContent,
+    'STORAGE_BROKER_CONTROL_ASSERTION_SECRET',
+    maybeQuote(brokerControlAssertionSecret),
+    {
+      sectionMarker: '# STORAGE',
+    },
+  );
   envContent = upsertStructuredEnvValue(envContent, 'CONVEX_SITE_URL', convexSiteUrl, {
     sectionMarker: '# STORAGE',
   });
@@ -859,38 +860,12 @@ async function main() {
       sectionMarker: '# STORAGE',
     });
   }
-  if (brokerAccessKeyId) {
-    envContent = upsertStructuredEnvValue(
-      envContent,
-      'STORAGE_BROKER_ACCESS_KEY_ID',
-      maybeQuote(brokerAccessKeyId),
-      {
-        sectionMarker: '# STORAGE',
-      },
-    );
-  }
-  if (brokerSecretAccessKey) {
-    envContent = upsertStructuredEnvValue(
-      envContent,
-      'STORAGE_BROKER_SECRET_ACCESS_KEY',
-      maybeQuote(brokerSecretAccessKey),
-      {
-        sectionMarker: '# STORAGE',
-      },
-    );
-  }
-  if (brokerSessionToken) {
-    envContent = upsertStructuredEnvValue(
-      envContent,
-      'STORAGE_BROKER_SESSION_TOKEN',
-      maybeQuote(brokerSessionToken),
-      {
-        sectionMarker: '# STORAGE',
-      },
-    );
-  }
-  if (!brokerSessionToken && readEnvValue(envContent, 'STORAGE_BROKER_SESSION_TOKEN')) {
-    envContent = upsertStructuredEnvValue(envContent, 'STORAGE_BROKER_SESSION_TOKEN', '', {
+  for (const legacyBrokerEnvName of [
+    'STORAGE_BROKER_ACCESS_KEY_ID',
+    'STORAGE_BROKER_SECRET_ACCESS_KEY',
+    'STORAGE_BROKER_SESSION_TOKEN',
+  ]) {
+    envContent = upsertStructuredEnvValue(envContent, legacyBrokerEnvName, '', {
       sectionMarker: '# STORAGE',
     });
   }
@@ -930,20 +905,13 @@ async function main() {
   console.log(`   AWS_AUDIT_ARCHIVE_ROLE_ARN=${auditArchiveRoleArn}`);
   console.log(`   AWS_AUDIT_ARCHIVE_PREFIX=${auditArchivePrefix}`);
   console.log('   AWS_FILE_SERVE_SIGNING_SECRET=[set]');
+  console.log('   STORAGE_BROKER_EDGE_ASSERTION_SECRET=[set]');
+  console.log('   STORAGE_BROKER_CONTROL_ASSERTION_SECRET=[set]');
   console.log('   CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET=[set]');
   console.log('   CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET=[set]');
   console.log('   CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET=[set]');
   if (brokerRuntimeUrl) {
     console.log(`   STORAGE_BROKER_URL=${brokerRuntimeUrl}`);
-  }
-  if (brokerAccessKeyId) {
-    console.log('   STORAGE_BROKER_ACCESS_KEY_ID=[set]');
-  }
-  if (brokerSecretAccessKey) {
-    console.log('   STORAGE_BROKER_SECRET_ACCESS_KEY=[set]');
-  }
-  if (brokerSessionToken) {
-    console.log('   STORAGE_BROKER_SESSION_TOKEN=[set]');
   }
   if (alertEmailAddress) {
     console.log(`   AWS_STORAGE_ALERT_EMAIL=${alertEmailAddress}`);
@@ -965,6 +933,8 @@ async function main() {
   const storageDeployEnv = buildStorageDeployEnv({
     awsRegion,
     awsProfile: awsProfile ?? undefined,
+    brokerControlAssertionSecret,
+    brokerEdgeAssertionSecret,
     buckets,
     decisionCallbackSharedSecret,
     documentResultCallbackSharedSecret,
@@ -982,6 +952,8 @@ async function main() {
   console.log(
     `   AWS_CONVEX_STORAGE_CALLBACK_BASE_URL=${storageDeployEnv.AWS_CONVEX_STORAGE_CALLBACK_BASE_URL}`,
   );
+  console.log('   AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET=[set]');
+  console.log('   AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET=[set]');
   console.log('   AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET=[set]');
   console.log('   AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET=[set]');
   console.log('   AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET=[set]');
@@ -1043,33 +1015,14 @@ async function main() {
           stackName: storageStackName,
         }) ?? {};
       const nextBrokerRuntimeUrl = outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl] ?? '';
-      const nextBrokerAccessKeyId = outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId] ?? '';
-      const nextBrokerSecretAccessKey =
-        outputs?.[STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey] ?? '';
-      if (nextBrokerRuntimeUrl && nextBrokerAccessKeyId && nextBrokerSecretAccessKey) {
+      if (nextBrokerRuntimeUrl) {
         brokerRuntimeUrl = nextBrokerRuntimeUrl;
-        brokerAccessKeyId = nextBrokerAccessKeyId;
-        brokerSecretAccessKey = nextBrokerSecretAccessKey;
         envContent = upsertStructuredEnvValue(envContent, 'STORAGE_BROKER_URL', brokerRuntimeUrl, {
           sectionMarker: '# STORAGE',
         });
-        envContent = upsertStructuredEnvValue(
-          envContent,
-          'STORAGE_BROKER_ACCESS_KEY_ID',
-          maybeQuote(brokerAccessKeyId),
-          { sectionMarker: '# STORAGE' },
-        );
-        envContent = upsertStructuredEnvValue(
-          envContent,
-          'STORAGE_BROKER_SECRET_ACCESS_KEY',
-          maybeQuote(brokerSecretAccessKey),
-          { sectionMarker: '# STORAGE' },
-        );
         writeFileSync(envPath, envContent, 'utf8');
         changedLocally.push(`Updated ${envPath} with deployed storage broker outputs`);
         console.log(`   ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}=${brokerRuntimeUrl}`);
-        console.log('   StorageBrokerAccessKeyId=[set]');
-        console.log('   StorageBrokerSecretAccessKey=[set]');
       }
     } catch {
       console.log('⚠️  CDK deploy failed.');
@@ -1105,22 +1058,18 @@ async function main() {
       AWS_AUDIT_ARCHIVE_PREFIX: auditArchivePrefix,
       AWS_FILE_SERVE_SIGNING_SECRET: '<secret>',
       STORAGE_BROKER_URL: brokerRuntimeUrl || `<${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}>`,
-      STORAGE_BROKER_ACCESS_KEY_ID:
-        brokerAccessKeyId || `<${STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId}>`,
-      STORAGE_BROKER_SECRET_ACCESS_KEY:
-        brokerSecretAccessKey || `<${STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey}>`,
+      STORAGE_BROKER_EDGE_ASSERTION_SECRET: '<secret>',
+      STORAGE_BROKER_CONTROL_ASSERTION_SECRET: '<secret>',
       CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: '<secret>',
       CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: '<secret>',
       CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: '<secret>',
     })) {
       console.log(`   pnpm exec convex env set ${name} "${value}"`);
     }
-  } else if (!brokerRuntimeUrl || !brokerAccessKeyId || !brokerSecretAccessKey) {
+  } else if (!brokerRuntimeUrl) {
+    console.log('\n⚠️  Skipping Convex env sync because the broker runtime URL is still missing.');
     console.log(
-      '\n⚠️  Skipping Convex env sync because broker URL or broker access key outputs are still missing.',
-    );
-    console.log(
-      `   Deploy the storage stack or fetch ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl}, ${STORAGE_STACK_OUTPUT_NAMES.brokerAccessKeyId}, and ${STORAGE_STACK_OUTPUT_NAMES.brokerSecretAccessKey} from the deployed stack, then rerun this script or set the Convex env vars manually.`,
+      `   Deploy the storage stack or fetch ${STORAGE_STACK_OUTPUT_NAMES.brokerRuntimeUrl} from the deployed stack, then rerun this script or set the Convex env vars manually.`,
     );
   } else {
     try {
@@ -1141,15 +1090,12 @@ async function main() {
         AWS_AUDIT_ARCHIVE_PREFIX: auditArchivePrefix,
         AWS_FILE_SERVE_SIGNING_SECRET: serveSecret,
         STORAGE_BROKER_URL: brokerRuntimeUrl,
-        STORAGE_BROKER_ACCESS_KEY_ID: brokerAccessKeyId,
-        STORAGE_BROKER_SECRET_ACCESS_KEY: brokerSecretAccessKey,
+        STORAGE_BROKER_EDGE_ASSERTION_SECRET: brokerEdgeAssertionSecret,
+        STORAGE_BROKER_CONTROL_ASSERTION_SECRET: brokerControlAssertionSecret,
         CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: decisionCallbackSharedSecret,
         CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: documentResultCallbackSharedSecret,
         CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: inspectionCallbackSharedSecret,
       };
-      if (brokerSessionToken) {
-        convexEnvValues.STORAGE_BROKER_SESSION_TOKEN = brokerSessionToken;
-      }
 
       for (const name of CONVEX_STORAGE_RUNTIME_ENV_NAMES) {
         trySetConvexEnv(name, convexEnvValues[name]);
@@ -1175,9 +1121,9 @@ async function main() {
   }
 
   const storageRuntimeWarning = getStorageRuntimeUrlWarning({
-    brokerAccessKeyId,
+    brokerControlAssertionSecret,
+    brokerEdgeAssertionSecret,
     brokerRuntimeUrl,
-    brokerSecretAccessKey,
     storageMode,
   });
   if (storageRuntimeWarning) {
@@ -1194,13 +1140,13 @@ async function main() {
     readiness: {
       awsInfra: shouldDeployInfra ? 'deploy attempted' : 'pending deploy',
       convexEnv:
-        brokerRuntimeUrl && brokerAccessKeyId && brokerSecretAccessKey
+        brokerRuntimeUrl && brokerEdgeAssertionSecret && brokerControlAssertionSecret
           ? 'ready'
           : 'needs attention',
       localStorage: getStorageSetupReadiness({
-        brokerAccessKeyId,
+        brokerControlAssertionSecret,
+        brokerEdgeAssertionSecret,
         brokerRuntimeUrl,
-        brokerSecretAccessKey,
         storageMode,
       }),
     },

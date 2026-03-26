@@ -104,39 +104,7 @@ export const cleanupExpiredAttachments = internalAction({
   args: {},
   returns: v.null(),
   handler: async (ctx) => {
-    const now = Date.now();
-    const expiredAttachments = await ctx.runQuery(
-      internal.securityOps.listExpiredAttachmentsInternal,
-      {
-        now,
-      },
-    );
-
-    let processedCount = 0;
-
-    for (const attachment of expiredAttachments) {
-      await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
-        storageId: attachment.storageId,
-      });
-      if (attachment.extractedTextStorageId) {
-        await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
-          storageId: attachment.extractedTextStorageId,
-        });
-      }
-
-      await ctx.runMutation(internal.agentChat.deleteAttachmentStorageInternal, {
-        attachmentId: attachment._id,
-      });
-      processedCount += 1;
-    }
-
-    await ctx.runMutation(internal.securityOps.recordRetentionJob, {
-      details: processedCount > 0 ? `Purged ${processedCount} expired attachments` : undefined,
-      jobKind: 'attachment_purge',
-      processedCount,
-      status: 'success',
-    });
-
+    await ctx.runAction(internal.retention.purgeExpiredTemporaryArtifacts, {});
     return null;
   },
 });
@@ -334,6 +302,7 @@ export const recordRetentionJob = internalMutation({
     details: v.optional(v.string()),
     jobKind: v.union(
       v.literal('attachment_purge'),
+      v.literal('phi_record_purge'),
       v.literal('quarantine_cleanup'),
       v.literal('temporary_artifact_purge'),
     ),

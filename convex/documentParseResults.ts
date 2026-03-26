@@ -6,7 +6,7 @@ import {
   getDocumentParseResultContentType,
   type DocumentParseKind,
 } from '../src/lib/shared/storage-service-contract';
-import { deleteStorageObject, getQuarantineObject } from './lib/storageS3';
+import { deleteStorageObject, getQuarantineObject } from './lib/storageS3Control';
 
 type ParsedPdfImage = {
   dataUrl: string;

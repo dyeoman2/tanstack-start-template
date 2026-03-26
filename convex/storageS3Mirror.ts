@@ -6,7 +6,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
-import { deleteStorageObject, listStorageObjects, putMirrorObject } from './lib/storageS3';
+import { deleteStorageObject, listStorageObjects, putMirrorObject } from './lib/storageS3Control';
 import { buildMirrorStorageKey } from './storageS3Primary';
 import type { FinalizeUploadArgs } from './storageTypes';
 

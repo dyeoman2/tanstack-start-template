@@ -34,6 +34,7 @@ describe('parseSetupDrArgs', () => {
         '--json',
       ]),
     ).toEqual({
+      ackSecretTier: false,
       domain: 'example.com',
       githubRepo: 'octo/demo',
       help: false,
@@ -151,8 +152,8 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
             'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-mirror',
           AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
           STORAGE_BROKER_URL: 'https://broker.example.com',
-          STORAGE_BROKER_ACCESS_KEY_ID: 'AKIAEXAMPLE',
-          STORAGE_BROKER_SECRET_ACCESS_KEY: 'broker-secret-key',
+          STORAGE_BROKER_EDGE_ASSERTION_SECRET: 'edge-secret',
+          STORAGE_BROKER_CONTROL_ASSERTION_SECRET: 'control-secret',
           CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: 'decision-secret',
           CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: 'document-secret',
           CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: 'inspection-secret',

@@ -3,6 +3,7 @@ import { CONVEX_STORAGE_RUNTIME_ENV_NAMES } from './storage-env-contract';
 export type DrHostnameStrategy = 'custom-domain' | 'provider-hostnames';
 
 export type DrSetupFlags = {
+  ackSecretTier: boolean;
   domain?: string;
   githubRepo?: string;
   help: boolean;
@@ -29,6 +30,7 @@ function readFlagValue(argv: readonly string[], index: number, flag: string) {
 
 export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
   const flags: DrSetupFlags = {
+    ackSecretTier: false,
     help: false,
     json: false,
     plan: false,
@@ -45,6 +47,9 @@ export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
       case '--yes':
       case '--non-interactive':
         flags.yes = true;
+        break;
+      case '--ack-secret-tier':
+        flags.ackSecretTier = true;
         break;
       case '--help':
       case '-h':

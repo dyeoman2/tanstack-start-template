@@ -23,6 +23,11 @@ import { checkAuditArchiveRuntimeEnv, checkStorageRuntimeEnv } from './lib/deplo
 import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
 import { checkSnsEmailSubscriptionConfirmed } from './lib/provider-preflight';
 import { buildStorageStackName } from './lib/storage-env-contract';
+import {
+  getSecretTierAcknowledgmentDetail,
+  hasSecretTierAcknowledgment,
+  validateSecretTierDocumentation,
+} from './lib/secret-tier';
 
 const REQUIRED_NETLIFY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -103,6 +108,42 @@ function checkRequiredEnvPresence(
     detail: `${input.key} missing`,
   });
   return input.missingStatus !== 'fail';
+}
+
+function checkSecretTierDocumentationPresence(
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+) {
+  const result = validateSecretTierDocumentation(process.cwd());
+  checks.push({
+    check: 'Secret-tier Convex posture docs',
+    detail: result.detail,
+    status: result.ok ? 'pass' : 'fail',
+  });
+  console.log(`${result.ok ? '✅' : '❌'} ${result.detail}`);
+  return result.ok;
+}
+
+function checkProdOperatorEnvDeployKeyStorage(
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+  prodOperatorEnv: Record<string, string>,
+) {
+  if (!(prodOperatorEnv.CONVEX_DEPLOY_KEY ?? '').trim()) {
+    checks.push({
+      check: 'CONVEX_DEPLOY_KEY not stored in .env.prod',
+      status: 'pass',
+    });
+    console.log('✅ .env.prod does not store CONVEX_DEPLOY_KEY');
+    return true;
+  }
+
+  checks.push({
+    check: 'CONVEX_DEPLOY_KEY not stored in .env.prod',
+    detail:
+      'Remove CONVEX_DEPLOY_KEY from .env.prod and rely on named operator access or CI secrets.',
+    status: 'fail',
+  });
+  console.log('❌ .env.prod stores CONVEX_DEPLOY_KEY');
+  return false;
 }
 
 function printUsage() {
@@ -296,6 +337,8 @@ function main() {
 
   if (prod) {
     const prodOperatorEnv = loadEnvFileMap(join(process.cwd(), '.env.prod'));
+    ok = checkSecretTierDocumentationPresence(checks) && ok;
+    ok = checkProdOperatorEnvDeployKeyStorage(checks, prodOperatorEnv) && ok;
     if (process.env.CONVEX_DEPLOY_KEY?.trim()) {
       console.log('✅ CONVEX_DEPLOY_KEY is set');
       checks.push({ check: 'CONVEX_DEPLOY_KEY set', status: 'pass' });
@@ -324,6 +367,17 @@ function main() {
       convexProdEnvOutput = convexEnvList(true);
       console.log('✅ Convex CLI: production env list');
       checks.push({ check: 'Convex production env list', status: 'pass' });
+      const acknowledged = hasSecretTierAcknowledgment(process.argv, process.env);
+      checks.push({
+        check: 'Secret-tier production acknowledgment',
+        detail: acknowledged
+          ? 'Current run explicitly acknowledges secret-tier production access.'
+          : getSecretTierAcknowledgmentDetail(),
+        status: acknowledged ? 'pass' : 'warn',
+      });
+      console.log(
+        `${acknowledged ? '✅' : '⚠️ '} ${acknowledged ? 'Current run explicitly acknowledges secret-tier production access.' : getSecretTierAcknowledgmentDetail()}`,
+      );
     } catch {
       console.log('❌ Convex production env list failed');
       console.log('   Confirm deployment access (e.g. CONVEX_DEPLOY_KEY / team membership).');

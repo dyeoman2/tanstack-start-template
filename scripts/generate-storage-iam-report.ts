@@ -71,6 +71,10 @@ function loadSynthTemplate(options: GenerateOptions = {}) {
     AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET:
       process.env.AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET ?? 'inspection-secret',
     AWS_FILE_SERVE_SIGNING_SECRET: process.env.AWS_FILE_SERVE_SIGNING_SECRET ?? 'file-serve-secret',
+    AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET:
+      process.env.AWS_STORAGE_BROKER_CONTROL_ASSERTION_SECRET ?? 'control-broker-secret',
+    AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET:
+      process.env.AWS_STORAGE_BROKER_EDGE_ASSERTION_SECRET ?? 'edge-broker-secret',
     AWS_S3_QUARANTINE_BUCKET_NAME:
       process.env.AWS_S3_QUARANTINE_BUCKET_NAME ?? `${projectSlug}-${stage}-quarantine`,
     AWS_S3_CLEAN_BUCKET_NAME:

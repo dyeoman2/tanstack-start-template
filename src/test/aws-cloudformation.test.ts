@@ -6,10 +6,13 @@ describe('parseStackOutputs', () => {
     expect(
       parseStackOutputs([
         { OutputKey: 'StorageBrokerRuntimeUrl', OutputValue: 'https://broker.example.com' },
-        { OutputKey: 'StorageBrokerAccessKeyId', OutputValue: 'AKIAEXAMPLE' },
+        {
+          OutputKey: 'StorageBrokerEdgeInvokeRoleArn',
+          OutputValue: 'arn:aws:iam::123456789012:role/storage-edge',
+        },
       ]),
     ).toEqual({
-      StorageBrokerAccessKeyId: 'AKIAEXAMPLE',
+      StorageBrokerEdgeInvokeRoleArn: 'arn:aws:iam::123456789012:role/storage-edge',
       StorageBrokerRuntimeUrl: 'https://broker.example.com',
     });
   });

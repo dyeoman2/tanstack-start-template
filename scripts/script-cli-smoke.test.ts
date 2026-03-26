@@ -18,6 +18,12 @@ describe('script cli smoke', () => {
     expect(result.stdout).toContain('Usage: pnpm run setup:prod');
   });
 
+  it('rejects setup:prod mutation without secret-tier acknowledgment', () => {
+    const result = runTsxScript(['scripts/setup-prod.ts', '--yes', '--json']);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('secret-tier production access');
+  });
+
   it('prints plan json for setup:prod', { timeout: 60000 }, () => {
     const result = runTsxScript(['scripts/setup-prod.ts', '--plan', '--json']);
     expect(result.status).toBe(0);
@@ -32,10 +38,28 @@ describe('script cli smoke', () => {
     expect(result.stdout).toContain('Usage: pnpm run dr:setup');
   });
 
+  it('rejects dr:setup mutation without secret-tier acknowledgment', () => {
+    const result = runTsxScript(['scripts/setup-dr.ts', '--yes', '--json']);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('secret-tier production access');
+  });
+
   it('prints help for audit-archive:setup', () => {
     const result = runTsxScript(['scripts/setup-audit-archive.ts', '--help']);
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Usage: pnpm run audit-archive:setup');
+  });
+
+  it('rejects audit-archive:setup --prod mutation without secret-tier acknowledgment', () => {
+    const result = runTsxScript(['scripts/setup-audit-archive.ts', '--prod', '--yes', '--json']);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('secret-tier production access');
+  });
+
+  it('rejects storage:setup:prod mutation without secret-tier acknowledgment', () => {
+    const result = runTsxScript(['scripts/setup-storage-prod.ts', '--yes', '--json']);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('secret-tier production access');
   });
 
   it('prints help for aws:destroy:all', () => {

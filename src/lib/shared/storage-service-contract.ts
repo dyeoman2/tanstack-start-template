@@ -1,11 +1,26 @@
 export type StorageBucketKind = 'clean' | 'mirror' | 'quarantine' | 'rejected';
 export type DocumentParseKind = 'chat_document_extract' | 'pdf_parse';
+export type StorageBrokerTrustTier = 'control' | 'edge';
 
 export type StorageServiceConfig = {
   baseUrl: string | null;
-  accessKeyId: string | null;
-  secretAccessKey: string | null;
-  sessionToken: string | null;
+  controlAssertionSecret: string | null;
+  edgeAssertionSecret: string | null;
+};
+
+export type StorageBrokerSessionRequest = {
+  expiresAt: number;
+  issuedAt: number;
+  nonce: string;
+  signature: string;
+  tier: StorageBrokerTrustTier;
+};
+
+export type StorageBrokerSessionResponse = {
+  accessKeyId: string;
+  expiresAt: number;
+  secretAccessKey: string;
+  sessionToken: string;
 };
 
 export type StorageServiceObjectRecord = {
