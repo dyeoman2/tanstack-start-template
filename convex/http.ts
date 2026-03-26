@@ -7,7 +7,6 @@ import { resend } from './emails';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { parseDocumentResultWebhookPayload } from '../src/lib/shared/storage-webhook-payload';
 import { verifyStorageWebhookSignatureWithSecrets } from '../src/lib/server/storage-webhook-signature';
-import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
 import {
   applyStorageInspectionRequest,
@@ -19,18 +18,9 @@ import {
   applyGuardDutyFinding,
   parseGuardDutyWebhookPayload,
 } from './storageWebhook';
+import { handleFileServeRequest } from './fileServeHttp';
 
 const http = httpRouter();
-
-type BetterAuthHttpSession = {
-  session?: {
-    id?: string | null;
-    userId?: string | null;
-  } | null;
-  user?: {
-    id?: string | null;
-  } | null;
-} | null;
 
 http.route({
   path: '/.well-known/openid-configuration',
@@ -206,79 +196,7 @@ http.route({
 http.route({
   path: '/api/files/serve',
   method: 'GET',
-  handler: httpAction(async (ctx, request) => {
-    const url = new URL(request.url);
-    const ticketId = url.searchParams.get('ticket');
-    const expiresAtParam = url.searchParams.get('exp');
-    const signature = url.searchParams.get('sig');
-    const userAgent = request.headers.get('user-agent');
-
-    if (!expiresAtParam || !signature || !ticketId) {
-      return new Response('Missing required file serve parameters.', { status: 400 });
-    }
-
-    const expiresAt = Number.parseInt(expiresAtParam, 10);
-    const auth = createAuth(ctx);
-    const sessionResult = (await auth.api.getSession({
-      headers: request.headers,
-      query: {
-        disableCookieCache: true,
-      },
-    })) as BetterAuthHttpSession;
-    const authenticatedSessionId =
-      typeof sessionResult?.session?.id === 'string' ? sessionResult.session.id : null;
-    const authenticatedUserId =
-      typeof sessionResult?.session?.userId === 'string'
-        ? sessionResult.session.userId
-        : typeof sessionResult?.user?.id === 'string'
-          ? sessionResult.user.id
-          : null;
-
-    if (!authenticatedSessionId || !authenticatedUserId) {
-      await recordFileAccessRedeemFailure(ctx, {
-        authenticatedSessionId,
-        authenticatedUserId,
-        errorMessage: 'Authentication required to redeem a file access ticket.',
-        expiresAt,
-        requestIpAddress: null,
-        requestUserAgent: userAgent,
-        ticketId,
-      }).catch(() => undefined);
-
-      return new Response('Authentication required to redeem a file access ticket.', {
-        status: 401,
-      });
-    }
-
-    try {
-      const redirect = await redeemFileAccessTicketOrThrow(ctx, {
-        authenticatedSessionId,
-        authenticatedUserId,
-        expiresAt,
-        requestIpAddress: null,
-        requestUserAgent: userAgent,
-        signature,
-        ticketId,
-      });
-      return Response.redirect(redirect.url, 302);
-    } catch (error) {
-      await recordFileAccessRedeemFailure(ctx, {
-        authenticatedSessionId,
-        authenticatedUserId,
-        errorMessage:
-          error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
-        expiresAt,
-        requestIpAddress: null,
-        requestUserAgent: userAgent,
-        ticketId,
-      }).catch(() => undefined);
-
-      return new Response(
-        error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
-        { status: 403 },
-      );
-    }
-  }),
+  handler: httpAction(async (ctx, request) => await handleFileServeRequest(ctx, request)),
 });
 
 export default http;

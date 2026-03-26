@@ -45,6 +45,7 @@ import {
   reviewTaskResultTypeValidator,
   reviewTaskStatusValidator,
 } from './lib/security/validators';
+import { requestAuditContextValidator } from './lib/requestAuditContext';
 
 function buildPolicyReviewDatePatch(args: { reviewedAt: number; validUntil: number }) {
   return {
@@ -555,6 +556,7 @@ export const refreshReviewRunAutomation = siteAdminAction({
 
 export const finalizeReviewRun = siteAdminAction({
   args: {
+    requestContext: v.optional(requestAuditContextValidator),
     reviewRunId: v.id('reviewRuns'),
   },
   returns: v.union(reviewRunDetailValidator, v.null()),

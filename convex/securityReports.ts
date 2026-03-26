@@ -34,6 +34,10 @@ import {
 import type { Doc } from './_generated/dataModel';
 import { throwConvexError } from './auth/errors';
 import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
+import {
+  requestAuditContextValidator,
+  resolveAuditRequestContext,
+} from './lib/requestAuditContext';
 
 function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
   return {
@@ -106,11 +110,16 @@ export const reviewEvidenceReport = mutation({
     customerSummary: v.optional(v.string()),
     id: v.id('evidenceReports'),
     internalNotes: v.optional(v.string()),
+    requestContext: v.optional(requestAuditContextValidator),
     reviewStatus: v.union(v.literal('reviewed'), v.literal('needs_follow_up')),
   },
   returns: evidenceReportRecordValidator,
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: currentUser.authSession,
+    });
     const report = await ctx.db.get(args.id);
     if (!report) {
       throwConvexError('NOT_FOUND', 'Evidence report not found');
@@ -161,6 +170,7 @@ export const reviewEvidenceReport = mutation({
       severity: args.reviewStatus === 'reviewed' ? 'info' : 'warning',
       sourceSurface: 'admin.security',
       userId: currentUser.authUserId,
+      ...auditRequestContext,
     });
 
     const updated = await ctx.db.get(args.id);
@@ -253,6 +263,7 @@ export const reviewSecurityVendor = mutation({
 export const exportEvidenceReport = action({
   args: {
     id: v.id('evidenceReports'),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: evidenceReportValidator,
   handler: exportEvidenceReportHandler,
@@ -272,6 +283,7 @@ export const getEvidenceReportInternal = internalQuery({
 export const generateEvidenceReport = action({
   args: {
     reportKind: v.optional(evidenceReportKindValidator),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: evidenceReportValidator,
   handler: generateEvidenceReportHandler,

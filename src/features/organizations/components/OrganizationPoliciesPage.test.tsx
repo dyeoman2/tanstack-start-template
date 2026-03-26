@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationPoliciesPage } from './OrganizationPoliciesPage';
 
 const {
+  applyHoldMock,
+  releaseHoldMock,
   routerInvalidateMock,
   showToastMock,
   useQueryMock,
@@ -12,6 +14,8 @@ const {
   notifyMock,
   locationMock,
 } = vi.hoisted(() => ({
+  applyHoldMock: vi.fn(),
+  releaseHoldMock: vi.fn(),
   routerInvalidateMock: vi.fn(),
   showToastMock: vi.fn(),
   useQueryMock: vi.fn(),
@@ -48,6 +52,8 @@ vi.mock('~/features/auth/auth-client', () => ({
 }));
 
 vi.mock('~/features/organizations/server/organization-management', () => ({
+  applyOrganizationLegalHoldServerFn: (...args: unknown[]) => applyHoldMock(...args),
+  releaseOrganizationLegalHoldServerFn: (...args: unknown[]) => releaseHoldMock(...args),
   updateOrganizationPoliciesServerFn: (...args: unknown[]) => updatePoliciesMock(...args),
 }));
 
@@ -62,9 +68,8 @@ vi.mock('~/features/organizations/components/OrganizationWorkspaceTabs', () => (
 }));
 
 describe('OrganizationPoliciesPage', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    useQueryMock.mockReturnValue({
+  function buildSettingsResponse() {
+    return {
       organization: {
         id: 'org-1',
         slug: 'cottage-hospital',
@@ -98,11 +103,33 @@ describe('OrganizationPoliciesPage', () => {
         enterpriseProviderKey: null,
         enterpriseProtocol: null,
         allowBreakGlassPasswordLogin: true,
+        dataRetentionDays: 30,
       },
       isMember: true,
       viewerRole: 'site-admin' as const,
       canManage: true,
+    };
+  }
+
+  function mockPageQueries(legalHold: unknown = null) {
+    const settingsResponse = buildSettingsResponse();
+    let callCount = 0;
+    useQueryMock.mockImplementation(() => {
+      callCount += 1;
+      const position = (callCount - 1) % 3;
+      if (position === 0) {
+        return settingsResponse;
+      }
+      if (position === 1) {
+        return undefined;
+      }
+      return legalHold;
     });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPageQueries(null);
   });
 
   it('updates organization policies from the dedicated page', async () => {
@@ -137,6 +164,62 @@ describe('OrganizationPoliciesPage', () => {
     expect(notifyMock).toHaveBeenCalledWith('$activeOrgSignal');
     expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
+    expect(routerInvalidateMock).toHaveBeenCalled();
+    expect(
+      screen.getAllByText(/does not auto-delete primary chats or messages/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('applies an organization legal hold from the policies page', async () => {
+    const user = userEvent.setup();
+    applyHoldMock.mockResolvedValueOnce({ success: true });
+    mockPageQueries(null);
+
+    render(<OrganizationPoliciesPage slug="cottage-hospital" />);
+
+    fireEvent.change(screen.getByLabelText(/hold reason/i), {
+      target: { value: 'Preserve records for pending litigation' },
+    });
+    await user.click(screen.getByRole('button', { name: /apply hold/i }));
+
+    await waitFor(() => {
+      expect(applyHoldMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          reason: 'Preserve records for pending litigation',
+        },
+      });
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Retention hold applied.', 'success');
+    expect(routerInvalidateMock).toHaveBeenCalled();
+  });
+
+  it('releases an active organization legal hold from the policies page', async () => {
+    const user = userEvent.setup();
+    releaseHoldMock.mockResolvedValueOnce({ success: true });
+    mockPageQueries({
+      id: 'hold-1',
+      organizationId: 'org-1',
+      reason: 'Preserve records for pending litigation',
+      status: 'active',
+      openedAt: 1_710_000_000_000,
+      openedByUserId: 'user-1',
+      releasedAt: null,
+      releasedByUserId: null,
+    });
+
+    render(<OrganizationPoliciesPage slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('button', { name: /release hold/i }));
+
+    await waitFor(() => {
+      expect(releaseHoldMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+        },
+      });
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Retention hold released.', 'success');
     expect(routerInvalidateMock).toHaveBeenCalled();
   });
 });

@@ -29,6 +29,7 @@ import { AdminSecurityControlsTab } from '~/features/security/components/tabs/Ad
 import { CONTROL_TABLE_SORT_FIELDS } from '~/features/security/constants';
 import { useSecurityControlTable } from '~/features/security/hooks/useSecurityControlTable';
 import type { SecurityControlsSearch } from '~/features/security/search';
+import { createSignedServeUrlServerFn } from '~/features/security/server/file-serving';
 import type {
   EvidenceReviewDueIntervalMonths,
   EvidenceSource,
@@ -79,7 +80,6 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
     api.securityWorkspace.finalizeSecurityControlEvidenceUpload,
   );
   const renewControlEvidence = useMutation(api.securityWorkspace.renewSecurityControlEvidence);
-  const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
   const controls = useMemo(() => controlWorkspaces ?? [], [controlWorkspaces]);
@@ -348,8 +348,10 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
       }
       if (evidence.storageId) {
         try {
-          const resolved = await createSignedServeUrl({
-            storageId: evidence.storageId,
+          const resolved = await createSignedServeUrlServerFn({
+            data: {
+              storageId: evidence.storageId,
+            },
           });
           window.open(resolved.url, '_blank', 'noopener,noreferrer');
         } catch (error) {
@@ -360,7 +362,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         }
       }
     },
-    [createSignedServeUrl, showToast],
+    [showToast],
   );
 
   const handleArchiveEvidence = useCallback(

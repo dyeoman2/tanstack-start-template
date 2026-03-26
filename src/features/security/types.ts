@@ -428,6 +428,7 @@ export type SecurityFindingListItem = {
   findingKey: string;
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'
     | 'release_security_validation';

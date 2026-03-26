@@ -29,14 +29,24 @@ import {
 import { SECURITY_SCOPE_ID, SECURITY_SCOPE_TYPE } from './validators';
 import { anyApi } from 'convex/server';
 import { recordSiteAdminAuditEvent } from '../auditEmitters';
+import { resolveAuditRequestContext } from '../requestAuditContext';
 
 export async function exportEvidenceReportHandler(
   ctx: ActionCtx,
   args: {
     id: Id<'evidenceReports'>;
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: currentUser.authSession,
+  });
   const report = await ctx.runQuery(anyApi.securityReports.getEvidenceReportInternal, {
     id: args.id,
   });
@@ -112,6 +122,7 @@ export async function exportEvidenceReportHandler(
     severity: 'info',
     sourceSurface: 'admin.security',
     userId: currentUser.authUserId,
+    ...auditRequestContext,
   });
 
   return {
@@ -143,9 +154,18 @@ export async function generateEvidenceReportHandler(
       | 'findings_snapshot'
       | 'vendor_posture_snapshot'
       | 'control_workspace_snapshot';
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: currentUser.authSession,
+  });
   await ctx.runMutation(anyApi.securityOps.syncCurrentSecurityFindingsInternal, {
     actorUserId: currentUser.authUserId,
   });
@@ -424,6 +444,7 @@ export async function generateEvidenceReportHandler(
     severity: 'info',
     sourceSurface: 'admin.security',
     userId: currentUser.authUserId,
+    ...auditRequestContext,
   });
 
   return {
@@ -643,9 +664,18 @@ export async function finalizeReviewRunHandler(
   ctx: ActionCtx,
   args: {
     reviewRunId: Id<'reviewRuns'>;
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: currentUser.authSession,
+  });
   const detail = (await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {
     reviewRunId: args.reviewRunId,
   })) as {
@@ -720,6 +750,7 @@ export async function finalizeReviewRunHandler(
   });
   await exportEvidenceReportHandler(ctx, {
     id: reportId,
+    requestContext: args.requestContext,
   });
   await ctx.runMutation(anyApi.securityReviews.storeReviewRunFinalization, {
     finalReportId: reportId,
@@ -745,6 +776,7 @@ export async function finalizeReviewRunHandler(
     severity: 'info',
     sourceSurface: REVIEW_RUN_SOURCE_SURFACE,
     userId: currentUser.authUserId,
+    ...auditRequestContext,
   });
 
   return await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {

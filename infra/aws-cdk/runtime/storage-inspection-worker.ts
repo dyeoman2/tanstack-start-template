@@ -2,7 +2,10 @@
 
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getStorageInspectionWorkerRuntimeConfig } from '../../../src/lib/server/storage-service-env';
-import { inspectStorageUploadBytes } from '../../../src/lib/server/storage-inspection-policy';
+import {
+  inspectStorageUploadBytes,
+  resolveStorageInspectionPolicy,
+} from '../../../src/lib/server/storage-inspection-policy';
 import { createStorageWebhookSignature } from '../../../src/lib/server/storage-webhook-signature';
 import type { StorageInspectionQueueMessage } from '../../../src/lib/shared/storage-service-contract';
 
@@ -73,12 +76,17 @@ export async function handler(event: SqsEvent) {
       continue;
     }
 
+    const policy = resolveStorageInspectionPolicy({
+      defaultMaxBytes: payload.maxBytes || config.defaultMaxBytes,
+      sourceType: payload.sourceType,
+    });
     const bytes = await readObjectBytes(client, payload.bucket, payload.key);
     const result = await inspectStorageUploadBytes({
-      allowedKinds: ['document', 'image', 'pdf'],
+      allowedDocumentFormats: policy.allowedDocumentFormats,
+      allowedKinds: policy.allowedKinds,
       bytes,
       fileName: payload.fileName,
-      maxBytes: payload.maxBytes || config.defaultMaxBytes,
+      maxBytes: policy.maxBytes,
       mimeType: payload.mimeType,
       sha256Hex: payload.sha256Hex,
     });

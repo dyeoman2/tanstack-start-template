@@ -274,6 +274,7 @@ export const addSecurityControlEvidenceLink = mutation({
       lifecycleStatus: 'active',
       organizationId: currentUser.activeOrganizationId ?? undefined,
       reviewStatus: 'pending',
+      session: currentUser.authSession,
     });
     return evidenceId;
   },
@@ -375,6 +376,7 @@ export const addSecurityControlEvidenceNote = mutation({
       lifecycleStatus: 'active',
       organizationId: currentUser.activeOrganizationId ?? undefined,
       reviewStatus: 'pending',
+      session: currentUser.authSession,
     });
     return evidenceId;
   },
@@ -422,6 +424,7 @@ export const reviewSecurityControlEvidence = mutation({
         lifecycleStatus: evidence.lifecycleStatus ?? 'active',
         organizationId: currentUser.activeOrganizationId ?? undefined,
         reviewStatus: 'reviewed',
+        session: currentUser.authSession,
       });
     }
     return null;

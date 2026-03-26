@@ -16,6 +16,10 @@ import { throwConvexError } from './auth/errors';
 import { getOpenRouterProvider, getOpenRouterProviderOptions } from './lib/agentChat';
 import { recordUserAuditEvent } from './lib/auditEmitters';
 import { findBetterAuthMember, findBetterAuthOrganizationById } from './lib/betterAuth';
+import {
+  requestAuditContextValidator,
+  resolveAuditRequestContext,
+} from './lib/requestAuditContext';
 import { organizationDomainVerificationResultValidator } from './lib/returnValidators';
 
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
@@ -268,9 +272,18 @@ async function verifyOrganizationDomainHandler(
   args: {
     organizationId: string;
     domainId: Doc<'organizationDomains'>['_id'];
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
   },
 ): Promise<OrganizationDomainVerificationResult> {
   const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: user.authSession,
+  });
   if (!(await findBetterAuthOrganizationById(ctx, args.organizationId))) {
     throwConvexError('NOT_FOUND', 'Organization not found');
   }
@@ -330,6 +343,7 @@ async function verifyOrganizationDomainHandler(
         organizationId: args.organizationId,
         sourceSurface: 'organization.domain_verification',
         userId: user.authUserId,
+        ...auditRequestContext,
       });
 
       return {
@@ -367,6 +381,7 @@ async function verifyOrganizationDomainHandler(
       organizationId: args.organizationId,
       sourceSurface: 'organization.domain_verification',
       userId: user.authUserId,
+      ...auditRequestContext,
     });
 
     return {
@@ -410,6 +425,7 @@ async function verifyOrganizationDomainHandler(
     organizationId: args.organizationId,
     sourceSurface: 'organization.domain_verification',
     userId: user.authUserId,
+    ...auditRequestContext,
   });
 
   return {
@@ -424,6 +440,7 @@ export const verifyOrganizationDomain = action({
   args: {
     organizationId: v.string(),
     domainId: v.id('organizationDomains'),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: organizationDomainVerificationResultValidator,
   handler: verifyOrganizationDomainHandler,

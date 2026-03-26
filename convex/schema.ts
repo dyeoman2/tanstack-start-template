@@ -21,11 +21,16 @@ const storageLifecycleInspectionStatusValidator = v.union(
   v.literal('FAILED'),
 );
 const storageLifecycleInspectionReasonValidator = v.union(
+  v.literal('archive_encrypted'),
+  v.literal('archive_suspicious_structure'),
   v.literal('checksum_mismatch'),
   v.literal('file_signature_mismatch'),
   v.literal('inspection_error'),
   v.literal('office_macro_enabled'),
   v.literal('office_password_protected'),
+  v.literal('ooxml_embedded_content'),
+  v.literal('ooxml_external_relationship'),
+  v.literal('ooxml_malformed'),
   v.literal('pdf_active_content'),
   v.literal('pdf_embedded_files'),
   v.literal('pdf_encrypted'),
@@ -790,6 +795,7 @@ export default defineSchema({
     findingKey: v.string(),
     findingType: v.union(
       v.literal('audit_integrity_failures'),
+      v.literal('audit_request_context_gaps'),
       v.literal('document_scan_quarantines'),
       v.literal('document_scan_rejections'),
       v.literal('release_security_validation'),

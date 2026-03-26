@@ -1,3 +1,5 @@
+'use node';
+
 import type { AllowedFileKind, StorageInspectionReason } from './storage-inspection-policy';
 import { inspectStorageUploadBytes } from './storage-inspection-policy';
 

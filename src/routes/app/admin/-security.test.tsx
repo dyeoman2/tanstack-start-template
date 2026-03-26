@@ -20,6 +20,11 @@ const {
   useMutationMock,
   useConvexMock,
   showToastMock,
+  exportEvidenceReportServerFnMock,
+  generateEvidenceReportServerFnMock,
+  reviewEvidenceReportServerFnMock,
+  createSignedServeUrlServerFnMock,
+  finalizeReviewRunServerFnMock,
 } = vi.hoisted(() => ({
   useSearchMock: vi.fn(),
   useLocationMock: vi.fn(),
@@ -29,6 +34,11 @@ const {
   useMutationMock: vi.fn(),
   useConvexMock: vi.fn(),
   showToastMock: vi.fn(),
+  exportEvidenceReportServerFnMock: vi.fn(),
+  generateEvidenceReportServerFnMock: vi.fn(),
+  reviewEvidenceReportServerFnMock: vi.fn(),
+  createSignedServeUrlServerFnMock: vi.fn(),
+  finalizeReviewRunServerFnMock: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-router', () => ({
@@ -99,6 +109,21 @@ vi.mock('~/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('~/features/security/server/security-reports', () => ({
+  exportEvidenceReportServerFn: (...args: unknown[]) => exportEvidenceReportServerFnMock(...args),
+  generateEvidenceReportServerFn: (...args: unknown[]) =>
+    generateEvidenceReportServerFnMock(...args),
+  reviewEvidenceReportServerFn: (...args: unknown[]) => reviewEvidenceReportServerFnMock(...args),
+}));
+
+vi.mock('~/features/security/server/file-serving', () => ({
+  createSignedServeUrlServerFn: (...args: unknown[]) => createSignedServeUrlServerFnMock(...args),
+}));
+
+vi.mock('~/features/security/server/security-reviews', () => ({
+  finalizeReviewRunServerFn: (...args: unknown[]) => finalizeReviewRunServerFnMock(...args),
+}));
+
 type SearchState = {
   tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reports' | 'reviews';
   findingDisposition?:
@@ -111,6 +136,13 @@ type SearchState = {
   findingSearch?: string;
   findingSeverity?: 'all' | 'critical' | 'warning' | 'info';
   findingStatus?: 'all' | 'open' | 'resolved';
+  findingType?:
+    | 'all'
+    | 'audit_request_context_gaps'
+    | 'audit_integrity_failures'
+    | 'document_scan_quarantines'
+    | 'document_scan_rejections'
+    | 'release_security_validation';
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
   reportKind?:
@@ -146,6 +178,7 @@ const defaultSearch: SearchState = {
   findingSearch: '',
   findingSeverity: 'all',
   findingStatus: 'all',
+  findingType: 'all',
   policySearch: '',
   policySortBy: 'title',
   policySortOrder: 'asc',
@@ -792,6 +825,7 @@ function renderRoute() {
             findingSearch: search.findingSearch ?? '',
             findingSeverity: search.findingSeverity ?? 'all',
             findingStatus: search.findingStatus ?? 'all',
+            findingType: search.findingType ?? 'all',
             selectedFinding: search.selectedFinding,
           }}
         />
@@ -906,6 +940,11 @@ describe('Admin security route', () => {
     useMutationMock.mockReset();
     useQueryMock.mockReset();
     useConvexMock.mockReset();
+    exportEvidenceReportServerFnMock.mockReset();
+    generateEvidenceReportServerFnMock.mockReset();
+    reviewEvidenceReportServerFnMock.mockReset();
+    createSignedServeUrlServerFnMock.mockReset();
+    finalizeReviewRunServerFnMock.mockReset();
     useConvexMock.mockReturnValue({
       query: vi.fn(),
     });
@@ -914,26 +953,19 @@ describe('Admin security route', () => {
 
   it('generates evidence reports and submits trimmed review notes', async () => {
     const user = userEvent.setup();
-    const generateEvidenceReportMock = vi.fn().mockResolvedValue({
+    generateEvidenceReportServerFnMock.mockResolvedValue({
       id: 'report-generated',
       report: '{"status":"ok"}',
     });
-    const exportEvidenceReportMock = vi.fn().mockResolvedValue({
+    exportEvidenceReportServerFnMock.mockResolvedValue({
       report: '{"status":"exported"}',
     });
-    const reviewEvidenceReportMock = vi.fn().mockResolvedValue(undefined);
+    reviewEvidenceReportServerFnMock.mockResolvedValue(undefined);
 
     mockSecurityQueries({
       controls: [buildControl()],
       evidenceReports: [buildEvidenceReport()],
       auditReadiness: buildAuditReadiness(),
-    });
-    mockSecurityActions({
-      'securityReports:generateEvidenceReport': generateEvidenceReportMock,
-      'securityReports:exportEvidenceReport': exportEvidenceReportMock,
-    });
-    mockSecurityMutations({
-      'securityReports:reviewEvidenceReport': reviewEvidenceReportMock,
     });
 
     renderRoute();
@@ -941,8 +973,10 @@ describe('Admin security route', () => {
     await user.click(screen.getByRole('button', { name: /generate evidence report/i }));
 
     await waitFor(() => {
-      expect(generateEvidenceReportMock).toHaveBeenCalledWith({
-        reportKind: 'security_posture',
+      expect(generateEvidenceReportServerFnMock).toHaveBeenCalledWith({
+        data: {
+          reportKind: 'security_posture',
+        },
       });
     });
     expect(screen.getAllByText('{"status":"ok"}').length).toBeGreaterThan(0);
@@ -954,17 +988,23 @@ describe('Admin security route', () => {
     await user.click(screen.getAllByRole('button', { name: /needs follow-up/i }).at(-1)!);
 
     await waitFor(() => {
-      expect(reviewEvidenceReportMock).toHaveBeenCalledWith({
-        id: 'report-1',
-        internalNotes: 'needs deeper review',
-        reviewStatus: 'needs_follow_up',
+      expect(reviewEvidenceReportServerFnMock).toHaveBeenCalledWith({
+        data: {
+          id: 'report-1',
+          internalNotes: 'needs deeper review',
+          reviewStatus: 'needs_follow_up',
+        },
       });
     });
 
     await user.click(screen.getAllByRole('button', { name: /export bundle/i }).at(-1)!);
 
     await waitFor(() => {
-      expect(exportEvidenceReportMock).toHaveBeenCalledWith({ id: 'report-1' });
+      expect(exportEvidenceReportServerFnMock).toHaveBeenCalledWith({
+        data: {
+          id: 'report-1',
+        },
+      });
     });
     expect(screen.getAllByText('{"status":"exported"}').length).toBeGreaterThan(0);
   });
@@ -1451,7 +1491,6 @@ describe('Admin security route', () => {
   it('loads annual review actions in the reviews tab', async () => {
     const user = userEvent.setup();
     const refreshReviewRunAutomationMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
-    const finalizeReviewRunMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
     const createTriggeredReviewRunMock = vi.fn().mockResolvedValue(
       buildReviewRunSummary({
         id: 'triggered-review-1',
@@ -1472,7 +1511,6 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({
       'securityReviews:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
-      'securityReviews:finalizeReviewRun': finalizeReviewRunMock,
     });
     mockSecurityMutations({
       'securityReviews:createTriggeredReviewRun': createTriggeredReviewRunMock,

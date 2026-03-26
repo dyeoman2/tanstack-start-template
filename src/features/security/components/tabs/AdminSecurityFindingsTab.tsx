@@ -40,6 +40,21 @@ function formatFindingDisposition(disposition: SecurityFindingListItem['disposit
   }
 }
 
+function formatFindingType(findingType: SecurityFindingListItem['findingType']) {
+  switch (findingType) {
+    case 'audit_request_context_gaps':
+      return 'Request context gaps';
+    case 'audit_integrity_failures':
+      return 'Audit integrity';
+    case 'document_scan_quarantines':
+      return 'Scan quarantines';
+    case 'document_scan_rejections':
+      return 'Scan rejections';
+    case 'release_security_validation':
+      return 'Release validation';
+  }
+}
+
 function getFindingDispositionBadgeVariant(
   disposition: SecurityFindingListItem['disposition'],
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
@@ -62,6 +77,7 @@ export function AdminSecurityFindingsTab(props: {
   findingSearch: string;
   findingSeverityFilter: 'all' | SecurityFindingListItem['severity'];
   findingStatusFilter: 'all' | SecurityFindingListItem['status'];
+  findingTypeFilter: 'all' | SecurityFindingListItem['findingType'];
   findingCustomerSummaries: Record<string, string>;
   findingDispositions: Record<
     SecurityFindingListItem['findingKey'],
@@ -80,6 +96,7 @@ export function AdminSecurityFindingsTab(props: {
   onChangeFindingSearch: (value: string) => void;
   onChangeFindingSeverityFilter: (value: 'all' | SecurityFindingListItem['severity']) => void;
   onChangeFindingStatusFilter: (value: 'all' | SecurityFindingListItem['status']) => void;
+  onChangeFindingTypeFilter: (value: 'all' | SecurityFindingListItem['findingType']) => void;
   onOpenFinding: (findingKey: SecurityFindingListItem['findingKey']) => void;
   onOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
   onReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
@@ -116,7 +133,7 @@ export function AdminSecurityFindingsTab(props: {
         />
       </div>
 
-      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,0.7fr))]">
+      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.7fr))]">
         <Input
           value={props.findingSearch}
           onChange={(event) => {
@@ -175,6 +192,24 @@ export function AdminSecurityFindingsTab(props: {
             <SelectItem value="info">Info</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={props.findingTypeFilter}
+          onValueChange={(value: 'all' | SecurityFindingListItem['findingType']) => {
+            props.onChangeFindingTypeFilter(value);
+          }}
+        >
+          <SelectTrigger aria-label="Filter findings by type" className="bg-background">
+            <SelectValue placeholder="All finding types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All finding types</SelectItem>
+            <SelectItem value="audit_request_context_gaps">Request context gaps</SelectItem>
+            <SelectItem value="audit_integrity_failures">Audit integrity</SelectItem>
+            <SelectItem value="document_scan_quarantines">Scan quarantines</SelectItem>
+            <SelectItem value="document_scan_rejections">Scan rejections</SelectItem>
+            <SelectItem value="release_security_validation">Release validation</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-4">
@@ -204,6 +239,9 @@ export function AdminSecurityFindingsTab(props: {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-base font-semibold">{finding.title}</p>
+                            <Badge variant="outline">
+                              {formatFindingType(finding.findingType)}
+                            </Badge>
                             <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
                               {formatFindingSeverity(finding.severity)}
                             </Badge>

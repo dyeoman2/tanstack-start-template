@@ -6,6 +6,7 @@ const { createDownloadPresignedStorageUrlMock } = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/lib/server/env.server', () => ({
+  getRequiredBetterAuthUrl: vi.fn(() => 'https://app.example.com'),
   getStorageRuntimeConfig: vi.fn(() => ({
     fileServeSigningSecret: 'test-file-serve-secret',
   })),
@@ -114,6 +115,13 @@ describe('redeemFileAccessTicketOrThrow', () => {
       sessionId: 'session_123',
       userId: 'user_123',
     });
+    expect(
+      JSON.parse(String(runMutation.mock.calls[1]?.[1]?.metadata)) as Record<string, unknown>,
+    ).toMatchObject({
+      ipAddress: '198.51.100.10',
+      ticketId: 'ticket_123',
+      userAgent: 'Vitest Browser',
+    });
   });
 
   it('stops before redirect resolution when the authorized redemption mutation rejects', async () => {
@@ -183,7 +191,9 @@ describe('recordFileAccessRedeemFailure', () => {
       attemptedSessionId: 'session_999',
       attemptedUserId: 'user_999',
       error: 'File access ticket does not belong to the current user.',
+      ipAddress: '198.51.100.10',
       ticketId: 'ticket_123',
+      userAgent: 'Vitest Browser',
     });
   });
 });

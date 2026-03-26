@@ -17,6 +17,7 @@ import { SECURITY_METRICS_KEY } from './validators';
 import { v } from 'convex/values';
 import { buildVendorWorkspaceRows } from './vendors_core';
 import { recordSiteAdminAuditEvent, recordSystemAuditEvent } from '../auditEmitters';
+import { resolveAuditRequestContext } from '../requestAuditContext';
 
 const SEEDED_EVIDENCE_VALIDITY_MONTHS = 12 as const;
 
@@ -248,13 +249,26 @@ async function recordSecurityControlEvidenceAuditEvent(
     itemId: string;
     lifecycleStatus?: 'active' | 'archived' | 'superseded';
     organizationId?: string;
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
     replacedByEvidenceId?: string;
     reviewStatus?: 'pending' | 'reviewed' | null;
     renewedFromEvidenceId?: string;
+    session?: {
+      ipAddress?: string | null;
+      userAgent?: string | null;
+    } | null;
   },
 ) {
   const auditEventId = crypto.randomUUID();
   const createdAt = Date.now();
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: args.session,
+  });
 
   await recordSiteAdminAuditEvent(ctx, {
     actorUserId: args.actorUserId,
@@ -278,6 +292,7 @@ async function recordSecurityControlEvidenceAuditEvent(
     severity: 'info',
     sourceSurface: 'security_admin_controls',
     userId: args.actorUserId,
+    ...auditRequestContext,
   });
 
   await upsertSecurityControlEvidenceActivity(ctx, {
@@ -397,6 +412,7 @@ type SecurityFindingSnapshot = {
   findingKey: string;
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'
     | 'release_security_validation';
@@ -409,6 +425,22 @@ type SecurityFindingSnapshot = {
   status: 'open' | 'resolved';
   title: string;
 };
+
+const REQUEST_CONTEXT_MONITORED_AUDIT_EVENT_TYPES = new Set([
+  'admin_step_up_challenged',
+  'admin_user_sessions_viewed',
+  'audit_log_exported',
+  'directory_exported',
+  'domain_verification_failed',
+  'domain_verification_succeeded',
+  'evidence_report_exported',
+  'evidence_report_generated',
+  'evidence_report_reviewed',
+  'file_access_ticket_issued',
+  'organization_policy_updated',
+  'support_access_granted',
+  'support_access_revoked',
+]);
 
 function compareSecurityFindingSeverity(
   severity: 'info' | 'warning' | 'critical',
@@ -434,6 +466,7 @@ async function buildCurrentSecurityFindings(
     integrityFailures,
     latestIntegrityFailure,
     latestSuccessfulCheckpoint,
+    recentPrivilegedAuditEvents,
     releaseEvidenceRows,
   ] = await Promise.all([
     ctx.db
@@ -461,6 +494,11 @@ async function buildCurrentSecurityFindings(
       )
       .order('desc')
       .first(),
+    ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .take(500),
     ctx.db
       .query('securityControlEvidence')
       .withIndex('by_internal_control_id_and_item_id', (q) =>
@@ -541,6 +579,55 @@ async function buildCurrentSecurityFindings(
       lastObservedAt: metrics.lastDocumentScanAt ?? referenceTime,
     },
   ];
+  const requestContextGaps = recentPrivilegedAuditEvents.filter(
+    (event) =>
+      REQUEST_CONTEXT_MONITORED_AUDIT_EVENT_TYPES.has(event.eventType) &&
+      (!event.requestId || !event.ipAddress || !event.userAgent),
+  );
+  if (requestContextGaps.length > 0) {
+    const latestGap = [...requestContextGaps].sort(
+      (left, right) => right.recordedAt - left.recordedAt,
+    )[0];
+    const eventTypeCounts = requestContextGaps.reduce<Map<string, number>>((counts, event) => {
+      counts.set(event.eventType, (counts.get(event.eventType) ?? 0) + 1);
+      return counts;
+    }, new Map());
+    const eventSummary = Array.from(eventTypeCounts.entries())
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 3)
+      .map(([eventType, count]) => `${eventType} (${count})`)
+      .join(', ');
+
+    findings.push({
+      findingKey: 'audit_request_context_gaps',
+      findingType: 'audit_request_context_gaps',
+      title: 'Privileged audit request context monitoring',
+      description: `${requestContextGaps.length} recent privileged audit event${requestContextGaps.length === 1 ? '' : 's'} are missing request correlation metadata. Top affected event types: ${eventSummary}.`,
+      severity: 'warning',
+      status: 'open',
+      sourceType: 'audit_log',
+      sourceLabel: 'Privileged audit event request context',
+      sourceRecordId: latestGap?.id ?? null,
+      firstObservedAt:
+        requestContextGaps[requestContextGaps.length - 1]?.recordedAt ?? referenceTime,
+      lastObservedAt: latestGap?.recordedAt ?? referenceTime,
+    });
+  } else {
+    findings.push({
+      findingKey: 'audit_request_context_gaps',
+      findingType: 'audit_request_context_gaps',
+      title: 'Privileged audit request context monitoring',
+      description:
+        'Recent privileged audit events include requestId, IP address, and user agent metadata for the monitored admin, export, support, domain, and file-access workflows.',
+      severity: 'info',
+      status: 'resolved',
+      sourceType: 'audit_log',
+      sourceLabel: 'Privileged audit event request context',
+      sourceRecordId: null,
+      firstObservedAt: referenceTime,
+      lastObservedAt: referenceTime,
+    });
+  }
 
   const latestReleaseEvidence = [...releaseEvidenceRows]
     .filter(

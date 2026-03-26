@@ -590,6 +590,7 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
         requestContext,
       );
       await convexAuthReactStart.fetchAuthAction(api.admin.recordAdminUserSessionsViewed, {
+        requestContext,
         sessionCount: response.sessions.length,
         targetUserId: data.userId,
       });

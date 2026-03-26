@@ -47,6 +47,7 @@ import { Spinner } from '~/components/ui/spinner';
 import { useToast } from '~/components/ui/toast';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { getServerFunctionErrorMessage } from '~/features/organizations/lib/organization-session';
+import { verifyOrganizationDomainServerFn } from '~/features/organizations/server/organization-domains';
 import { cn } from '~/lib/utils';
 
 function getVerifyDomainErrorMessage(error: unknown) {
@@ -91,7 +92,6 @@ export function OrganizationDomainManagement({
   const regenerateDomainToken = useMutation(
     api.organizationManagement.regenerateOrganizationDomainToken,
   );
-  const verifyDomain = useAction(api.organizationDomains.verifyOrganizationDomain);
   const detectDnsProvider = useAction(api.organizationDomains.detectOrganizationDomainDnsProvider);
   const [domain, setDomain] = useState(userEmailDomain);
   const [error, setError] = useState<string | null>(null);
@@ -209,9 +209,11 @@ export function OrganizationDomainManagement({
     setPendingDomainId(domainId);
 
     try {
-      const result = await verifyDomain({
-        organizationId,
-        domainId,
+      const result = await verifyOrganizationDomainServerFn({
+        data: {
+          organizationId,
+          domainId,
+        },
       });
       await invalidateDomainQueries();
 

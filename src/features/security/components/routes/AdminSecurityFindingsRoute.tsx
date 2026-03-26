@@ -63,6 +63,13 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
       ) {
         return false;
       }
+      if (
+        props.search.findingType &&
+        props.search.findingType !== 'all' &&
+        finding.findingType !== props.search.findingType
+      ) {
+        return false;
+      }
       if (!searchTerm) {
         return true;
       }
@@ -87,6 +94,7 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
     props.search.findingSearch,
     props.search.findingSeverity,
     props.search.findingStatus,
+    props.search.findingType,
   ]);
   const selectedFinding = useMemo(
     () => allFindings?.find((entry) => entry.findingKey === props.search.selectedFinding) ?? null,
@@ -159,6 +167,7 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
         findingSearch={props.search.findingSearch}
         findingSeverityFilter={props.search.findingSeverity}
         findingStatusFilter={props.search.findingStatus}
+        findingTypeFilter={props.search.findingType ?? 'all'}
         findingCustomerSummaries={findingCustomerSummaries}
         findingDispositions={findingDispositions}
         findingNotes={findingNotes}
@@ -176,6 +185,9 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
         }}
         onChangeFindingStatusFilter={(findingStatus) => {
           updateFindingSearch({ findingStatus });
+        }}
+        onChangeFindingTypeFilter={(findingType) => {
+          updateFindingSearch({ findingType });
         }}
         onOpenFinding={(findingKey) => {
           updateFindingSearch({ selectedFinding: findingKey });

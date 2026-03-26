@@ -130,6 +130,7 @@ type EvidenceActivityDoc = {
 };
 
 type TableMap = {
+  auditLedgerEvents: Map<DocId, Record<string, unknown>>;
   securityControlChecklistItems: Map<DocId, ChecklistItemDoc>;
   securityControlEvidence: Map<DocId, SecurityEvidenceDoc>;
   securityControlEvidenceActivity: Map<DocId, EvidenceActivityDoc>;
@@ -142,11 +143,18 @@ function clone<T>(value: T): T {
 }
 
 function createSecurityDb(seed?: {
+  auditLedgerEvents?: Array<Record<string, unknown>>;
   checklistItems?: ChecklistItemDoc[];
   evidence?: SecurityEvidenceDoc[];
   evidenceActivity?: EvidenceActivityDoc[];
 }) {
   const tables: TableMap = {
+    auditLedgerEvents: new Map(
+      (seed?.auditLedgerEvents ?? []).map((doc, index) => [
+        String(doc._id ?? `auditLedgerEvents-${index + 1}`),
+        clone(doc),
+      ]),
+    ),
     securityControlChecklistItems: new Map(
       (seed?.checklistItems ?? []).map((doc) => [doc._id, clone(doc)]),
     ),
@@ -223,6 +231,9 @@ function createSecurityDb(seed?: {
                 },
                 async collect() {
                   return clone(matching);
+                },
+                async take(limit: number) {
+                  return clone(matching.slice(0, limit));
                 },
               };
             },
@@ -1359,6 +1370,23 @@ describe('audit evidence helpers', () => {
               };
             }
 
+            if (table === 'auditLedgerEvents') {
+              return {
+                order: () => ({
+                  take: async () => [
+                    {
+                      id: 'audit-gap-1',
+                      eventType: 'evidence_report_exported',
+                      recordedAt: 96,
+                      requestId: null,
+                      ipAddress: '203.0.113.10',
+                      userAgent: 'Vitest',
+                    },
+                  ],
+                }),
+              };
+            }
+
             if (table === 'securityFindings') {
               return {
                 unique: async () => {
@@ -1410,6 +1438,11 @@ describe('audit evidence helpers', () => {
     expect(
       result.some(
         (finding: (typeof result)[number]) => finding.findingKey === 'release_security_validation',
+      ),
+    ).toBe(true);
+    expect(
+      result.some(
+        (finding: (typeof result)[number]) => finding.findingKey === 'audit_request_context_gaps',
       ),
     ).toBe(true);
   });
@@ -1540,6 +1573,14 @@ describe('audit evidence helpers', () => {
                   chainId: 'primary',
                   headSequence: 0,
                   updatedAt: 95,
+                }),
+              };
+            }
+
+            if (table === 'auditLedgerEvents') {
+              return {
+                order: () => ({
+                  take: async () => [],
                 }),
               };
             }
@@ -1697,7 +1738,14 @@ describe('audit evidence helpers', () => {
         runMutation,
         runQuery,
       } as never,
-      { reportKind: 'audit_readiness' },
+      {
+        reportKind: 'audit_readiness',
+        requestContext: {
+          requestId: 'req-123',
+          ipAddress: '203.0.113.9',
+          userAgent: 'Vitest',
+        },
+      },
     );
 
     expect(result).toMatchObject({
@@ -1726,8 +1774,11 @@ describe('audit evidence helpers', () => {
     });
     expect(runMutation.mock.calls[2]?.[1]).toMatchObject({
       eventType: 'evidence_report_generated',
+      ipAddress: '203.0.113.9',
+      requestId: 'req-123',
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',
+      userAgent: 'Vitest',
     });
     expect(
       runQuery.mock.calls.some(
@@ -1768,7 +1819,14 @@ describe('audit evidence helpers', () => {
         runMutation,
         runQuery,
       } as never,
-      { id: 'report-1' as never },
+      {
+        id: 'report-1' as never,
+        requestContext: {
+          requestId: 'req-123',
+          ipAddress: '203.0.113.9',
+          userAgent: 'Vitest',
+        },
+      },
     );
 
     expect(result).toMatchObject({
@@ -1812,8 +1870,11 @@ describe('audit evidence helpers', () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
       eventType: 'evidence_report_exported',
+      ipAddress: '203.0.113.9',
+      requestId: 'req-123',
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',
+      userAgent: 'Vitest',
     });
     vi.restoreAllMocks();
     vi.useRealTimers();

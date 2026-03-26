@@ -6,6 +6,7 @@ import {
   FINDING_DISPOSITION_FILTER_VALUES,
   FINDING_SEVERITY_FILTER_VALUES,
   FINDING_STATUS_FILTER_VALUES,
+  FINDING_TYPE_FILTER_VALUES,
   POLICY_TABLE_SORT_FIELDS,
   REPORT_KIND_FILTER_VALUES,
   REPORT_REVIEW_STATUS_FILTER_VALUES,
@@ -35,6 +36,7 @@ export const securityFindingsSearchSchema = z.object({
   findingSearch: z.string().default(''),
   findingSeverity: z.enum(FINDING_SEVERITY_FILTER_VALUES).default('all'),
   findingStatus: z.enum(FINDING_STATUS_FILTER_VALUES).default('all'),
+  findingType: z.enum(FINDING_TYPE_FILTER_VALUES).default('all'),
   selectedFinding: z.string().optional(),
 });
 

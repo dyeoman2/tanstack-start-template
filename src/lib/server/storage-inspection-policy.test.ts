@@ -1,3 +1,4 @@
+import { deflateRawSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import {
   inspectStorageUploadBytes,
@@ -19,12 +20,129 @@ startxref
 %%EOF`);
 }
 
-function makeOoxmlPackage(entries: string[]) {
-  return new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...makeBytes(entries.join('\n'))]);
-}
-
 function makeOleCompoundDocument(extra = '') {
   return new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, ...makeBytes(extra)]);
+}
+
+function crc32(bytes: Uint8Array) {
+  let value = -1;
+
+  for (const byte of bytes) {
+    value ^= byte;
+    for (let index = 0; index < 8; index += 1) {
+      value = (value >>> 1) ^ (0xedb88320 & -(value & 1));
+    }
+  }
+
+  return (value ^ -1) >>> 0;
+}
+
+function makeZip(
+  entries: Array<{
+    compress?: boolean;
+    content: string | Uint8Array;
+    name: string;
+  }>,
+) {
+  const localParts: Buffer[] = [];
+  const centralParts: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBuffer = Buffer.from(entry.name);
+    const contentBuffer =
+      typeof entry.content === 'string' ? Buffer.from(entry.content) : Buffer.from(entry.content);
+    const compressedBuffer = entry.compress ? deflateRawSync(contentBuffer) : contentBuffer;
+    const compressionMethod = entry.compress ? 8 : 0;
+    const crc = crc32(contentBuffer);
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0, 6);
+    localHeader.writeUInt16LE(compressionMethod, 8);
+    localHeader.writeUInt16LE(0, 10);
+    localHeader.writeUInt16LE(0, 12);
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(compressedBuffer.length, 18);
+    localHeader.writeUInt32LE(contentBuffer.length, 22);
+    localHeader.writeUInt16LE(nameBuffer.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0, 8);
+    centralHeader.writeUInt16LE(compressionMethod, 10);
+    centralHeader.writeUInt16LE(0, 12);
+    centralHeader.writeUInt16LE(0, 14);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(compressedBuffer.length, 20);
+    centralHeader.writeUInt32LE(contentBuffer.length, 24);
+    centralHeader.writeUInt16LE(nameBuffer.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE(0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+
+    localParts.push(localHeader, nameBuffer, compressedBuffer);
+    centralParts.push(centralHeader, nameBuffer);
+    offset += localHeader.length + nameBuffer.length + compressedBuffer.length;
+  }
+
+  const centralDirectoryOffset = offset;
+  const centralDirectory = Buffer.concat(centralParts);
+  const endOfCentralDirectory = Buffer.alloc(22);
+  endOfCentralDirectory.writeUInt32LE(0x06054b50, 0);
+  endOfCentralDirectory.writeUInt16LE(0, 4);
+  endOfCentralDirectory.writeUInt16LE(0, 6);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 8);
+  endOfCentralDirectory.writeUInt16LE(entries.length, 10);
+  endOfCentralDirectory.writeUInt32LE(centralDirectory.length, 12);
+  endOfCentralDirectory.writeUInt32LE(centralDirectoryOffset, 16);
+  endOfCentralDirectory.writeUInt16LE(0, 20);
+
+  return new Uint8Array(Buffer.concat([...localParts, centralDirectory, endOfCentralDirectory]));
+}
+
+function makeDocxPackage(
+  extraEntries: Array<{
+    compress?: boolean;
+    content: string | Uint8Array;
+    name: string;
+  }> = [],
+) {
+  return makeZip([
+    {
+      content: `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+      name: '[Content_Types].xml',
+    },
+    {
+      content: `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`,
+      name: '_rels/.rels',
+    },
+    {
+      content: `<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Hello</w:t></w:r></w:p>
+  </w:body>
+</w:document>`,
+      name: 'word/document.xml',
+    },
+    ...extraEntries,
+  ]);
 }
 
 describe('inspectStorageUploadBytes', () => {
@@ -115,13 +233,14 @@ describe('inspectStorageUploadBytes', () => {
     expect(result.status).toBe('PASSED');
   });
 
-  it('rejects xlsx documents as unsupported', async () => {
+  it('passes structurally valid OOXML documents when the profile allows them', async () => {
     const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
       allowedKinds: ['document'],
-      bytes: makeOoxmlPackage(['[Content_Types].xml', 'xl/workbook.xml']),
-      fileName: 'report.xlsx',
-      maxBytes: 1024,
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      bytes: makeDocxPackage(),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
 
     expect(result.status).toBe('PASSED');
@@ -129,10 +248,16 @@ describe('inspectStorageUploadBytes', () => {
 
   it('rejects macro-enabled OOXML documents', async () => {
     const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
       allowedKinds: ['document'],
-      bytes: makeOoxmlPackage(['[Content_Types].xml', 'word/document.xml', 'word/vbaProject.bin']),
+      bytes: makeDocxPackage([
+        {
+          content: 'macro-bytes',
+          name: 'word/vbaProject.bin',
+        },
+      ]),
       fileName: 'report.docm',
-      maxBytes: 1024,
+      maxBytes: 1024 * 1024,
       mimeType: 'application/vnd.ms-word.document.macroEnabled.12',
     });
 
@@ -140,17 +265,121 @@ describe('inspectStorageUploadBytes', () => {
     expect(result.reason).toBe('office_macro_enabled');
   });
 
-  it('rejects password-protected OOXML documents', async () => {
+  it('rejects OOXML documents with external relationships', async () => {
     const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
       allowedKinds: ['document'],
-      bytes: makeOoxmlPackage(['[Content_Types].xml', 'word/document.xml', 'EncryptionInfo']),
+      bytes: makeDocxPackage([
+        {
+          content: `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/payload" TargetMode="External"/>
+</Relationships>`,
+          name: 'word/_rels/document.xml.rels',
+        },
+      ]),
       fileName: 'report.docx',
-      maxBytes: 1024,
+      maxBytes: 1024 * 1024,
       mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
 
     expect(result.status).toBe('REJECTED');
-    expect(result.reason).toBe('office_password_protected');
+    expect(result.reason).toBe('ooxml_external_relationship');
+  });
+
+  it('rejects OOXML documents with embedded content', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
+      allowedKinds: ['document'],
+      bytes: makeDocxPackage([
+        {
+          content: 'embedded-binary',
+          name: 'word/embeddings/oleObject1.bin',
+        },
+      ]),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('ooxml_embedded_content');
+  });
+
+  it('rejects malformed OOXML documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
+      allowedKinds: ['document'],
+      bytes: makeZip([
+        {
+          content: '<xml/>',
+          name: '[Content_Types].xml',
+        },
+        {
+          content: '<w:document/>',
+          name: 'word/document.xml',
+        },
+      ]),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('ooxml_malformed');
+  });
+
+  it('rejects suspicious OOXML archive structures', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
+      allowedKinds: ['document'],
+      bytes: makeDocxPackage([
+        {
+          compress: true,
+          content: 'A'.repeat(300_000),
+          name: 'word/huge.xml',
+        },
+      ]),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('archive_suspicious_structure');
+  });
+
+  it('rejects encrypted OOXML package markers', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['ooxml'],
+      allowedKinds: ['document'],
+      bytes: makeDocxPackage([
+        {
+          content: 'encrypted-stream',
+          name: 'EncryptionInfo',
+        },
+      ]),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('archive_encrypted');
+  });
+
+  it('rejects OOXML documents when the profile keeps document formats narrow', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedDocumentFormats: ['csv', 'plain_text'],
+      allowedKinds: ['document'],
+      bytes: makeDocxPackage(),
+      fileName: 'report.docx',
+      maxBytes: 1024 * 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('unsupported_type');
   });
 
   it('rejects legacy OLE Office documents', async () => {
@@ -242,14 +471,16 @@ describe('inspectStorageUploadBytes', () => {
 });
 
 describe('resolveStorageInspectionPolicy', () => {
-  it('keeps the default regulated upload boundary narrow', () => {
+  it('keeps the default upload boundary narrow', () => {
     expect(
       resolveStorageInspectionPolicy({
         defaultMaxBytes: 10 * 1024 * 1024,
         sourceType: 'chat_attachment',
       }),
     ).toEqual({
+      allowedDocumentFormats: ['csv', 'plain_text'],
       allowedKinds: ['document', 'image', 'pdf'],
+      intakeProfile: 'standard',
       maxBytes: 10 * 1024 * 1024,
     });
   });
@@ -261,8 +492,24 @@ describe('resolveStorageInspectionPolicy', () => {
         sourceType: 'security_control_evidence',
       }),
     ).toEqual({
+      allowedDocumentFormats: ['csv', 'plain_text'],
       allowedKinds: ['document', 'image', 'pdf'],
+      intakeProfile: 'standard',
       maxBytes: 25 * 1024 * 1024,
+    });
+  });
+
+  it('prepares a separate regulated document profile without widening existing flows', () => {
+    expect(
+      resolveStorageInspectionPolicy({
+        defaultMaxBytes: 10 * 1024 * 1024,
+        sourceType: 'regulated_document_intake',
+      }),
+    ).toEqual({
+      allowedDocumentFormats: ['csv', 'ooxml', 'plain_text'],
+      allowedKinds: ['document', 'image', 'pdf'],
+      intakeProfile: 'regulated_document',
+      maxBytes: 10 * 1024 * 1024,
     });
   });
 });

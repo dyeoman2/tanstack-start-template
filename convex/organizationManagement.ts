@@ -2,6 +2,7 @@ import type { DefaultArgsForOptionalValidator, PaginationResult } from 'convex/s
 import { anyApi } from 'convex/server';
 import { v, type PropertyValidators } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { ORGANIZATION_AUDIT_EVENT_TYPES as ORGANIZATION_AUDIT_EVENT_TYPE_VALUES } from '../src/features/organizations/lib/organization-management';
 import {
   canChangeMemberRole,
   canDeleteOrganization,
@@ -266,84 +267,11 @@ const organizationCleanupResultValidator = v.object({
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const ORGANIZATION_CLEANUP_REQUEST_TTL_MS = 10 * 60 * 1000;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
-const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
-  'organization_created',
-  'organization_updated',
-  'member_added',
-  'member_removed',
-  'member_role_updated',
-  'member_suspended',
-  'member_deactivated',
-  'member_reactivated',
-  'member_invited',
-  'invite_accepted',
-  'invite_rejected',
-  'invite_cancelled',
-  'domain_added',
-  'domain_verification_succeeded',
-  'domain_verification_failed',
-  'domain_verification_token_regenerated',
-  'domain_removed',
-  'organization_policy_updated',
-  'enterprise_auth_mode_updated',
-  'enterprise_break_glass_used',
-  'enterprise_login_succeeded',
-  'enterprise_scim_token_generated',
-  'enterprise_scim_token_deleted',
-  'scim_member_deprovisioned',
-  'scim_member_reactivated',
-  'scim_member_deprovision_failed',
-  'bulk_invite_revoked',
-  'bulk_invite_resent',
-  'bulk_member_removed',
-  'support_access_granted',
-  'support_access_revoked',
-  'support_access_used',
-  'authorization_denied',
-  'admin_user_sessions_viewed',
-  'directory_exported',
-  'audit_log_exported',
-  'retention_hold_applied',
-  'retention_hold_released',
-  'retention_purge_completed',
-  'retention_purge_failed',
-  'retention_purge_skipped_on_hold',
-  'chat_thread_created',
-  'chat_thread_deleted',
-  'chat_attachment_uploaded',
-  'chat_attachment_scan_passed',
-  'chat_attachment_scan_failed',
-  'chat_attachment_quarantined',
-  'chat_attachment_deleted',
-  'attachment_access_url_issued',
-  'file_access_ticket_issued',
-  'file_access_redeemed',
-  'file_access_redeem_failed',
-  'pdf_parse_requested',
-  'pdf_parse_succeeded',
-  'pdf_parse_failed',
-  'chat_run_completed',
-  'chat_run_failed',
-  'chat_web_search_used',
-  'evidence_report_generated',
-  'evidence_report_exported',
-  'evidence_report_reviewed',
-  'security_control_evidence_created',
-  'security_control_evidence_reviewed',
-  'security_control_evidence_archived',
-  'security_control_evidence_renewed',
-  'outbound_vendor_access_denied',
-  'outbound_vendor_access_used',
-  'mfa_enrollment_enforced',
-  'email_verification_enforced',
-  'admin_step_up_challenged',
-  'step_up_challenge_required',
-  'step_up_challenge_completed',
-  'step_up_challenge_failed',
-  'step_up_consumed',
-  'backup_restore_drill_completed',
-  'backup_restore_drill_failed',
-]);
+const ORGANIZATION_AUDIT_EVENT_TYPES = new Set(ORGANIZATION_AUDIT_EVENT_TYPE_VALUES);
+const organizationAuditEventTypeFilterValidator = v.union(
+  v.literal('all'),
+  ...ORGANIZATION_AUDIT_EVENT_TYPE_VALUES.map((eventType) => v.literal(eventType)),
+);
 const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'domain_verification_failed',
   'scim_member_deprovision_failed',
@@ -2096,143 +2024,180 @@ export const updateOrganizationPolicies = mutation({
   },
 });
 
+export async function applyOrganizationLegalHoldHandler(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    reason: string;
+    requestContext?: {
+      requestId: string;
+      ipAddress: string | null;
+      userAgent: string | null;
+    };
+  },
+) {
+  await requireOrganizationPermission(ctx, {
+    organizationId: args.organizationId,
+    permission: 'managePolicies',
+    sourceSurface: 'organization.retention_hold.apply',
+  });
+  const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+  if (!context || !context.access.view) {
+    throwConvexError('NOT_FOUND', 'Organization not found');
+  }
+
+  if (!canManageOrganizationPolicies(context.viewerRole)) {
+    throwConvexError('FORBIDDEN', 'Organization owner access required');
+  }
+
+  const reason = args.reason.trim();
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: context.user.authSession,
+  });
+  if (!reason) {
+    throwConvexError('VALIDATION', 'Provide a reason for this legal hold');
+  }
+
+  const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
+  if (activeHold) {
+    throwConvexError('VALIDATION', 'A legal hold is already active for this organization');
+  }
+
+  const now = Date.now();
+  const holdId = await ctx.db.insert('organizationLegalHolds', {
+    organizationId: args.organizationId,
+    status: 'active',
+    reason,
+    openedAt: now,
+    openedByUserId: context.user.authUserId,
+    releasedAt: undefined,
+    releasedByUserId: undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const hold = await ctx.db.get(holdId);
+  if (!hold) {
+    throw new Error('Failed to create organization legal hold');
+  }
+
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: context.user.authUser.email?.toLowerCase(),
+    actorUserId: context.user.authUserId,
+    emitter: 'organization.retention_hold',
+    eventType: RETENTION_EVENT_TYPES.holdApplied,
+    metadata: JSON.stringify({
+      actorEmail: context.user.authUser.email ?? undefined,
+      reason,
+    }),
+    organizationId: args.organizationId,
+    outcome: 'success',
+    resourceId: String(hold._id),
+    resourceLabel: 'Organization legal hold',
+    resourceType: 'organization_legal_hold',
+    severity: 'warning',
+    sessionId: context.user.authSession?.id ?? undefined,
+    sourceSurface: 'organization.retention_hold.apply',
+    userId: context.user.authUserId,
+    ...auditRequestContext,
+  });
+
+  return {
+    success: true as const,
+    hold: toOrganizationLegalHoldRow(hold),
+  };
+}
+
 export const applyOrganizationLegalHold = mutation({
   args: {
     organizationId: v.string(),
     reason: v.string(),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: organizationLegalHoldMutationResultValidator,
-  handler: async (ctx, args) => {
-    await requireOrganizationPermission(ctx, {
-      organizationId: args.organizationId,
-      permission: 'managePolicies',
-      sourceSurface: 'organization.retention_hold.apply',
-    });
-    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
-    if (!context || !context.access.view) {
-      throwConvexError('NOT_FOUND', 'Organization not found');
-    }
+  handler: applyOrganizationLegalHoldHandler,
+});
 
-    if (!canManageOrganizationPolicies(context.viewerRole)) {
-      throwConvexError('FORBIDDEN', 'Organization owner access required');
-    }
-
-    const reason = args.reason.trim();
-    if (!reason) {
-      throwConvexError('VALIDATION', 'Provide a reason for this legal hold');
-    }
-
-    const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
-    if (activeHold) {
-      throwConvexError('VALIDATION', 'A legal hold is already active for this organization');
-    }
-
-    const now = Date.now();
-    const holdId = await ctx.db.insert('organizationLegalHolds', {
-      organizationId: args.organizationId,
-      status: 'active',
-      reason,
-      openedAt: now,
-      openedByUserId: context.user.authUserId,
-      releasedAt: undefined,
-      releasedByUserId: undefined,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const hold = await ctx.db.get(holdId);
-    if (!hold) {
-      throw new Error('Failed to create organization legal hold');
-    }
-
-    await recordUserAuditEvent(ctx, {
-      actorIdentifier: context.user.authUser.email?.toLowerCase(),
-      actorUserId: context.user.authUserId,
-      emitter: 'organization.retention_hold',
-      eventType: RETENTION_EVENT_TYPES.holdApplied,
-      metadata: JSON.stringify({
-        actorEmail: context.user.authUser.email ?? undefined,
-        reason,
-      }),
-      organizationId: args.organizationId,
-      outcome: 'success',
-      resourceId: String(hold._id),
-      resourceLabel: 'Organization legal hold',
-      resourceType: 'organization_legal_hold',
-      severity: 'warning',
-      sessionId: context.user.authSession?.id ?? undefined,
-      sourceSurface: 'organization.retention_hold.apply',
-      userId: context.user.authUserId,
-    });
-
-    return {
-      success: true as const,
-      hold: toOrganizationLegalHoldRow(hold),
+export async function releaseOrganizationLegalHoldHandler(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    requestContext?: {
+      requestId: string;
+      ipAddress: string | null;
+      userAgent: string | null;
     };
   },
-});
+) {
+  await requireOrganizationPermission(ctx, {
+    organizationId: args.organizationId,
+    permission: 'managePolicies',
+    sourceSurface: 'organization.retention_hold.release',
+  });
+  const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+  if (!context || !context.access.view) {
+    throwConvexError('NOT_FOUND', 'Organization not found');
+  }
+
+  if (!canManageOrganizationPolicies(context.viewerRole)) {
+    throwConvexError('FORBIDDEN', 'Organization owner access required');
+  }
+
+  const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
+  if (!activeHold) {
+    throwConvexError('VALIDATION', 'No active legal hold exists for this organization');
+  }
+
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: context.user.authSession,
+  });
+  const now = Date.now();
+  await ctx.db.patch(activeHold._id, {
+    releasedAt: now,
+    releasedByUserId: context.user.authUserId,
+    status: 'released',
+    updatedAt: now,
+  });
+  const releasedHold = await ctx.db.get(activeHold._id);
+  if (!releasedHold) {
+    throw new Error('Failed to load released organization legal hold');
+  }
+
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: context.user.authUser.email?.toLowerCase(),
+    actorUserId: context.user.authUserId,
+    emitter: 'organization.retention_hold',
+    eventType: RETENTION_EVENT_TYPES.holdReleased,
+    metadata: JSON.stringify({
+      actorEmail: context.user.authUser.email ?? undefined,
+      reason: activeHold.reason,
+    }),
+    organizationId: args.organizationId,
+    outcome: 'success',
+    resourceId: String(activeHold._id),
+    resourceLabel: 'Organization legal hold',
+    resourceType: 'organization_legal_hold',
+    severity: 'info',
+    sessionId: context.user.authSession?.id ?? undefined,
+    sourceSurface: 'organization.retention_hold.release',
+    userId: context.user.authUserId,
+    ...auditRequestContext,
+  });
+
+  return {
+    success: true as const,
+    hold: toOrganizationLegalHoldRow(releasedHold),
+  };
+}
 
 export const releaseOrganizationLegalHold = mutation({
   args: {
     organizationId: v.string(),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: organizationLegalHoldMutationResultValidator,
-  handler: async (ctx, args) => {
-    await requireOrganizationPermission(ctx, {
-      organizationId: args.organizationId,
-      permission: 'managePolicies',
-      sourceSurface: 'organization.retention_hold.release',
-    });
-    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
-    if (!context || !context.access.view) {
-      throwConvexError('NOT_FOUND', 'Organization not found');
-    }
-
-    if (!canManageOrganizationPolicies(context.viewerRole)) {
-      throwConvexError('FORBIDDEN', 'Organization owner access required');
-    }
-
-    const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
-    if (!activeHold) {
-      throwConvexError('VALIDATION', 'No active legal hold exists for this organization');
-    }
-
-    const now = Date.now();
-    await ctx.db.patch(activeHold._id, {
-      releasedAt: now,
-      releasedByUserId: context.user.authUserId,
-      status: 'released',
-      updatedAt: now,
-    });
-    const releasedHold = await ctx.db.get(activeHold._id);
-    if (!releasedHold) {
-      throw new Error('Failed to load released organization legal hold');
-    }
-
-    await recordUserAuditEvent(ctx, {
-      actorIdentifier: context.user.authUser.email?.toLowerCase(),
-      actorUserId: context.user.authUserId,
-      emitter: 'organization.retention_hold',
-      eventType: RETENTION_EVENT_TYPES.holdReleased,
-      metadata: JSON.stringify({
-        actorEmail: context.user.authUser.email ?? undefined,
-        reason: activeHold.reason,
-      }),
-      organizationId: args.organizationId,
-      outcome: 'success',
-      resourceId: String(activeHold._id),
-      resourceLabel: 'Organization legal hold',
-      resourceType: 'organization_legal_hold',
-      severity: 'info',
-      sessionId: context.user.authSession?.id ?? undefined,
-      sourceSurface: 'organization.retention_hold.release',
-      userId: context.user.authUserId,
-    });
-
-    return {
-      success: true as const,
-      hold: toOrganizationLegalHoldRow(releasedHold),
-    };
-  },
+  handler: releaseOrganizationLegalHoldHandler,
 });
 
 export const createOrganizationSupportAccessGrant = mutation({
@@ -3506,74 +3471,7 @@ const listOrganizationAuditEventsArgs = {
   preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
   limit: v.optional(v.number()),
   cursor: v.optional(v.string()),
-  eventType: v.union(
-    v.literal('all'),
-    v.literal('organization_created'),
-    v.literal('organization_updated'),
-    v.literal('member_added'),
-    v.literal('member_removed'),
-    v.literal('member_role_updated'),
-    v.literal('member_suspended'),
-    v.literal('member_deactivated'),
-    v.literal('member_reactivated'),
-    v.literal('member_invited'),
-    v.literal('invite_accepted'),
-    v.literal('invite_rejected'),
-    v.literal('invite_cancelled'),
-    v.literal('domain_added'),
-    v.literal('domain_verification_succeeded'),
-    v.literal('domain_verification_failed'),
-    v.literal('domain_verification_token_regenerated'),
-    v.literal('domain_removed'),
-    v.literal('organization_policy_updated'),
-    v.literal('enterprise_auth_mode_updated'),
-    v.literal('enterprise_break_glass_used'),
-    v.literal('enterprise_login_succeeded'),
-    v.literal('enterprise_scim_token_generated'),
-    v.literal('enterprise_scim_token_deleted'),
-    v.literal('scim_member_deprovisioned'),
-    v.literal('scim_member_reactivated'),
-    v.literal('scim_member_deprovision_failed'),
-    v.literal('bulk_invite_revoked'),
-    v.literal('bulk_invite_resent'),
-    v.literal('bulk_member_removed'),
-    v.literal('support_access_granted'),
-    v.literal('support_access_revoked'),
-    v.literal('support_access_used'),
-    v.literal('authorization_denied'),
-    v.literal('admin_user_sessions_viewed'),
-    v.literal('directory_exported'),
-    v.literal('audit_log_exported'),
-    v.literal('retention_hold_applied'),
-    v.literal('retention_hold_released'),
-    v.literal('retention_purge_completed'),
-    v.literal('retention_purge_failed'),
-    v.literal('retention_purge_skipped_on_hold'),
-    v.literal('chat_thread_created'),
-    v.literal('chat_thread_deleted'),
-    v.literal('chat_attachment_uploaded'),
-    v.literal('chat_attachment_scan_passed'),
-    v.literal('chat_attachment_scan_failed'),
-    v.literal('chat_attachment_quarantined'),
-    v.literal('chat_attachment_deleted'),
-    v.literal('attachment_access_url_issued'),
-    v.literal('file_access_ticket_issued'),
-    v.literal('file_access_redeemed'),
-    v.literal('file_access_redeem_failed'),
-    v.literal('pdf_parse_requested'),
-    v.literal('pdf_parse_succeeded'),
-    v.literal('pdf_parse_failed'),
-    v.literal('chat_run_completed'),
-    v.literal('chat_run_failed'),
-    v.literal('chat_web_search_used'),
-    v.literal('backup_restore_drill_completed'),
-    v.literal('backup_restore_drill_failed'),
-    v.literal('admin_step_up_challenged'),
-    v.literal('step_up_challenge_required'),
-    v.literal('step_up_challenge_completed'),
-    v.literal('step_up_challenge_failed'),
-    v.literal('step_up_consumed'),
-  ),
+  eventType: organizationAuditEventTypeFilterValidator,
   search: v.string(),
   startDate: v.optional(v.string()),
   endDate: v.optional(v.string()),
@@ -3664,7 +3562,11 @@ async function listOrganizationAuditEventsHandler(
     });
 
     for (const event of auditPage.page) {
-      if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
+      if (
+        !ORGANIZATION_AUDIT_EVENT_TYPES.has(
+          event.eventType as (typeof ORGANIZATION_AUDIT_EVENT_TYPE_VALUES)[number],
+        )
+      ) {
         continue;
       }
 
@@ -3787,74 +3689,7 @@ export const exportOrganizationAuditCsv = action({
     ),
     sortOrder: v.union(v.literal('asc'), v.literal('desc')),
     preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
-    eventType: v.union(
-      v.literal('all'),
-      v.literal('organization_created'),
-      v.literal('organization_updated'),
-      v.literal('member_added'),
-      v.literal('member_removed'),
-      v.literal('member_role_updated'),
-      v.literal('member_suspended'),
-      v.literal('member_deactivated'),
-      v.literal('member_reactivated'),
-      v.literal('member_invited'),
-      v.literal('invite_accepted'),
-      v.literal('invite_rejected'),
-      v.literal('invite_cancelled'),
-      v.literal('domain_added'),
-      v.literal('domain_verification_succeeded'),
-      v.literal('domain_verification_failed'),
-      v.literal('domain_verification_token_regenerated'),
-      v.literal('domain_removed'),
-      v.literal('organization_policy_updated'),
-      v.literal('enterprise_auth_mode_updated'),
-      v.literal('enterprise_break_glass_used'),
-      v.literal('enterprise_login_succeeded'),
-      v.literal('enterprise_scim_token_generated'),
-      v.literal('enterprise_scim_token_deleted'),
-      v.literal('scim_member_deprovisioned'),
-      v.literal('scim_member_reactivated'),
-      v.literal('scim_member_deprovision_failed'),
-      v.literal('bulk_invite_revoked'),
-      v.literal('bulk_invite_resent'),
-      v.literal('bulk_member_removed'),
-      v.literal('support_access_granted'),
-      v.literal('support_access_revoked'),
-      v.literal('support_access_used'),
-      v.literal('authorization_denied'),
-      v.literal('admin_user_sessions_viewed'),
-      v.literal('directory_exported'),
-      v.literal('audit_log_exported'),
-      v.literal('retention_hold_applied'),
-      v.literal('retention_hold_released'),
-      v.literal('retention_purge_completed'),
-      v.literal('retention_purge_failed'),
-      v.literal('retention_purge_skipped_on_hold'),
-      v.literal('chat_thread_created'),
-      v.literal('chat_thread_deleted'),
-      v.literal('chat_attachment_uploaded'),
-      v.literal('chat_attachment_scan_passed'),
-      v.literal('chat_attachment_scan_failed'),
-      v.literal('chat_attachment_quarantined'),
-      v.literal('chat_attachment_deleted'),
-      v.literal('attachment_access_url_issued'),
-      v.literal('file_access_ticket_issued'),
-      v.literal('file_access_redeemed'),
-      v.literal('file_access_redeem_failed'),
-      v.literal('pdf_parse_requested'),
-      v.literal('pdf_parse_succeeded'),
-      v.literal('pdf_parse_failed'),
-      v.literal('chat_run_completed'),
-      v.literal('chat_run_failed'),
-      v.literal('chat_web_search_used'),
-      v.literal('backup_restore_drill_completed'),
-      v.literal('backup_restore_drill_failed'),
-      v.literal('admin_step_up_challenged'),
-      v.literal('step_up_challenge_required'),
-      v.literal('step_up_challenge_completed'),
-      v.literal('step_up_challenge_failed'),
-      v.literal('step_up_consumed'),
-    ),
+    eventType: organizationAuditEventTypeFilterValidator,
     search: v.string(),
     startDate: v.optional(v.string()),
     endDate: v.optional(v.string()),
@@ -3869,6 +3704,7 @@ export const exportOrganizationAuditCsv = action({
     const authorization = await requireOrganizationPermissionFromActionOrThrow(ctx, {
       organizationSlug: args.slug,
       permission: 'exportAudit',
+      requestContext: args.requestContext,
       sourceSurface: 'organization.audit_export',
     });
     const currentUser = authorization.user;
@@ -4062,6 +3898,7 @@ export const exportOrganizationDirectoryCsv = action({
     const authorization = await requireOrganizationPermissionFromActionOrThrow(ctx, {
       organizationSlug: args.slug,
       permission: 'exportAudit',
+      requestContext: args.requestContext,
       sourceSurface: 'organization.directory_export',
     });
     const currentUser = authorization.user;

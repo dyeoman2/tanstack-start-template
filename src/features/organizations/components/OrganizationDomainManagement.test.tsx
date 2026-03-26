@@ -7,7 +7,7 @@ const {
   addDomainMock,
   removeDomainMock,
   regenerateTokenMock,
-  verifyDomainMock,
+  verifyOrganizationDomainServerFnMock,
   detectDnsProviderMock,
   useQueryMock,
   useMutationMock,
@@ -20,7 +20,7 @@ const {
   addDomainMock: vi.fn(),
   removeDomainMock: vi.fn(),
   regenerateTokenMock: vi.fn(),
-  verifyDomainMock: vi.fn(),
+  verifyOrganizationDomainServerFnMock: vi.fn(),
   detectDnsProviderMock: vi.fn(),
   useQueryMock: vi.fn(),
   useMutationMock: vi.fn(),
@@ -56,6 +56,11 @@ vi.mock('~/features/auth/hooks/useAuth', () => ({
     isPending: false,
     error: null,
   }),
+}));
+
+vi.mock('~/features/organizations/server/organization-domains', () => ({
+  verifyOrganizationDomainServerFn: (...args: unknown[]) =>
+    verifyOrganizationDomainServerFnMock(...args),
 }));
 
 const domainResponse = {
@@ -114,11 +119,6 @@ describe('OrganizationDomainManagement', () => {
     });
     useActionMock.mockImplementation(() => {
       actionHookCallCount.value += 1;
-
-      if (actionHookCallCount.value === 1) {
-        return (...args: unknown[]) => verifyDomainMock(...args);
-      }
-
       return (...args: unknown[]) => detectDnsProviderMock(...args);
     });
   });
@@ -202,7 +202,7 @@ describe('OrganizationDomainManagement', () => {
 
   it('verifies a domain and shows success feedback', async () => {
     const user = userEvent.setup();
-    verifyDomainMock.mockResolvedValueOnce({
+    verifyOrganizationDomainServerFnMock.mockResolvedValueOnce({
       verified: true,
       checkedAt: Date.now(),
       domain: {
@@ -218,9 +218,11 @@ describe('OrganizationDomainManagement', () => {
     await user.click(screen.getByRole('button', { name: /^check dns record$/i }));
 
     await waitFor(() => {
-      expect(verifyDomainMock).toHaveBeenCalledWith({
-        organizationId: 'org-1',
-        domainId: 'domain-1',
+      expect(verifyOrganizationDomainServerFnMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          domainId: 'domain-1',
+        },
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Domain verified.', 'success');
@@ -228,7 +230,7 @@ describe('OrganizationDomainManagement', () => {
 
   it('shows a friendly message when domain verification leaks a Convex validator error', async () => {
     const user = userEvent.setup();
-    verifyDomainMock.mockRejectedValueOnce(
+    verifyOrganizationDomainServerFnMock.mockRejectedValueOnce(
       new Error('ReturnsValidationError: Value does not match validator.'),
     );
 

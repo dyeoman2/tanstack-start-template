@@ -34,6 +34,10 @@ import {
   userProfileSyncStateDocValidator,
 } from './lib/returnValidators';
 import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
+import {
+  requestAuditContextValidator,
+  resolveAuditRequestContext,
+} from './lib/requestAuditContext';
 
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
@@ -749,11 +753,17 @@ export const ensureUserIndex = siteAdminAction({
 
 export const recordAdminUserSessionsViewed = siteAdminAction({
   args: {
+    requestContext: v.optional(requestAuditContextValidator),
     sessionCount: v.number(),
     targetUserId: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: ctx.user.authSession,
+    });
+
     await recordSiteAdminAuditEvent(ctx, {
       actorUserId: ctx.user.authUserId,
       emitter: 'admin.user_sessions',
@@ -768,6 +778,7 @@ export const recordAdminUserSessionsViewed = siteAdminAction({
       severity: 'info',
       sourceSurface: 'admin.user_sessions',
       userId: ctx.user.authUserId,
+      ...auditRequestContext,
     });
 
     return null;

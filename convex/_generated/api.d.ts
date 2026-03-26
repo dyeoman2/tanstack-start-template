@@ -29,6 +29,7 @@ import type * as e2e from "../e2e.js";
 import type * as emailTemplates from "../emailTemplates.js";
 import type * as emails from "../emails.js";
 import type * as fileAccessTickets from "../fileAccessTickets.js";
+import type * as fileServeHttp from "../fileServeHttp.js";
 import type * as fileServing from "../fileServing.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
@@ -126,6 +127,7 @@ declare const fullApi: ApiFromModules<{
   emailTemplates: typeof emailTemplates;
   emails: typeof emails;
   fileAccessTickets: typeof fileAccessTickets;
+  fileServeHttp: typeof fileServeHttp;
   fileServing: typeof fileServing;
   health: typeof health;
   http: typeof http;

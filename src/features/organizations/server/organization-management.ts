@@ -461,10 +461,14 @@ export const applyOrganizationLegalHoldServerFn = createServerFn({ method: 'POST
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       return await convexAuthReactStart.fetchAuthMutation(
         api.organizationManagement.applyOrganizationLegalHold,
-        data,
+        {
+          ...data,
+          requestContext,
+        },
       );
     } catch (error) {
       throw handleServerError(error, 'Apply organization legal hold');
@@ -476,10 +480,14 @@ export const releaseOrganizationLegalHoldServerFn = createServerFn({ method: 'PO
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       return await convexAuthReactStart.fetchAuthMutation(
         api.organizationManagement.releaseOrganizationLegalHold,
-        data,
+        {
+          ...data,
+          requestContext,
+        },
       );
     } catch (error) {
       throw handleServerError(error, 'Release organization legal hold');

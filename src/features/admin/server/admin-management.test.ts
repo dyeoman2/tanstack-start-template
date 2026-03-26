@@ -131,6 +131,11 @@ describe('listAdminUserSessionsServerFn', () => {
       userAgent: 'Vitest',
     });
     expect(fetchAuthActionMock).toHaveBeenCalledWith('recordAdminUserSessionsViewed', {
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
       sessionCount: 1,
       targetUserId: 'user_1',
     });

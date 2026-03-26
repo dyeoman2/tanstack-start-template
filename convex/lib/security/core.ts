@@ -324,6 +324,7 @@ function getSecurityRelationshipObjectTypeFromEvidenceSourceType(
 function getSecurityFindingControlLinks(
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'
     | 'release_security_validation',
@@ -337,6 +338,7 @@ function getSecurityFindingControlLinks(
         },
       ];
     case 'audit_integrity_failures':
+    case 'audit_request_context_gaps':
       return [
         { internalControlId: 'CTRL-AU-012', itemId: 'workflow-audit-emission' },
         {

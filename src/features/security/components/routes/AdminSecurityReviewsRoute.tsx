@@ -21,6 +21,7 @@ import {
 import { AdminSecurityReviewsTab } from '~/features/security/components/tabs/AdminSecurityReviewsTab';
 import { mergeReviewRunSummaryWithDetail } from '~/features/security/formatters';
 import type { SecurityReviewsSearch } from '~/features/security/search';
+import { finalizeReviewRunServerFn } from '~/features/security/server/security-reviews';
 import type {
   ReviewRunDetail,
   ReviewRunSummary,
@@ -32,7 +33,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
   const { showToast } = useToast();
   const { navigateToControl } = useSecurityNavigation();
   const refreshReviewRunAutomation = useAction(api.securityReviews.refreshReviewRunAutomation);
-  const finalizeReviewRun = useAction(api.securityReviews.finalizeReviewRun);
   const ensureCurrentAnnualReviewRun = useMutation(
     api.securityReviews.ensureCurrentAnnualReviewRun,
   );
@@ -278,8 +278,10 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
     }
     setBusyReviewRunAction('finalize');
     try {
-      const detail = await finalizeReviewRun({
-        reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+      const detail = await finalizeReviewRunServerFn({
+        data: {
+          reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+        },
       });
       if (detail) {
         setLocalAnnualReviewDetail(detail);
@@ -294,7 +296,7 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
     } finally {
       setBusyReviewRunAction(null);
     }
-  }, [currentAnnualReviewRun?.id, finalizeReviewRun, showToast]);
+  }, [currentAnnualReviewRun?.id, showToast]);
 
   const handleCreateTriggeredReviewRun = useCallback(async () => {
     const title = newTriggeredReviewTitle.trim();

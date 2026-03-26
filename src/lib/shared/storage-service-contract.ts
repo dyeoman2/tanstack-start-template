@@ -125,11 +125,16 @@ export type StorageInspectionResultCallbackRequest = {
   details?: string;
   engine: string;
   reason?:
+    | 'archive_encrypted'
+    | 'archive_suspicious_structure'
     | 'checksum_mismatch'
     | 'file_signature_mismatch'
     | 'inspection_error'
     | 'office_macro_enabled'
     | 'office_password_protected'
+    | 'ooxml_embedded_content'
+    | 'ooxml_external_relationship'
+    | 'ooxml_malformed'
     | 'pdf_active_content'
     | 'pdf_embedded_files'
     | 'pdf_encrypted'

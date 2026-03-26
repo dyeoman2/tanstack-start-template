@@ -2,7 +2,7 @@
 
 import { ConvexError, v } from 'convex/values';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
-import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { getRequiredBetterAuthUrl, getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
@@ -12,6 +12,10 @@ import {
   requireStorageReadAccessFromActionOrThrow,
 } from './auth/access';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
+import {
+  requestAuditContextValidator,
+  resolveAuditRequestContext,
+} from './lib/requestAuditContext';
 import { createDownloadPresignedStorageUrl } from './lib/storageS3';
 import { getStorageReadiness } from './storageReadiness';
 
@@ -60,12 +64,12 @@ async function sign(secret: string, payload: string) {
 }
 
 function buildTicketServeUrl(params: {
-  convexSiteUrl: string;
+  appSiteUrl: string;
   expiresAt: number;
   signature: string;
   ticketId: string;
 }) {
-  return `${params.convexSiteUrl}/api/files/serve?ticket=${encodeURIComponent(params.ticketId)}&exp=${encodeURIComponent(String(params.expiresAt))}&sig=${encodeURIComponent(params.signature)}`;
+  return `${params.appSiteUrl}/api/files/serve?ticket=${encodeURIComponent(params.ticketId)}&exp=${encodeURIComponent(String(params.expiresAt))}&sig=${encodeURIComponent(params.signature)}`;
 }
 
 async function createFileAccessTicketSignature(ticketId: string, expiresAt: number) {
@@ -139,6 +143,11 @@ async function isAttachmentSharingAllowed(
 async function recordFileAccessAuditEvent(
   ctx: FileServingCtx,
   args: {
+    auditRequestContext?: {
+      ipAddress?: string;
+      requestId?: string;
+      userAgent?: string;
+    };
     eventType:
       | 'attachment_access_url_issued'
       | 'file_access_redeemed'
@@ -171,6 +180,7 @@ async function recordFileAccessAuditEvent(
       severity: args.severity ?? (args.outcome === 'success' ? 'info' : 'warning'),
       sourceSurface: args.sourceSurface,
       userId: args.userId,
+      ...args.auditRequestContext,
     });
     return;
   }
@@ -187,12 +197,18 @@ async function recordFileAccessAuditEvent(
     sessionId: args.sessionId ?? undefined,
     severity: args.severity ?? (args.outcome === 'success' ? 'info' : 'warning'),
     sourceSurface: args.sourceSurface,
+    ...args.auditRequestContext,
   });
 }
 
 async function recordSupportAccessUsage(
   ctx: FileServingCtx,
   args: {
+    auditRequestContext?: {
+      ipAddress?: string;
+      requestId?: string;
+      userAgent?: string;
+    };
     grantId: string;
     organizationId: string | null | undefined;
     permission: string;
@@ -223,6 +239,7 @@ async function recordSupportAccessUsage(
     severity: 'info',
     sourceSurface: args.sourceSurface,
     userId: args.userId,
+    ...args.auditRequestContext,
   });
 }
 
@@ -263,11 +280,17 @@ export async function issueFileAccessUrlForCurrentUser(
   ctx: ActionCtx,
   args: {
     purpose: FileAccessPurpose;
+    requestContext?: {
+      ipAddress?: string | null;
+      requestId?: string | null;
+      userAgent?: string | null;
+    } | null;
     sourceSurface: string;
     storageId: string;
   },
 ): Promise<IssuedFileAccessUrl> {
   const access = await requireStorageReadAccessFromActionOrThrow(ctx, {
+    requestContext: args.requestContext,
     storageId: args.storageId,
     sourceSurface: args.sourceSurface,
   });
@@ -275,17 +298,16 @@ export async function issueFileAccessUrlForCurrentUser(
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });
-  const runtimeConfig = getStorageRuntimeConfig();
   const readiness = getStorageReadiness(lifecycle);
   if (!readiness.readable) {
     throw new ConvexError(readiness.message);
   }
 
-  if (!runtimeConfig.convexSiteUrl) {
-    throw new ConvexError('CONVEX_SITE_URL is not configured.');
-  }
-
   const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: args.requestContext,
+    session: currentUser.authSession,
+  });
   const issuedFromSessionId = currentUser.authSession?.id ?? null;
   if (!issuedFromSessionId) {
     throw new ConvexError('Current session could not be resolved.');
@@ -313,6 +335,7 @@ export async function issueFileAccessUrlForCurrentUser(
       severity: 'warning',
       sourceSurface: args.sourceSurface,
       userId: currentUser.authUserId,
+      ...auditRequestContext,
     });
     throw new ConvexError('Attachment sharing is disabled by organization policy.');
   }
@@ -361,6 +384,7 @@ export async function issueFileAccessUrlForCurrentUser(
     sessionId: issuedFromSessionId,
     sourceSurface: args.sourceSurface,
     userId: currentUser.authUserId,
+    auditRequestContext,
   });
 
   if (access.supportGrantId && access.supportGrantScope && access.permission && organizationId) {
@@ -375,6 +399,7 @@ export async function issueFileAccessUrlForCurrentUser(
       sessionId: issuedFromSessionId,
       sourceSurface: args.sourceSurface,
       userId: currentUser.authUserId,
+      auditRequestContext,
     });
   }
 
@@ -401,6 +426,7 @@ export async function issueFileAccessUrlForCurrentUser(
       severity: 'info',
       sourceSurface: args.sourceSurface,
       userId: currentUser.authUserId,
+      ...auditRequestContext,
     });
   }
 
@@ -409,7 +435,7 @@ export async function issueFileAccessUrlForCurrentUser(
     storageId: args.storageId,
     ticketId,
     url: buildTicketServeUrl({
-      convexSiteUrl: runtimeConfig.convexSiteUrl,
+      appSiteUrl: getRequiredBetterAuthUrl(),
       expiresAt,
       signature,
       ticketId,
@@ -418,7 +444,10 @@ export async function issueFileAccessUrlForCurrentUser(
 }
 
 export const createSignedServeUrl = action({
-  args: { storageId: v.string() },
+  args: {
+    requestContext: v.optional(requestAuditContextValidator),
+    storageId: v.string(),
+  },
   returns: v.object({
     expiresAt: v.number(),
     storageId: v.string(),
@@ -427,11 +456,13 @@ export const createSignedServeUrl = action({
   }),
   handler: async (ctx, args): Promise<IssuedFileAccessUrl> => {
     await requireStorageReadAccessFromActionOrThrow(ctx, {
+      requestContext: args.requestContext,
       sourceSurface: 'file.serve_url_create',
       storageId: args.storageId,
     });
     const issued = await issueFileAccessUrlForCurrentUser(ctx, {
       purpose: 'interactive_open',
+      requestContext: args.requestContext,
       sourceSurface: 'file.serve_url_create',
       storageId: args.storageId,
     });

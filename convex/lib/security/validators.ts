@@ -228,6 +228,7 @@ const securityPostureSummaryValidator = v.object({
 
 const securityFindingTypeValidator = v.union(
   v.literal('audit_integrity_failures'),
+  v.literal('audit_request_context_gaps'),
   v.literal('document_scan_quarantines'),
   v.literal('document_scan_rejections'),
   v.literal('release_security_validation'),

@@ -58,6 +58,13 @@ import { organizationPermissionDecisionValidator } from '../lib/returnValidators
 import { getActiveStepUpClaim, getCompatibilityStepUpClaim } from '../stepUp';
 import { throwConvexError } from './errors';
 import { recordUserAuditEvent } from '../lib/auditEmitters';
+import { resolveAuditRequestContext } from '../lib/requestAuditContext';
+
+type RequestAuditContextInput = {
+  ipAddress?: string | null;
+  requestId?: string | null;
+  userAgent?: string | null;
+};
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
 type BetterAuthUserRecord = BetterAuthDoc<'user'> & Partial<BetterAuthSessionUser>;
@@ -962,11 +969,17 @@ async function recordAuthorizationDenied(
   input: {
     organizationId?: string;
     permission: OrganizationPermission;
+    requestContext?: RequestAuditContextInput | null;
     reason: string;
     sourceSurface?: string;
     user: CurrentUser;
   },
 ) {
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: input.requestContext,
+    session: input.user.authSession,
+  });
+
   await recordUserAuditEvent(ctx, {
     actorIdentifier: input.user.authUser.email?.toLowerCase(),
     actorUserId: input.user.authUserId,
@@ -985,6 +998,7 @@ async function recordAuthorizationDenied(
     sessionId: input.user.authSession?.id ?? undefined,
     sourceSurface: input.sourceSurface ?? 'auth.authorization',
     userId: input.user.authUserId,
+    ...auditRequestContext,
   });
 }
 
@@ -992,12 +1006,18 @@ async function recordEnterpriseBreakGlassUsed(
   ctx: MutationCtx | ActionCtx,
   input: {
     decision: OrganizationPermissionDecision;
+    requestContext?: RequestAuditContextInput | null;
     sourceSurface?: string;
   },
 ) {
   if (input.decision.assurance.enterpriseSatisfactionPath !== 'owner_break_glass') {
     return;
   }
+
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: input.requestContext,
+    session: input.decision.user.authSession,
+  });
 
   await recordUserAuditEvent(ctx, {
     actorIdentifier: input.decision.user.authUser.email?.toLowerCase(),
@@ -1017,6 +1037,7 @@ async function recordEnterpriseBreakGlassUsed(
     sessionId: input.decision.user.authSession?.id ?? undefined,
     sourceSurface: input.sourceSurface ?? 'auth.authorization',
     userId: input.decision.user.authUserId,
+    ...auditRequestContext,
   });
 }
 
@@ -1024,6 +1045,7 @@ async function recordSupportGrantUsed(
   ctx: MutationCtx | ActionCtx,
   input: {
     decision: OrganizationPermissionDecision;
+    requestContext?: RequestAuditContextInput | null;
     sourceSurface?: string;
   },
 ) {
@@ -1035,6 +1057,11 @@ async function recordSupportGrantUsed(
   ) {
     return;
   }
+
+  const auditRequestContext = resolveAuditRequestContext({
+    requestContext: input.requestContext,
+    session: input.decision.user.authSession,
+  });
 
   await recordUserAuditEvent(ctx, {
     actorIdentifier: input.decision.user.authUser.email?.toLowerCase(),
@@ -1056,6 +1083,7 @@ async function recordSupportGrantUsed(
     sessionId: input.decision.user.authSession?.id ?? undefined,
     sourceSurface: input.sourceSurface ?? 'auth.authorization',
     userId: input.decision.user.authUserId,
+    ...auditRequestContext,
   });
 }
 
@@ -1196,6 +1224,7 @@ export async function requireOrganizationPermissionFromActionOrThrow(
     organizationId?: string;
     organizationSlug?: string;
     permission: OrganizationPermission;
+    requestContext?: RequestAuditContextInput | null;
     sourceSurface?: string;
   },
 ): Promise<OrganizationPermissionDecision> {
@@ -1225,6 +1254,7 @@ export async function requireOrganizationPermissionFromActionOrThrow(
     await recordAuthorizationDenied(ctx, {
       organizationId: result.organizationId ?? input.organizationId,
       permission: input.permission,
+      requestContext: input.requestContext,
       reason: result.reason,
       sourceSurface: input.sourceSurface,
       user,
@@ -1234,10 +1264,12 @@ export async function requireOrganizationPermissionFromActionOrThrow(
 
   await recordEnterpriseBreakGlassUsed(ctx, {
     decision: result.decision,
+    requestContext: input.requestContext,
     sourceSurface: input.sourceSurface,
   });
   await recordSupportGrantUsed(ctx, {
     decision: result.decision,
+    requestContext: input.requestContext,
     sourceSurface: input.sourceSurface,
   });
 
@@ -1320,6 +1352,7 @@ export async function requireThreadPermission(
 export async function requireStorageReadAccessFromActionOrThrow(
   ctx: ActionCtx,
   input: {
+    requestContext?: RequestAuditContextInput | null;
     sourceSurface?: string;
     storageId: string;
   },
@@ -1333,6 +1366,7 @@ export async function requireStorageReadAccessFromActionOrThrow(
     await recordAuthorizationDenied(ctx, {
       organizationId: result.organizationId ?? user.activeOrganizationId ?? undefined,
       permission: result.permission ?? 'readAttachment',
+      requestContext: input.requestContext,
       reason: result.reason,
       sourceSurface: input.sourceSurface ?? 'storage.read',
       user,

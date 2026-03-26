@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { useNavigate } from '@tanstack/react-router';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import {
   Sheet,
@@ -18,6 +18,11 @@ import {
 } from '~/features/security/components/routes/securityRouteUtils';
 import { AdminSecurityReportsTab } from '~/features/security/components/tabs/AdminSecurityReportsTab';
 import type { SecurityReportsSearch } from '~/features/security/search';
+import {
+  exportEvidenceReportServerFn,
+  generateEvidenceReportServerFn,
+  reviewEvidenceReportServerFn,
+} from '~/features/security/server/security-reports';
 import type { EvidenceReportDetail, SecurityReportsBoard } from '~/features/security/types';
 
 export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch }) {
@@ -26,9 +31,6 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
   const reportsBoard = useQuery(api.securityPosture.getSecurityReportsBoard, {}) as
     | SecurityReportsBoard
     | undefined;
-  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
-  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
-  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
   const [report, setReport] = useState<string | null>(null);
   const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
   const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
@@ -137,45 +139,47 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
     async (reportKind: 'audit_readiness' | 'security_posture' = 'security_posture') => {
       setIsGenerating(true);
       try {
-        const generated = await generateEvidenceReport({ reportKind });
+        const generated = await generateEvidenceReportServerFn({ data: { reportKind } });
         setReport(generated.report);
         updateReportSearch({ selectedReport: generated.id });
       } finally {
         setIsGenerating(false);
       }
     },
-    [generateEvidenceReport, updateReportSearch],
+    [updateReportSearch],
   );
 
   const handleReviewReport = useCallback(
     async (id: Id<'evidenceReports'>, reviewStatus: 'needs_follow_up' | 'reviewed') => {
       setBusyReportAction(`${id}:${reviewStatus}`);
       try {
-        await reviewEvidenceReport({
-          customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
-          id,
-          internalNotes: reportNotes[id]?.trim() || undefined,
-          reviewStatus,
+        await reviewEvidenceReportServerFn({
+          data: {
+            customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
+            id,
+            internalNotes: reportNotes[id]?.trim() || undefined,
+            reviewStatus,
+          },
         });
       } finally {
         setBusyReportAction(null);
       }
     },
-    [reportCustomerSummaries, reportNotes, reviewEvidenceReport],
+    [reportCustomerSummaries, reportNotes],
   );
 
   const handleExportReport = useCallback(
     async (id: Id<'evidenceReports'>) => {
       setBusyReportAction(`${id}:export`);
       try {
-        const exported = await exportEvidenceReport({ id });
+        const exported = await exportEvidenceReportServerFn({ data: { id } });
         setReport(exported.report);
         updateReportSearch({ selectedReport: id });
       } finally {
         setBusyReportAction(null);
       }
     },
-    [exportEvidenceReport, updateReportSearch],
+    [updateReportSearch],
   );
 
   return (

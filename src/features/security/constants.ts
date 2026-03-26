@@ -41,6 +41,14 @@ export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
 
 export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'missing'] as const;
 export const FINDING_STATUS_FILTER_VALUES = ['all', 'open', 'resolved'] as const;
+export const FINDING_TYPE_FILTER_VALUES = [
+  'all',
+  'audit_request_context_gaps',
+  'audit_integrity_failures',
+  'document_scan_quarantines',
+  'document_scan_rejections',
+  'release_security_validation',
+] as const;
 export const FINDING_DISPOSITION_FILTER_VALUES = [
   'all',
   'pending_review',

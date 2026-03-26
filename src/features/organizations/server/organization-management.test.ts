@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ORGANIZATION_AUDIT_EVENT_TYPES } from '~/features/organizations/lib/organization-management';
 import { ServerError } from '~/lib/server/error-utils.server';
 
 const {
@@ -50,6 +51,7 @@ vi.mock('@convex/_generated/api', () => ({
       ensureCurrentUserContext: 'ensureCurrentUserContext',
     },
     organizationManagement: {
+      applyOrganizationLegalHold: 'applyOrganizationLegalHold',
       createOrganizationSupportAccessGrant: 'createOrganizationSupportAccessGrant',
       deactivateOrganizationMember: 'deactivateOrganizationMember',
       executePreparedOrganizationCleanup: 'executePreparedOrganizationCleanup',
@@ -59,6 +61,7 @@ vi.mock('@convex/_generated/api', () => ({
       recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
       prepareOrganizationCleanup: 'prepareOrganizationCleanup',
+      releaseOrganizationLegalHold: 'releaseOrganizationLegalHold',
       reactivateOrganizationMember: 'reactivateOrganizationMember',
       revokeOrganizationSupportAccessGrant: 'revokeOrganizationSupportAccessGrant',
       suspendOrganizationMember: 'suspendOrganizationMember',
@@ -119,6 +122,7 @@ vi.mock('~/lib/server/better-auth/api', () => ({
 }));
 
 import {
+  applyOrganizationLegalHoldServerFn,
   bulkOrganizationDirectoryActionServerFn,
   cancelOrganizationInvitationServerFn,
   createOrganizationSupportAccessGrantServerFn,
@@ -130,6 +134,7 @@ import {
   exportOrganizationAuditCsvServerFn,
   exportOrganizationDirectoryCsvServerFn,
   reactivateOrganizationMemberServerFn,
+  releaseOrganizationLegalHoldServerFn,
   removeOrganizationMemberServerFn,
   revokeOrganizationSupportAccessGrantServerFn,
   suspendOrganizationMemberServerFn,
@@ -380,6 +385,42 @@ describe('organization management server functions', () => {
     });
   });
 
+  it('applies legal holds through Convex auth mutations with request context', async () => {
+    await applyOrganizationLegalHoldServerFn({
+      data: {
+        organizationId: 'org_1',
+        reason: 'Preserve records for pending litigation',
+      },
+    });
+
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('applyOrganizationLegalHold', {
+      organizationId: 'org_1',
+      reason: 'Preserve records for pending litigation',
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
+  it('releases legal holds through Convex auth mutations with request context', async () => {
+    await releaseOrganizationLegalHoldServerFn({
+      data: {
+        organizationId: 'org_1',
+      },
+    });
+
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('releaseOrganizationLegalHold', {
+      organizationId: 'org_1',
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
   it('exports audit logs through a server wrapper with request context', async () => {
     await exportOrganizationAuditCsvServerFn({
       data: {
@@ -401,6 +442,45 @@ describe('organization management server functions', () => {
       sortOrder: 'desc',
       preset: 'all',
       eventType: 'all',
+      search: '',
+      startDate: '',
+      endDate: '',
+      failuresOnly: false,
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
+  it('accepts every shared organization audit event type in the export wrapper', async () => {
+    const lastEventType =
+      ORGANIZATION_AUDIT_EVENT_TYPES[ORGANIZATION_AUDIT_EVENT_TYPES.length - 1] ?? 'all';
+
+    for (const eventType of ORGANIZATION_AUDIT_EVENT_TYPES) {
+      await exportOrganizationAuditCsvServerFn({
+        data: {
+          slug: 'acme',
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          preset: 'all',
+          eventType,
+          search: '',
+          startDate: '',
+          endDate: '',
+          failuresOnly: false,
+        },
+      });
+    }
+
+    expect(fetchAuthActionMock).toHaveBeenCalledTimes(ORGANIZATION_AUDIT_EVENT_TYPES.length);
+    expect(fetchAuthActionMock).toHaveBeenLastCalledWith('exportOrganizationAuditCsv', {
+      slug: 'acme',
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      preset: 'all',
+      eventType: lastEventType,
       search: '',
       startDate: '',
       endDate: '',
