@@ -54,27 +54,31 @@ describe('createSharedBetterAuthOptions', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it('disables auth rate limiting in development', () => {
+  it('enables auth rate limiting in development with elevated thresholds', () => {
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(false);
+    expect(options.rateLimit?.enabled).toBe(true);
     expect(options.rateLimit?.modelName).toBe('rateLimit');
     expect(options.rateLimit?.customRules?.['/sign-up/email']).toEqual({
       window: 60 * 60,
-      max: 5,
+      max: 50,
     });
     expect(options.rateLimit?.customRules?.['/send-verification-email']).toEqual({
       window: 60 * 60,
-      max: 3,
+      max: 30,
     });
   });
 
-  it('disables auth rate limiting for loopback Better Auth origins even when NODE_ENV is not development', () => {
+  it('uses elevated rate-limit thresholds for loopback Better Auth origins even when NODE_ENV is not development', () => {
     process.env.NODE_ENV = 'production';
 
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(false);
+    expect(options.rateLimit?.enabled).toBe(true);
+    expect(options.rateLimit?.customRules?.['/sign-up/email']).toEqual({
+      window: 60 * 60,
+      max: 50,
+    });
   });
 
   it('sets a root Better Auth app name for provider and auth UX consistency', () => {
@@ -118,12 +122,12 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.advanced?.defaultCookieAttributes?.secure).toBe(true);
   });
 
-  it('keeps development rate limiting disabled even when the explicit disable flag is set', () => {
+  it('keeps rate limiting enabled with elevated thresholds even when the explicit disable flag is set', () => {
     process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = 'true';
 
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(false);
+    expect(options.rateLimit?.enabled).toBe(true);
   });
 
   it('revokes existing sessions on password reset', () => {

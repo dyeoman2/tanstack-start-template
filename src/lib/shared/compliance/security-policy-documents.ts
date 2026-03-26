@@ -86,6 +86,11 @@ This policy defines how the provider identifies users and manages authenticators
 - Provider-managed accounts use approved authentication mechanisms.
 - Authenticator lifecycle management is documented and reviewed.
 - Changes to authentication posture are reviewed as part of the annual security review.
+
+## Cookie Security Posture
+
+- Session cookies use \`SameSite=Strict\`, \`HttpOnly\`, and \`Secure\` (HTTPS) attributes. Cookie caching is disabled so server-side session revocation takes effect immediately.
+- Step-up challenge cookies use \`SameSite=Lax\` instead of \`Strict\`. This is an intentional design choice: post-MFA redirect flows (e.g., passkey or TOTP verification followed by a redirect back to the protected action) require Lax to preserve the cookie across the top-level navigation. Compensating controls include a 10-minute max-age, \`HttpOnly\`, UUID-format validation, and one-time-use semantics (the claim is consumed on first successful use).
 `,
   'docs/security-policies/incident-response-policy.md': `# Incident Response Policy
 
@@ -137,6 +142,16 @@ This policy defines the provider boundary protection requirements used to restri
 - Boundary protections are documented for provider-managed environments.
 - Network ingress and egress pathways are restricted through approved controls.
 - Boundary changes are reviewed as part of normal provider change management.
+
+## Content Security Policy
+
+The application enforces a nonce-based Content Security Policy on all responses:
+
+- \`script-src\` requires a per-request cryptographic nonce; inline scripts without the nonce are blocked.
+- \`'unsafe-eval'\` is permitted **only** in development builds where \`NODE_ENV=development\`, to support Vite HMR module transforms. Production builds never include \`'unsafe-eval'\` in the CSP.
+- \`style-src-attr 'unsafe-inline'\` is an accepted residual risk documented in the CSP builder. Tailwind CSS and shadcn/ui apply inline style attributes (e.g., \`style="--radix-*"\`) that cannot be nonce-gated. CSS attribute injection is lower severity than script injection and cannot execute JavaScript.
+- CSP violations are reported to \`/api/csp-report\` and logged as security telemetry events.
+- The CSP mode (enforce vs. report-only) is configurable via the \`CSP_MODE\` environment variable; the default is enforce.
 `,
   'docs/security-policies/personnel-security-policy.md': `# Personnel Security Policy
 

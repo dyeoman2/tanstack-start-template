@@ -13,6 +13,7 @@ import {
   requireStorageReadAccessFromActionOrThrow,
 } from './auth/access';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
+import { enforceFileAccessTicketRateLimitOrThrow } from './lib/fileAccessRateLimits';
 import {
   requestAuditContextValidator,
   resolveAuditRequestContext,
@@ -313,6 +314,13 @@ export async function issueFileAccessUrlForCurrentUser(
   }
 
   const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+
+  // Rate-limit ticket issuance per user+org to prevent presigned URL abuse.
+  const organizationIdForRateLimit = lifecycle?.organizationId ?? access.organizationId ?? null;
+  await enforceFileAccessTicketRateLimitOrThrow(ctx, {
+    organizationId: organizationIdForRateLimit ?? 'global',
+    userId: currentUser.authUserId,
+  });
   const auditRequestContext = resolveAuditRequestContext({
     requestContext: args.requestContext,
     session: currentUser.authSession,

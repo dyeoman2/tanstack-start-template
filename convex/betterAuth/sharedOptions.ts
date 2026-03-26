@@ -349,78 +349,93 @@ function getPasskeyOptions(siteUrlValue: string) {
   };
 }
 
-function shouldDisableAuthRateLimit(siteUrl?: string) {
+/**
+ * Returns the rate-limit multiplier for the current deployment context.
+ *
+ * - Production: 1 (nominal thresholds)
+ * - Development / test / local: 10× to keep rate-limit middleware exercised in
+ *   CI and local runs without causing spurious failures during integration
+ *   tests or rapid manual iteration.
+ */
+function getAuthRateLimitMultiplier(siteUrl?: string): number {
   if (isDevelopmentOrTestDeployment()) {
-    return true;
+    return 10;
   }
 
   if (siteUrl) {
     try {
       const hostname = new URL(siteUrl).hostname;
       if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return true;
+        return 10;
       }
     } catch {
       // Ignore invalid urls and fall through to the environment checks below.
     }
   }
 
-  return (
+  if (
     process.env.NODE_ENV === 'development' ||
     process.env.NODE_ENV === 'test' ||
     process.env.VITEST === 'true'
-  );
+  ) {
+    return 10;
+  }
+
+  return 1;
 }
 
-function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit']>['customRules'] {
+function createCustomRateLimitRules(
+  multiplier = 1,
+): NonNullable<BetterAuthOptions['rateLimit']>['customRules'] {
+  const m = (base: number) => base * multiplier;
   return {
     '/sign-in/email': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/sign-in/passkey': {
       window: 15 * 60,
-      max: 20,
+      max: m(20),
     },
     '/passkey/verify-authentication': {
       window: 15 * 60,
-      max: 20,
+      max: m(20),
     },
     '/sign-up/email': {
       window: 60 * 60,
-      max: 5,
+      max: m(5),
     },
     '/request-password-reset': {
       window: 60 * 60,
-      max: 3,
+      max: m(3),
     },
     '/forget-password': {
       window: 60 * 60,
-      max: 3,
+      max: m(3),
     },
     '/reset-password': {
       window: 15 * 60,
-      max: 5,
+      max: m(5),
     },
     '/send-verification-email': {
       window: 60 * 60,
-      max: 3,
+      max: m(3),
     },
     '/verify-email': {
       window: 60 * 60,
-      max: 10,
+      max: m(10),
     },
     '/change-email': {
       window: 60 * 60,
-      max: 5,
+      max: m(5),
     },
     '/change-password': {
       window: 60 * 60,
-      max: 5,
+      max: m(5),
     },
     '/get-session': {
       window: 60,
-      max: 300,
+      max: m(300),
     },
     // This internal token refresh endpoint can be hit concurrently by the app shell,
     // Convex auth refresh, and tab reloads. Database-backed rate limiting here causes
@@ -428,59 +443,59 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
     '/convex/token': false,
     '/admin/list-users': {
       window: 15 * 60,
-      max: 30,
+      max: m(30),
     },
     '/admin/get-user': {
       window: 15 * 60,
-      max: 30,
+      max: m(30),
     },
     '/admin/create-user': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/update-user': {
       window: 15 * 60,
-      max: 20,
+      max: m(20),
     },
     '/admin/set-role': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/ban-user': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/unban-user': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/remove-user': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/set-user-password': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/impersonate-user': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/stop-impersonating': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
     '/admin/list-user-sessions': {
       window: 15 * 60,
-      max: 30,
+      max: m(30),
     },
     '/admin/revoke-user-session': {
       window: 15 * 60,
-      max: 20,
+      max: m(20),
     },
     '/admin/revoke-user-sessions': {
       window: 15 * 60,
-      max: 10,
+      max: m(10),
     },
   };
 }
@@ -885,7 +900,7 @@ export function createSharedBetterAuthOptions(
   const betterAuthUrl = includeRuntimeEnvConfig
     ? getBetterAuthUrlForTooling()
     : getRequiredBetterAuthUrl();
-  const disableRateLimit = shouldDisableAuthRateLimit(betterAuthUrl);
+  const rateLimitMultiplier = getAuthRateLimitMultiplier(betterAuthUrl);
   const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies(betterAuthUrl) : false;
   const googleOAuthCredentials = includeRuntimeEnvConfig ? getGoogleOAuthCredentials() : null;
   const betterAuthSecrets = getBetterAuthSecrets();
@@ -900,12 +915,12 @@ export function createSharedBetterAuthOptions(
           trustedOrigins: (request?: Request) =>
             getBetterAuthTrustedOrigins(request, betterAuthUrl),
           rateLimit: {
-            enabled: !disableRateLimit,
+            enabled: true,
             window: DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
-            max: DEFAULT_RATE_LIMIT_MAX_REQUESTS,
+            max: DEFAULT_RATE_LIMIT_MAX_REQUESTS * rateLimitMultiplier,
             storage: 'database',
             modelName: 'rateLimit',
-            customRules: createCustomRateLimitRules(),
+            customRules: createCustomRateLimitRules(rateLimitMultiplier),
           },
         }
       : {}),
