@@ -80,6 +80,11 @@ export function buildDocumentContentSecurityPolicy({
     "object-src 'none'",
     `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'self'",
+    // Accepted residual risk: 'unsafe-inline' is required for style-src-attr because Tailwind CSS
+    // and shadcn/ui apply inline style attributes (e.g., style="--radix-*") that cannot be nonce-gated.
+    // CSS injection via style attributes is lower severity than script injection — it cannot execute
+    // JavaScript, but could theoretically enable data exfiltration via CSS selectors in a targeted
+    // attack. This is acceptable given the nonce-gated script-src and the framework dependency.
     "style-src-attr 'unsafe-inline'",
     `img-src ${imgSrc.join(' ')}`,
     `font-src ${fontSrc.join(' ')}`,

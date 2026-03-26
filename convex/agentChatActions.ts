@@ -1447,6 +1447,19 @@ export const runChatGenerationInternal = internalAction({
         userId: run.initiatedByUserId,
       });
       if (run.useWebSearch) {
+        // Extract unique domains from web search results for DLP audit trail.
+        const fetchedDomains = [
+          ...new Set(
+            allSources.map((source) => {
+              try {
+                return new URL(source.url).hostname;
+              } catch {
+                return source.url;
+              }
+            }),
+          ),
+        ];
+
         await recordSystemAuditEvent(ctx, {
           emitter: 'chat.run_worker',
           eventType: 'chat_web_search_used',
@@ -1454,6 +1467,8 @@ export const runChatGenerationInternal = internalAction({
           metadata: JSON.stringify({
             runId: args.runId,
             model: run.model ?? null,
+            fetchedDomains,
+            sourceCount: allSources.length,
           }),
           organizationId: run.organizationId,
           outcome: 'success',
@@ -1528,12 +1543,20 @@ export const runChatGenerationInternal = internalAction({
         userId: latestRun.initiatedByUserId,
       });
       if (error instanceof Error && error.name === 'VendorBoundaryError') {
+        const violation =
+          'violation' in error ? (error as { violation: string }).violation : undefined;
+        const violatedValues =
+          'violatedValues' in error
+            ? (error as { violatedValues: readonly string[] }).violatedValues
+            : undefined;
         await recordSystemAuditEvent(ctx, {
           emitter: 'chat.run_worker',
           eventType: 'outbound_vendor_access_denied',
           initiatedByUserId: latestRun.initiatedByUserId,
           metadata: JSON.stringify({
             reason: error.message,
+            violation,
+            violatedValues,
             runId: args.runId,
             vendor: 'openrouter',
           }),

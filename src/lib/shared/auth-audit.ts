@@ -277,3 +277,19 @@ export function normalizeAuditIdentifier(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed.toLowerCase() : undefined;
 }
+
+// Re-export typed metadata shapes for compliance-critical audit events.
+// These types are advisory — the audit ledger accepts any metadata via v.any() for
+// backwards compatibility, but new audit emissions should use these types at the call site.
+export type {
+  ChatAttachmentScanResultMetadata,
+  ChatAttachmentUploadedMetadata,
+  ChatRunCompletedMetadata,
+  ChatWebSearchUsedMetadata,
+  FileAccessRedeemedMetadata,
+  FileAccessRedeemFailedMetadata,
+  FileAccessTicketIssuedMetadata,
+  OutboundVendorAccessDeniedMetadata,
+  OutboundVendorAccessUsedMetadata,
+  RetentionPurgeCompletedMetadata,
+} from './audit-metadata-types';

@@ -192,8 +192,8 @@ describe('verified current user helpers', () => {
 
     await expect(getVerifiedCurrentUserOrThrow(ctx as never)).rejects.toMatchObject({
       data: {
-        code: 'MFA_REQUIRED',
-        message: 'Multi-factor authentication setup is required',
+        code: 'MFA_SETUP_REQUIRED',
+        message: 'Multi-factor authentication setup is required before accessing data.',
       },
     });
   });

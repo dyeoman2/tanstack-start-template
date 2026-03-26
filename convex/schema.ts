@@ -848,6 +848,12 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_email', ['email']),
 
+  passwordHistory: defineTable({
+    authUserId: v.string(),
+    passwordHash: v.string(),
+    createdAt: v.number(),
+  }).index('by_auth_user_id', ['authUserId']),
+
   documentScanEvents: defineTable({
     attachmentId: v.optional(v.id('chatAttachments')),
     fileName: v.string(),

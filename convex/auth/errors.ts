@@ -4,6 +4,7 @@ export type AuthErrorCode =
   | 'UNAUTHENTICATED'
   | 'FORBIDDEN'
   | 'MFA_REQUIRED'
+  | 'MFA_SETUP_REQUIRED'
   | 'ADMIN_REQUIRED'
   | 'NOT_FOUND'
   | 'VALIDATION'

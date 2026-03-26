@@ -877,7 +877,7 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Audit log access is restricted, audit writes are append-only, and CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths.",
+            "notes": "Audit log access is restricted, audit writes are append-only, CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths, the immutable S3 audit archive bucket has server-side access logging, and DR VPC flow logs and ECS container logs are retained with 1-month retention even if the DR stack is torn down.",
             "evidence": [
               {
                 "title": "Restricted audit query access",
@@ -896,6 +896,20 @@
               {
                 "title": "Audit log immutability guardrail",
                 "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "S3 access logging on immutable audit archive",
+                "description": "Server-side access logging enabled on the immutable audit archive S3 bucket, recording all object access events to a dedicated access logs bucket with 365-day retention, SSL-only access, and blocked public access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "DR audit log retention survives stack teardown",
+                "description": "DR VPC flow logs and ECS container logs use RETAIN removal policy with 1-month retention, ensuring network and application audit trails survive DR stack teardown during or after an incident.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1068,7 +1082,7 @@
               },
               {
                 "title": "Explicit secure session settings",
-                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, and cookie-cache protections.",
+                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, cookie-cache protections, and sameSite=strict cookie policy.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1249,7 +1263,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, and regulated organization access checks continue to enforce MFA requirements.",
+            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, regulated organization access checks continue to enforce MFA requirements, and both the server-side route guard and client-side auth hook default to MFA-required (fail-closed) when the user profile has not yet loaded.",
             "evidence": [
               {
                 "title": "Account setup MFA enrollment flow",
@@ -1498,7 +1512,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.",
+            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling. The DR ALB is protected by WAFv2 managed rule groups, VPC flow logs capture all network traffic to CloudWatch Logs with 1-month retention, and ALB access logs record HTTP request details to S3. Both custom-domain and provider-hostnames strategies are supported end-to-end.",
             "evidence": [
               {
                 "title": "Trusted-origin validation helpers",
@@ -1510,6 +1524,27 @@
               {
                 "title": "Auth middleware origin rejection",
                 "description": "Auth middleware origin rejection rejecting authentication requests from untrusted origins before processing credentials.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "AWS WAFv2 managed rule groups on DR ALB",
+                "description": "WAFv2 Web ACL attached to the disaster-recovery ALB with AWSManagedRulesCommonRuleSet (OWASP Top 10), AWSManagedRulesKnownBadInputsRuleSet (Log4Shell and similar), AWSManagedRulesSQLiRuleSet (SQL injection), and an IP-based rate-limiting rule (2000 requests per 5 minutes per IP). CloudWatch metrics enabled for all rule groups.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "VPC Flow Logs on DR network",
+                "description": "VPC Flow Logs enabled on the disaster-recovery VPC capturing all traffic types to a dedicated CloudWatch Logs group with 1-month retention and RETAIN removal policy for network-layer audit and threat detection.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "ALB access logging on DR load balancer",
+                "description": "ALB access logs enabled on the disaster-recovery Application Load Balancer, recording HTTP request details to a dedicated S3 bucket with 90-day retention and SSL-only access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1980,7 +2015,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational.",
+            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational. GitHub Actions workflows authenticate via OIDC-assumed AWS roles with no long-lived credentials, CDK deploys run a synth pre-flight check before deployment, and the DR backup S3 bucket has server-side access logging.",
             "evidence": [
               {
                 "title": "Weekly DR backup workflow",
@@ -2006,6 +2041,27 @@
               {
                 "title": "Retained backup workflow run record",
                 "description": "Workflow Stored backup verification records retain GitHub Actions run metadata, backup artifact location, step outcomes, and related evidence showing the hosted production export path is active.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "GitHub OIDC federated authentication for DR workflows",
+                "description": "DR backup and recovery GitHub Actions workflows authenticate via OIDC-assumed AWS roles scoped to the DR backup bucket and recovery resources. No long-lived IAM access keys are stored in GitHub secrets, eliminating static credential rotation and blast-radius risk.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "CDK synth pre-flight gate on DR deploys",
+                "description": "DR and storage deploy wrappers run a CDK synth pre-flight check before deployment, aborting with a clear error if the synthesized template is invalid.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "S3 access logging on DR backup bucket",
+                "description": "Server-side access logging enabled on the DR backup S3 bucket, recording all object access events to a dedicated access logs bucket with 90-day retention, SSL-only access, and blocked public access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2728,11 +2784,11 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Session cookies are configured for secure transport on HTTPS origins, and temporary file access links remain short-lived within the regulated transport posture.",
+            "notes": "Session cookies are configured for secure transport on HTTPS origins with sameSite=strict to prevent cross-site cookie transmission, and temporary file access links remain short-lived within the regulated transport posture.",
             "evidence": [
               {
                 "title": "Session transport configuration",
-                "description": "Session transport configuration showing secure cookie settings, session expiry values, fresh-session windows, and related transport protections.",
+                "description": "Session transport configuration showing secure cookie settings with sameSite=strict, session expiry values, fresh-session windows, and related transport protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2982,7 +3038,7 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
-      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, and guarded credential or session recovery flows.",
+      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, guarded credential or session recovery flows, and breached-password rejection via the HaveIBeenPwned k-anonymity API.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3049,7 +3105,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, and authenticator onboarding issues backup codes for controlled recovery.",
+            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, authenticator onboarding issues backup codes for controlled recovery, and passwords found in known data breaches are rejected at signup, reset, and change via the Better Auth haveIBeenPwned plugin.",
             "evidence": [
               {
                 "title": "Authentication recovery rate-limit rules",
@@ -3075,6 +3131,13 @@
               {
                 "title": "Authenticator backup-code recovery workflow",
                 "description": "Authenticator onboarding and account-recovery workflow showing backup codes are issued during setup and accepted later when a user needs to regain access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Breached-password rejection via HaveIBeenPwned plugin",
+                "description": "Better Auth haveIBeenPwned plugin rejects passwords found in known data breaches during signup, password reset, and password change using the HIBP k-anonymity range API. Only the first 5 characters of the SHA-1 hash are transmitted. No API key required.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

@@ -1533,6 +1533,7 @@ async function _isSiteAdminUser(ctx: GenericCtx<DataModel>, authUserId: string):
 
 type CtxWithRunMutation = GenericCtx<DataModel> & {
   runMutation?: (fn: unknown, args: unknown) => Promise<unknown>;
+  runAction?: (fn: unknown, args: unknown) => Promise<unknown>;
 };
 
 type CtxWithRequiredRunMutation = GenericCtx<DataModel> & {
@@ -2028,6 +2029,36 @@ export const createAuth = (
         return;
       }
       await ctxWithRunMutation.runMutation(internal.authLockout.clearFailedAttempts, { email });
+    },
+    checkPasswordReuse: async ({
+      authUserId,
+      candidatePassword,
+    }: {
+      authUserId: string;
+      candidatePassword: string;
+    }) => {
+      if (!ctxWithRunMutation.runAction) {
+        return { reused: false };
+      }
+      return (await ctxWithRunMutation.runAction(internal.passwordHistory.checkPasswordHistory, {
+        authUserId,
+        candidatePassword,
+      })) as { reused: boolean };
+    },
+    recordPasswordChange: async ({
+      authUserId,
+      passwordHash,
+    }: {
+      authUserId: string;
+      passwordHash: string;
+    }) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return;
+      }
+      await ctxWithRunMutation.runMutation(internal.passwordHistory.recordPasswordHash, {
+        authUserId,
+        passwordHash,
+      });
     },
     recordAdminStepUpChallenge: async ({
       ipAddress,

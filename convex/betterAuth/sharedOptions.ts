@@ -165,6 +165,11 @@ type SharedBetterAuthCallbacks = {
   sendInvitationEmail: NonNullable<OrganizationPluginOptions['sendInvitationEmail']>;
   sendResetPassword: NonNullable<BetterAuthEmailAndPasswordOptions['sendResetPassword']>;
   sendVerificationEmail: NonNullable<BetterAuthEmailVerificationOptions['sendVerificationEmail']>;
+  checkPasswordReuse?: (input: {
+    authUserId: string;
+    candidatePassword: string;
+  }) => Promise<{ reused: boolean }>;
+  recordPasswordChange?: (input: { authUserId: string; passwordHash: string }) => Promise<void>;
   shouldBlockPasswordAuth?: (input: {
     email: string;
     path: '/sign-in/email' | '/sign-up/email';
@@ -943,15 +948,33 @@ export function createSharedBetterAuthOptions(
           });
         }
 
-        // Enforce password complexity on endpoints that accept a new password.
+        // Enforce password complexity and reuse prevention on endpoints that accept a new password.
         const passwordField = PASSWORD_COMPLEXITY_PATHS[ctx.path];
-        if (passwordField) {
-          const candidatePassword = getStringField(ctx.body, passwordField);
-          if (candidatePassword) {
-            const { valid, errors } = validatePasswordComplexity(candidatePassword);
-            if (!valid) {
+        const candidatePassword = passwordField
+          ? getStringField(ctx.body, passwordField)
+          : undefined;
+
+        if (passwordField && candidatePassword) {
+          const { valid, errors } = validatePasswordComplexity(candidatePassword);
+          if (!valid) {
+            throw new APIError('BAD_REQUEST', {
+              message: `Password does not meet complexity requirements: ${errors.join('; ')}`,
+            });
+          }
+        }
+
+        // Check password reuse after complexity validation passes.
+        if (passwordField && candidatePassword) {
+          const session = ctx.context.session;
+          if (session?.user?.id && callbacks.checkPasswordReuse) {
+            const { reused } = await callbacks.checkPasswordReuse({
+              authUserId: session.user.id,
+              candidatePassword,
+            });
+            if (reused) {
               throw new APIError('BAD_REQUEST', {
-                message: `Password does not meet complexity requirements: ${errors.join('; ')}`,
+                message:
+                  'This password has been used recently. Please choose a different password.',
               });
             }
           }
@@ -1001,6 +1024,32 @@ export function createSharedBetterAuthOptions(
       after: createAuthMiddleware(async (ctx) => {
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
         await handleStepUpAfterHook(callbacks, ctx);
+
+        // Record successful password changes in history for reuse prevention.
+        if (ctx.path === '/change-password' || ctx.path === '/reset-password') {
+          const returned = ctx.context.returned as { status?: number } | undefined;
+          if (returned?.status === 200 && ctx.context.session?.user?.id) {
+            try {
+              const user = await ctx.context.internalAdapter.findUserByEmail(
+                ctx.context.session.user.email,
+              );
+              if (user?.user) {
+                const accounts = await ctx.context.internalAdapter.findAccounts(user.user.id);
+                const credentialAccount = accounts.find(
+                  (a: { providerId: string }) => a.providerId === 'credential',
+                );
+                if (credentialAccount?.password) {
+                  await callbacks.recordPasswordChange?.({
+                    authUserId: user.user.id,
+                    passwordHash: credentialAccount.password as string,
+                  });
+                }
+              }
+            } catch (err) {
+              console.warn('[password-history] Failed to record password change:', err);
+            }
+          }
+        }
 
         // Account lockout: track failed sign-in attempts in durable storage
         // and temporarily ban the user after consecutive failures within the

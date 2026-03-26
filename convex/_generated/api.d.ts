@@ -19,6 +19,7 @@ import type * as auth_access from "../auth/access.js";
 import type * as auth_authorized from "../auth/authorized.js";
 import type * as auth_errors from "../auth/errors.js";
 import type * as authLockout from "../authLockout.js";
+import type * as passwordHistory from "../passwordHistory.js";
 import type * as brandTheme from "../brandTheme.js";
 import type * as chatBackground from "../chatBackground.js";
 import type * as chatModels from "../chatModels.js";
@@ -120,6 +121,7 @@ declare const fullApi: ApiFromModules<{
   "auth/authorized": typeof auth_authorized;
   "auth/errors": typeof auth_errors;
   authLockout: typeof authLockout;
+  passwordHistory: typeof passwordHistory;
   brandTheme: typeof brandTheme;
   chatBackground: typeof chatBackground;
   chatModels: typeof chatModels;

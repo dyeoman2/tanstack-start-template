@@ -6,9 +6,13 @@ import {
   type VendorKey,
 } from '../shared/vendor-boundary';
 
-class VendorBoundaryError extends Error {
+export type VendorBoundaryViolation = 'approval' | 'data_class' | 'environment';
+
+export class VendorBoundaryError extends Error {
   constructor(
     public readonly vendor: VendorKey,
+    public readonly violation: VendorBoundaryViolation,
+    public readonly violatedValues: readonly string[],
     message: string,
   ) {
     super(message);
@@ -61,6 +65,8 @@ export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; ven
   if (!approved) {
     throw new VendorBoundaryError(
       args.vendor,
+      'approval',
+      [policy.approvalEnvVar ?? 'default'],
       `${policy.displayName} outbound access is blocked until ${policy.approvalEnvVar ?? 'an approval flag'} is enabled.`,
     );
   }
@@ -71,6 +77,8 @@ export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; ven
   if (unsupportedDataClasses.length > 0) {
     throw new VendorBoundaryError(
       args.vendor,
+      'data_class',
+      unsupportedDataClasses,
       `${policy.displayName} does not allow outbound transmission for: ${unsupportedDataClasses.join(', ')}`,
     );
   }
@@ -82,6 +90,8 @@ export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; ven
   ) {
     throw new VendorBoundaryError(
       args.vendor,
+      'environment',
+      [environment],
       `${policy.displayName} outbound access is not allowed in ${environment}.`,
     );
   }

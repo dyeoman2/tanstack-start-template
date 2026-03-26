@@ -561,6 +561,17 @@ export async function getVerifiedCurrentUserOrThrow(
     assurance: await resolveUserAuthAssuranceState(ctx, user),
     recentStepUpWindowMs: getRecentStepUpWindowMs(),
   });
+
+  // Server-side MFA enrollment gate: block data-plane access for users who are
+  // required to have MFA but haven't completed enrollment yet. This prevents the
+  // brief window between password authentication and MFA setup from exposing data.
+  if (authPolicy.requiresMfaSetup) {
+    throwConvexError(
+      'MFA_SETUP_REQUIRED',
+      'Multi-factor authentication setup is required before accessing data.',
+    );
+  }
+
   const reason = getMfaRequirementReason({
     mfaEnrolled: !authPolicy.requiresMfaSetup,
     sessionMfaSatisfied: isCurrentSessionMfaSatisfied(user),
@@ -591,6 +602,17 @@ export async function getVerifiedCurrentUserFromActionOrThrow(
     assurance: await resolveUserAuthAssuranceState(ctx, user),
     recentStepUpWindowMs: getRecentStepUpWindowMs(),
   });
+
+  // Server-side MFA enrollment gate: block data-plane access for users who are
+  // required to have MFA but haven't completed enrollment yet. This prevents the
+  // brief window between password authentication and MFA setup from exposing data.
+  if (authPolicy.requiresMfaSetup) {
+    throwConvexError(
+      'MFA_SETUP_REQUIRED',
+      'Multi-factor authentication setup is required before accessing data.',
+    );
+  }
+
   const reason = getMfaRequirementReason({
     mfaEnrolled: !authPolicy.requiresMfaSetup,
     sessionMfaSatisfied: isCurrentSessionMfaSatisfied(user),
