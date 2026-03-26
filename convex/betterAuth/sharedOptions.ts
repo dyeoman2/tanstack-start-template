@@ -20,6 +20,7 @@ import {
   getBetterAuthUrlForTooling,
   getGoogleOAuthCredentials,
   getRequiredBetterAuthUrl,
+  isDevelopmentOrTestDeployment,
   isTrustedBetterAuthOrigin,
   shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
@@ -283,7 +284,22 @@ function getPasskeyOptions(siteUrlValue: string) {
   };
 }
 
-function shouldDisableAuthRateLimit() {
+function shouldDisableAuthRateLimit(siteUrl?: string) {
+  if (isDevelopmentOrTestDeployment()) {
+    return true;
+  }
+
+  if (siteUrl) {
+    try {
+      const hostname = new URL(siteUrl).hostname;
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return true;
+      }
+    } catch {
+      // Ignore invalid urls and fall through to the environment checks below.
+    }
+  }
+
   return (
     process.env.NODE_ENV === 'development' ||
     process.env.NODE_ENV === 'test' ||
@@ -781,7 +797,7 @@ export function createSharedBetterAuthOptions(
   const betterAuthUrl = includeRuntimeEnvConfig
     ? getBetterAuthUrlForTooling()
     : getRequiredBetterAuthUrl();
-  const disableRateLimit = shouldDisableAuthRateLimit();
+  const disableRateLimit = shouldDisableAuthRateLimit(betterAuthUrl);
   const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies(betterAuthUrl) : false;
   const googleOAuthCredentials = includeRuntimeEnvConfig ? getGoogleOAuthCredentials() : null;
   const betterAuthSecrets = getBetterAuthSecrets();
@@ -808,9 +824,10 @@ export function createSharedBetterAuthOptions(
     advanced: {
       useSecureCookies: secureCookies,
       ipAddress: {
-        // Only trust the canonical app-to-Convex proxy header after the auth route
-        // has verified the signed provenance metadata.
-        ipAddressHeaders: [AUTH_PROXY_IP_HEADER],
+        // Prefer the canonical signed app-to-Convex proxy header, but fall back to
+        // infrastructure-provided forwarding headers for direct browser-to-Convex
+        // Better Auth endpoints like /api/auth/get-session.
+        ipAddressHeaders: [AUTH_PROXY_IP_HEADER, 'x-forwarded-for', 'cf-connecting-ip'],
         ipv6Subnet: 64,
       },
       defaultCookieAttributes: {

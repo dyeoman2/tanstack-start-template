@@ -64,6 +64,14 @@ describe('createSharedBetterAuthOptions', () => {
     });
   });
 
+  it('disables auth rate limiting for loopback Better Auth origins even when NODE_ENV is not development', () => {
+    process.env.NODE_ENV = 'production';
+
+    const options = createOptions();
+
+    expect(options.rateLimit?.enabled).toBe(false);
+  });
+
   it('sets a root Better Auth app name for provider and auth UX consistency', () => {
     const options = createOptions();
 
@@ -151,10 +159,14 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.session?.cookieCache?.enabled).toBe(false);
   });
 
-  it('trusts only the canonical signed auth proxy ip header', () => {
+  it('prefers the canonical signed auth proxy ip header and keeps direct Convex fallbacks', () => {
     const options = createOptions();
 
-    expect(options.advanced?.ipAddress?.ipAddressHeaders).toEqual([AUTH_PROXY_IP_HEADER]);
+    expect(options.advanced?.ipAddress?.ipAddressHeaders).toEqual([
+      AUTH_PROXY_IP_HEADER,
+      'x-forwarded-for',
+      'cf-connecting-ip',
+    ]);
   });
 
   it('configures Better Auth with versioned secrets when present', () => {

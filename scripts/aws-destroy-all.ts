@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 type DestroyStep = {
+  args: string[];
   command: string;
   label: string;
 };
@@ -17,33 +18,36 @@ type CommandResult = {
 };
 
 export function buildAwsDestroyAllSteps(yes: boolean): DestroyStep[] {
-  const suffix = yes ? ' -- --yes' : '';
   return [
     {
+      args: ['run', 'dr:destroy', '--', '--stack', 'all', ...(yes ? ['--yes'] : [])],
       command: `pnpm run dr:destroy -- --stack all${yes ? ' --yes' : ''}`,
       label: 'DR teardown',
     },
     {
-      command: `pnpm run storage:destroy:prod${suffix}`,
+      args: ['run', 'storage:destroy:prod', ...(yes ? ['--', '--yes'] : [])],
+      command: `pnpm run storage:destroy:prod${yes ? ' -- --yes' : ''}`,
       label: 'prod storage teardown',
     },
     {
-      command: `pnpm run storage:destroy:dev${suffix}`,
+      args: ['run', 'storage:destroy:dev', ...(yes ? ['--', '--yes'] : [])],
+      command: `pnpm run storage:destroy:dev${yes ? ' -- --yes' : ''}`,
       label: 'dev storage teardown',
     },
     {
-      command: `pnpm run audit-archive:destroy${suffix}`,
+      args: ['run', 'audit-archive:destroy', ...(yes ? ['--', '--yes'] : [])],
+      command: `pnpm run audit-archive:destroy${yes ? ' -- --yes' : ''}`,
       label: 'audit archive teardown',
     },
   ];
 }
 
-export function runDestroyStep(command: string): CommandResult {
-  const result = spawnSync(command, {
+export function runDestroyStep(args: string[]): CommandResult {
+  const result = spawnSync('pnpm', args, {
     cwd: process.cwd(),
     encoding: 'utf8',
     env: process.env,
-    shell: true,
+    shell: false,
     stdio: 'inherit',
   });
 
@@ -75,7 +79,7 @@ function main() {
 
   for (const step of buildAwsDestroyAllSteps(yes)) {
     console.log(`Running ${step.label}: ${step.command}`);
-    const result = runDestroyStep(step.command);
+    const result = runDestroyStep(step.args);
     if (!result.ok) {
       throw new Error(`Failed during ${step.label}.`);
     }

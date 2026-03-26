@@ -85,30 +85,33 @@ const awsRegion = requireEnv('AWS_REGION');
 const storageStackName = `${projectSlug}-${stage}-guardduty-stack`;
 const appPath = 'node ./bin/app.mjs';
 const infraRoot = path.join(process.cwd(), 'infra', 'aws-cdk');
+const documentResultCallbackSecretEnvName = 'AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET';
 
 const cdkArgs = isPreview
   ? ['exec', 'cdk', 'synth', '--app', appPath, storageStackName]
   : ['exec', 'cdk', 'deploy', '--require-approval', 'never', '--app', appPath, storageStackName];
 
+const storageDeployEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  AWS_REGION: awsRegion,
+  AWS_STORAGE_PROJECT_SLUG: projectSlug,
+  CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || awsRegion,
+  AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(convexSiteUrl),
+  AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: convexDecisionCallbackSharedSecret,
+  AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: convexInspectionCallbackSharedSecret,
+  AWS_FILE_SERVE_SIGNING_SECRET: fileServeSigningSecret,
+  ...(storageAlertEmail ? { AWS_STORAGE_ALERT_EMAIL: storageAlertEmail } : {}),
+  AWS_S3_QUARANTINE_BUCKET_NAME: quarantineBucket,
+  AWS_S3_CLEAN_BUCKET_NAME: cleanBucket,
+  AWS_S3_REJECTED_BUCKET_NAME: rejectedBucket,
+  AWS_S3_MIRROR_BUCKET_NAME: mirrorBucket,
+  STORAGE_STAGE: stage,
+};
+storageDeployEnv[documentResultCallbackSecretEnvName] = convexDocumentResultCallbackSharedSecret;
+
 const result = spawnSync('pnpm', cdkArgs, {
   cwd: infraRoot,
-  env: {
-    ...process.env,
-    AWS_REGION: awsRegion,
-    AWS_STORAGE_PROJECT_SLUG: projectSlug,
-    CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || awsRegion,
-    AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(convexSiteUrl),
-    AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: convexDecisionCallbackSharedSecret,
-    AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: convexDocumentResultCallbackSharedSecret,
-    AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: convexInspectionCallbackSharedSecret,
-    AWS_FILE_SERVE_SIGNING_SECRET: fileServeSigningSecret,
-    ...(storageAlertEmail ? { AWS_STORAGE_ALERT_EMAIL: storageAlertEmail } : {}),
-    AWS_S3_QUARANTINE_BUCKET_NAME: quarantineBucket,
-    AWS_S3_CLEAN_BUCKET_NAME: cleanBucket,
-    AWS_S3_REJECTED_BUCKET_NAME: rejectedBucket,
-    AWS_S3_MIRROR_BUCKET_NAME: mirrorBucket,
-    STORAGE_STAGE: stage,
-  },
+  env: storageDeployEnv,
   shell: false,
   stdio: 'inherit',
 });
