@@ -425,6 +425,15 @@ function appendNamedHandlerBlock(source: string, block: string) {
   return `${block}\n${handlerBlock}`;
 }
 
+function appendCreatorFunctionBlock(source: string, block: string, creator: string) {
+  const creatorBlock = findNamedFunctionBlock(source, creator);
+  if (!creatorBlock) {
+    return block;
+  }
+
+  return `${block}\n${creatorBlock}`;
+}
+
 export function classifyConvexFunction(record: ConvexFunctionRecord): ClassifiedRecord {
   const allowlistKey = `${record.file}:${record.name}`;
 
@@ -484,10 +493,20 @@ function collectInventory() {
     .flatMap((filePath) => {
       const source = fs.readFileSync(filePath, 'utf8');
       const relativeFilePath = path.relative(ROOT, filePath);
-      return scanConvexFunctionsFromSource(source, relativeFilePath).map((record) => ({
-        ...record,
-        block: appendNamedHandlerBlock(source, record.block),
-      }));
+      return scanConvexFunctionsFromSource(source, relativeFilePath).map((record) => {
+        const blockWithHandlers = appendNamedHandlerBlock(source, record.block);
+        const expandedBlock =
+          record.kind === 'custom'
+            ? appendCreatorFunctionBlock(source, blockWithHandlers, record.creator)
+            : blockWithHandlers;
+
+        return {
+          ...record,
+          block: expandedBlock,
+          hasReturns:
+            record.hasReturns || (record.kind === 'custom' && /\breturns\s*:/.test(expandedBlock)),
+        };
+      });
     });
 }
 
