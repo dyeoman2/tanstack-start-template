@@ -1164,6 +1164,17 @@ export default defineSchema({
     title: v.string(),
     owner: v.optional(v.string()),
     summary: v.optional(v.union(v.string(), v.null())),
+    contractStatus: v.optional(
+      v.union(
+        v.literal('baa_executed'),
+        v.literal('dpa_executed'),
+        v.literal('not_required'),
+        v.literal('pending'),
+        v.literal('not_started'),
+      ),
+    ),
+    contractNotes: v.optional(v.union(v.string(), v.null())),
+    contractReviewedAt: v.optional(v.union(v.number(), v.null())),
     lastReviewedAt: v.optional(v.union(v.number(), v.null())),
     nextReviewAt: v.optional(v.union(v.number(), v.null())),
     linkedFollowUpRunId: v.optional(v.id('reviewRuns')),

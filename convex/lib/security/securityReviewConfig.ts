@@ -191,6 +191,44 @@ export const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
     title: 'Release provenance evidence is current',
   },
   {
+    allowException: true,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-IR-003',
+        itemId: 'provider-incident-response-exercise-program-documented',
+      },
+    ],
+    description:
+      'Conduct or document an incident response tabletop exercise and retain the results.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'incident-response-drill-completed',
+    statementText:
+      'I conducted or reviewed an incident response tabletop exercise and the results are retained.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:incident-response-drill',
+    title: 'Incident response exercise completed',
+  },
+  {
+    allowException: false,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-CA-005',
+        itemId: 'provider-poam-workflow-documented',
+      },
+    ],
+    description:
+      'Review all open follow-up actions, verify assignments and due dates are current, and attest the remediation backlog is actively managed.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'poam-review-current',
+    statementText:
+      'I reviewed all open follow-up actions and verified that remediation assignments and target dates are current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:poam-review',
+    title: 'Remediation backlog (POA&M) reviewed',
+  },
+  {
     allowException: false,
     controlLinks: [
       {

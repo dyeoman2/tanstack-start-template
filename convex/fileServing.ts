@@ -32,6 +32,8 @@ type IssuedFileAccessUrl = {
   url: string;
 };
 
+// Both inputs are HMAC-SHA256 hex strings (always 64 chars), so the early
+// return on length mismatch does not leak exploitable timing information.
 function timingSafeEqual(left: string, right: string) {
   if (left.length !== right.length) {
     return false;

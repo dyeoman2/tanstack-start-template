@@ -94,6 +94,7 @@ This policy defines the provider requirements for incident response planning, tr
 
 - The provider maintains a documented incident response plan and procedure set.
 - Incident response training and testing occur on the defined cadence.
+- Incident response exercises are conducted at least annually as part of the annual security review.
 - Incident handling evidence is retained for annual review.
 `,
   'docs/security-policies/information-security-governance-policy.md': `# Information Security Governance Policy
@@ -106,6 +107,7 @@ This policy defines the governance structure used to oversee the provider securi
 
 - The provider maintains a documented security program that is reviewed at least annually.
 - Security planning, control assessment, and tracked remediation remain part of the documented governance process.
+- Open follow-up actions serve as the provider plan of action and milestones (POA&M) and are reviewed during each annual security review.
 - Policy and control review outcomes are retained as part of the annual review record.
 `,
   'docs/security-policies/malware-protection-and-software-integrity-policy.md': `# Malware Protection and Software Integrity Policy

@@ -303,6 +303,9 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
       approvalEnvVar: vendor.runtime.approvalEnvVar,
       approved: vendor.runtime.approved,
       approvedByDefault: vendor.runtime.approvedByDefault,
+      contractNotes: vendor.contractNotes ?? null,
+      contractReviewedAt: vendor.contractReviewedAt ?? null,
+      contractStatus: vendor.contractStatus ?? 'not_started',
       lastReviewedAt: vendor.lastReviewedAt ?? null,
       linkedAnnualReviewTask: linkedAnnualReviewTask
         ? {
