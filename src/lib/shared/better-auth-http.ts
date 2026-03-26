@@ -1,4 +1,4 @@
-import { getAuthProxySharedSecret } from '../server/env.server';
+import { getAuthProxySharedSecret, isDevelopmentOrTestDeployment } from '../server/env.server';
 
 export const AUTH_PROXY_IP_HEADER = 'x-app-client-ip';
 export const AUTH_PROXY_IP_SIGNATURE_HEADER = 'x-app-client-ip-sig';
@@ -27,6 +27,7 @@ const FORWARDED_IP_HEADER_NAMES = [
   'x-forwarded-proto',
   'x-real-ip',
 ] as const;
+const LOCALHOST_IP = '127.0.0.1';
 
 type HeaderSource = Headers | Request | { headers?: Headers; request?: Request };
 
@@ -39,6 +40,28 @@ type NetlifyRuntime = {
 function normalizeOptionalString(value: string | null | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+function isValidIpAddress(value: string) {
+  if (value.includes(':')) {
+    return /^[0-9a-f:]+$/iu.test(value);
+  }
+  return /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(value);
+}
+
+function resolveForwardedClientIp(headers: Headers) {
+  for (const headerName of ['cf-connecting-ip', 'x-forwarded-for', 'x-real-ip'] as const) {
+    const rawValue = normalizeOptionalString(headers.get(headerName));
+    if (!rawValue) {
+      continue;
+    }
+    const candidate = rawValue.split(',')[0]?.trim();
+    if (candidate && isValidIpAddress(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function resolveHeaders(source: HeaderSource): Headers | null {
@@ -187,13 +210,16 @@ export async function buildBetterAuthProxyHeaders(
 export async function buildTrustedConvexAuthRequest(request: Request): Promise<Request> {
   const headers = copyAllowedAuthHeaders(request.headers);
   const verifiedProxyIp = await resolveVerifiedProxyIp(request);
+  const forwardedProxyIp = resolveForwardedClientIp(request.headers);
+  const canonicalClientIp =
+    verifiedProxyIp ?? forwardedProxyIp ?? (isDevelopmentOrTestDeployment() ? LOCALHOST_IP : null);
 
-  if (verifiedProxyIp) {
-    headers.set(AUTH_PROXY_IP_HEADER, verifiedProxyIp);
+  if (canonicalClientIp) {
+    headers.set(AUTH_PROXY_IP_HEADER, canonicalClientIp);
   }
 
   for (const headerName of FORWARDED_IP_HEADER_NAMES) {
-    if (headerName !== AUTH_PROXY_IP_HEADER || !verifiedProxyIp) {
+    if (headerName !== AUTH_PROXY_IP_HEADER || !canonicalClientIp) {
       headers.delete(headerName);
     }
   }

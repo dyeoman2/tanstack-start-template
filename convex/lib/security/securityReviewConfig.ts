@@ -66,6 +66,30 @@ export type ReviewTaskBlueprint = {
     | 'vendor_posture_snapshot';
 };
 
+function buildAnnualDocumentUploadTask(args: {
+  allowException?: boolean;
+  description: string;
+  internalControlId: string;
+  itemId: string;
+  statementKey: string;
+  statementText: string;
+  templateKey: string;
+  title: string;
+}): ReviewTaskBlueprint {
+  return {
+    allowException: args.allowException ?? false,
+    controlLinks: [{ internalControlId: args.internalControlId, itemId: args.itemId }],
+    description: args.description,
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: args.statementKey,
+    statementText: args.statementText,
+    taskType: 'document_upload',
+    templateKey: args.templateKey,
+    title: args.title,
+  };
+}
+
 export const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
   {
     allowException: false,
@@ -247,21 +271,94 @@ export const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
     templateKey: 'annual:attest:security-awareness-program',
     title: 'Security awareness training program reviewed',
   },
-  {
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:assessment-plan',
+    title: 'Control assessment plan linked',
+    description:
+      'Attach or link the current provider control assessment plan used for recurring assessments, including the current version when available.',
+    internalControlId: 'CTRL-CA-002',
+    itemId: 'provider-assessment-plan-documented',
+    statementKey: 'assessment-plan-current',
+    statementText:
+      'I linked the current provider control assessment plan used for recurring assessments.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:baseline-review-procedure',
+    title: 'Baseline review procedure linked',
+    description:
+      'Attach or link the current provider baseline review and update procedure for hosted-service baseline changes, including the current version when available.',
+    internalControlId: 'CTRL-CM-002',
+    itemId: 'provider-baseline-review-procedure-documented',
+    statementKey: 'baseline-review-procedure-current',
+    statementText:
+      'I linked the current provider baseline review and update procedure for hosted-service baseline changes.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:change-approval-and-rollback-procedure',
+    title: 'Change approval and rollback procedure linked',
+    description:
+      'Attach or link the current provider change approval and rollback procedure, including emergency-change handling expectations and the current version when available.',
+    internalControlId: 'CTRL-CM-003',
+    itemId: 'provider-change-approval-and-rollback-procedure-documented',
+    statementKey: 'change-approval-and-rollback-procedure-current',
+    statementText:
+      'I linked the current provider change approval and rollback procedure, including emergency-change handling expectations.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:component-inventory-review-procedure',
+    title: 'Component inventory review procedure linked',
+    description:
+      'Attach or link the current provider component inventory review and update procedure, including the current version when available.',
+    internalControlId: 'CTRL-CM-008',
+    itemId: 'provider-component-inventory-review-procedure-documented',
+    statementKey: 'component-inventory-review-procedure-current',
+    statementText: 'I linked the current provider component inventory review and update procedure.',
+  }),
+  buildAnnualDocumentUploadTask({
     allowException: true,
-    controlLinks: [
-      { internalControlId: 'CTRL-IR-004', itemId: 'provider-incident-response-procedure' },
-    ],
-    description: 'Review the incident response procedure and attest that it remains current.',
-    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
-    required: true,
+    templateKey: 'annual:attest:incident-response-procedure',
+    title: 'Incident response procedure linked',
+    description:
+      'Attach or link the current provider incident response procedure covering triage, escalation, containment, customer coordination, and follow-up, including the current version when available.',
+    internalControlId: 'CTRL-IR-004',
+    itemId: 'provider-incident-response-procedure',
     statementKey: 'incident-response-procedure-current',
     statementText:
-      'I reviewed the incident response procedure and it remains current for the provider environment.',
-    taskType: 'attestation',
-    templateKey: 'annual:attest:incident-response-procedure',
-    title: 'Incident response procedure reviewed',
-  },
+      'I linked the current provider incident response procedure for the hosted service environment.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:security-planning-artifact',
+    title: 'Security planning artifact linked',
+    description:
+      'Attach or link the current provider security planning artifact used for system security or privacy planning, including version or approval context when available.',
+    internalControlId: 'CTRL-PL-002',
+    itemId: 'provider-plan-review-and-approval-documented',
+    statementKey: 'security-planning-artifact-current',
+    statementText:
+      'I linked the current provider security planning artifact and included version or approval context when available.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:unsupported-component-procedure',
+    title: 'Unsupported-component procedure linked',
+    description:
+      'Attach or link the current provider unsupported-component review and replacement procedure, including exception and replacement expectations when available.',
+    internalControlId: 'CTRL-SA-022',
+    itemId: 'provider-unsupported-component-replacement-workflow-documented',
+    statementKey: 'unsupported-component-procedure-current',
+    statementText:
+      'I linked the current provider unsupported-component review and replacement procedure.',
+  }),
+  buildAnnualDocumentUploadTask({
+    templateKey: 'annual:document:cryptography-standards',
+    title: 'Cryptography standards artifact linked',
+    description:
+      'Attach or link the current provider cryptography standards artifact describing approved cryptographic uses and selections, including the current version when available.',
+    internalControlId: 'CTRL-SC-013',
+    itemId: 'provider-cryptography-standard-selection-documented',
+    statementKey: 'cryptography-standards-current',
+    statementText:
+      'I linked the current provider cryptography standards artifact describing approved cryptographic uses and selections.',
+  }),
   {
     allowException: false,
     controlLinks: [{ internalControlId: 'CTRL-AU-006', itemId: 'provider-review-procedure' }],

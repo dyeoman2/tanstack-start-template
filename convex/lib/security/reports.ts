@@ -165,6 +165,7 @@ export async function exportEvidenceReportHandler(
 export async function generateEvidenceReportHandler(
   ctx: ActionCtx,
   args: {
+    autoReview?: boolean;
     reportKind?:
       | 'security_posture'
       | 'audit_integrity'
@@ -457,6 +458,7 @@ export async function generateEvidenceReportHandler(
   const contentHash = await hashContent(report);
 
   const id = await ctx.runMutation(anyApi.securityPosture.createEvidenceReport, {
+    autoReview: args.autoReview ?? false,
     contentJson: report,
     contentHash,
     generatedByUserId: currentUser.authUserId,
@@ -492,7 +494,7 @@ export async function generateEvidenceReportHandler(
     scopeId: SECURITY_SCOPE_ID,
     scopeType: SECURITY_SCOPE_TYPE,
     reportKind,
-    reviewStatus: 'pending' as const,
+    reviewStatus: (args.autoReview ? 'reviewed' : 'pending') as 'pending' | 'reviewed',
   };
 }
 
@@ -547,6 +549,7 @@ export async function refreshReviewRunAutomationHandler(
             ? 'audit_readiness'
             : blueprint.automationKind;
       const report = await generateEvidenceReportHandler(ctx, {
+        autoReview: true,
         reportKind,
       });
       await ctx.runMutation(anyApi.securityReviews.replaceReviewTaskEvidenceLinksInternal, {
@@ -568,7 +571,7 @@ export async function refreshReviewRunAutomationHandler(
           createdAt: report.createdAt,
           reportKind,
           reviewStatus: report.reviewStatus,
-          reviewedAt: null,
+          reviewedAt: report.reviewStatus === 'reviewed' ? report.createdAt : null,
         },
         {
           freshnessWindowDays: task.freshnessWindowDays ?? undefined,

@@ -3,6 +3,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Checkbox } from '~/components/ui/checkbox';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import { Input } from '~/components/ui/input';
 import {
   Select,
@@ -185,6 +186,7 @@ export function AdminSecurityFindingDetail(props: {
     toDateInputValue(activeFollowUp?.dueAt ?? null),
   );
   const [resolutionNote, setResolutionNote] = useState(activeFollowUp?.resolutionNote ?? '');
+  const [evidenceExpanded, setEvidenceExpanded] = useState(false);
   const [evidenceTab, setEvidenceTab] = useState<'link' | 'note' | 'file'>('link');
   const [evidenceControlKey, setEvidenceControlKey] = useState(
     activeFollowUp?.controlLinks[0]
@@ -506,298 +508,312 @@ export function AdminSecurityFindingDetail(props: {
             </div>
           </div>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Closure evidence</p>
-            {activeFollowUp.reviewedEvidence.length ? (
-              <div className="space-y-2">
-                {activeFollowUp.reviewedEvidence.map((evidence) => (
-                  <div
-                    key={evidence.id}
-                    className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
-                  >
-                    <p className="font-medium text-foreground">{evidence.title}</p>
-                    <p>
-                      {evidence.internalControlId} · {evidence.itemId}
-                    </p>
-                    <p>
-                      Reviewed{' '}
-                      {evidence.reviewedAt
-                        ? new Date(evidence.reviewedAt).toLocaleString()
-                        : 'pending timestamp'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                No reviewed closure evidence is linked yet. Add proof below, then review it from the
-                controls workspace before resolving this follow-up.
-              </div>
-            )}
-
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-checklist`}>
-                  Checklist item
-                </label>
-                <Select value={evidenceControlKey} onValueChange={setEvidenceControlKey}>
-                  <SelectTrigger id={`${fieldId}-fu-ev-checklist`}>
-                    <SelectValue placeholder="Select checklist item" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeFollowUp.controlLinks.map((controlLink) => (
-                      <SelectItem
-                        key={`${controlLink.internalControlId}:${controlLink.itemId}`}
-                        value={`${controlLink.internalControlId}:${controlLink.itemId}`}
-                      >
-                        {formatControlLinkLabel(controlLink)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-date`}>
-                  Evidence date
-                </label>
-                <Input
-                  id={`${fieldId}-fu-ev-date`}
-                  type="date"
-                  value={evidenceDateInput}
-                  onChange={(event) => setEvidenceDateInput(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-review-due`}>
-                  Review due
-                </label>
-                <Select
-                  value={String(reviewDueIntervalMonths)}
-                  onValueChange={(value) =>
-                    setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
-                  }
-                >
-                  <SelectTrigger id={`${fieldId}-fu-review-due`}>
-                    <SelectValue placeholder="Select interval" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={String(option)}>
-                        {formatEvidenceReviewDueInterval(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-source`}>
-                  Source
-                </label>
-                <Select
-                  value={source}
-                  onValueChange={(value) => setSource(value as EvidenceSource)}
-                >
-                  <SelectTrigger id={`${fieldId}-fu-source`}>
-                    <SelectValue placeholder="Select source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_SOURCE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {formatEvidenceSource(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <Collapsible open={evidenceExpanded} onOpenChange={setEvidenceExpanded}>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">
+                {activeFollowUp.reviewedEvidence.length} evidence item
+                {activeFollowUp.reviewedEvidence.length === 1 ? '' : 's'} (
+                {activeFollowUp.reviewedEvidenceCount} reviewed)
+              </span>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  {evidenceExpanded ? 'Hide evidence details' : 'Show evidence details'}
+                </Button>
+              </CollapsibleTrigger>
             </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-sufficiency`}>
-                Sufficiency
-              </label>
-              <Select
-                value={sufficiency}
-                onValueChange={(value) => setSufficiency(value as EvidenceSufficiency)}
-              >
-                <SelectTrigger id={`${fieldId}-fu-sufficiency`} className="max-w-xs">
-                  <SelectValue placeholder="Select sufficiency" />
-                </SelectTrigger>
-                <SelectContent>
-                  {EVIDENCE_SUFFICIENCY_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {formatEvidenceSufficiency(option)}
-                    </SelectItem>
+            <CollapsibleContent className="space-y-3 pt-3">
+              <p className="text-sm font-medium">Closure evidence</p>
+              {activeFollowUp.reviewedEvidence.length ? (
+                <div className="space-y-2">
+                  {activeFollowUp.reviewedEvidence.map((evidence) => (
+                    <div
+                      key={evidence.id}
+                      className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
+                    >
+                      <p className="font-medium text-foreground">{evidence.title}</p>
+                      <p>
+                        {evidence.internalControlId} · {evidence.itemId}
+                      </p>
+                      <p>
+                        Reviewed{' '}
+                        {evidence.reviewedAt
+                          ? new Date(evidence.reviewedAt).toLocaleString()
+                          : 'pending timestamp'}
+                      </p>
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                  No reviewed closure evidence is linked yet. Add proof below, then review it from
+                  the controls workspace before resolving this follow-up.
+                </div>
+              )}
 
-            <Tabs
-              value={evidenceTab}
-              onValueChange={(value) => setEvidenceTab(value as 'link' | 'note' | 'file')}
-              className="space-y-3"
-            >
-              <TabsList className="w-full justify-start overflow-auto">
-                <TabsTrigger value="link">Link</TabsTrigger>
-                <TabsTrigger value="note">Note</TabsTrigger>
-                <TabsTrigger value="file">File</TabsTrigger>
-              </TabsList>
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-checklist`}>
+                    Checklist item
+                  </label>
+                  <Select value={evidenceControlKey} onValueChange={setEvidenceControlKey}>
+                    <SelectTrigger id={`${fieldId}-fu-ev-checklist`}>
+                      <SelectValue placeholder="Select checklist item" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeFollowUp.controlLinks.map((controlLink) => (
+                        <SelectItem
+                          key={`${controlLink.internalControlId}:${controlLink.itemId}`}
+                          value={`${controlLink.internalControlId}:${controlLink.itemId}`}
+                        >
+                          {formatControlLinkLabel(controlLink)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-date`}>
+                    Evidence date
+                  </label>
+                  <Input
+                    id={`${fieldId}-fu-ev-date`}
+                    type="date"
+                    value={evidenceDateInput}
+                    onChange={(event) => setEvidenceDateInput(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-review-due`}>
+                    Review due
+                  </label>
+                  <Select
+                    value={String(reviewDueIntervalMonths)}
+                    onValueChange={(value) =>
+                      setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
+                    }
+                  >
+                    <SelectTrigger id={`${fieldId}-fu-review-due`}>
+                      <SelectValue placeholder="Select interval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={String(option)}>
+                          {formatEvidenceReviewDueInterval(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-source`}>
+                    Source
+                  </label>
+                  <Select
+                    value={source}
+                    onValueChange={(value) => setSource(value as EvidenceSource)}
+                  >
+                    <SelectTrigger id={`${fieldId}-fu-source`}>
+                      <SelectValue placeholder="Select source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVIDENCE_SOURCE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {formatEvidenceSource(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-              <TabsContent value="link" className="space-y-2">
-                <Input
-                  value={linkTitle}
-                  onChange={(event) => setLinkTitle(event.target.value)}
-                  placeholder="Evidence title"
-                />
-                <Input
-                  value={linkUrl}
-                  onChange={(event) => setLinkUrl(event.target.value)}
-                  placeholder="https://…"
-                />
-                <Textarea
-                  value={linkDescription}
-                  onChange={(event) => setLinkDescription(event.target.value)}
-                  placeholder="What this closure evidence proves"
-                />
-                <Button
-                  type="button"
-                  disabled={
-                    props.busyAction !== null ||
-                    !metadataIsComplete ||
-                    !selectedEvidenceControlLink ||
-                    linkTitle.trim().length === 0 ||
-                    linkUrl.trim().length === 0
-                  }
-                  onClick={() => {
-                    if (!activeFollowUp || !selectedEvidenceControlLink) {
-                      return;
-                    }
-                    const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                    if (evidenceDate === null) {
-                      return;
-                    }
-                    void props.onAddFollowUpEvidenceLink({
-                      description: linkDescription.trim() || undefined,
-                      evidenceDate,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                      reviewDueIntervalMonths,
-                      source,
-                      sufficiency,
-                      title: linkTitle.trim(),
-                      url: linkUrl.trim(),
-                    });
-                  }}
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-sufficiency`}>
+                  Sufficiency
+                </label>
+                <Select
+                  value={sufficiency}
+                  onValueChange={(value) => setSufficiency(value as EvidenceSufficiency)}
                 >
-                  {props.busyAction === `follow-up:evidence-link:${activeFollowUp.id}`
-                    ? 'Saving…'
-                    : 'Attach link evidence'}
-                </Button>
-              </TabsContent>
+                  <SelectTrigger id={`${fieldId}-fu-sufficiency`} className="max-w-xs">
+                    <SelectValue placeholder="Select sufficiency" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EVIDENCE_SUFFICIENCY_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {formatEvidenceSufficiency(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <TabsContent value="note" className="space-y-2">
-                <Input
-                  value={noteTitle}
-                  onChange={(event) => setNoteTitle(event.target.value)}
-                  placeholder="Evidence title"
-                />
-                <Textarea
-                  value={noteDescription}
-                  onChange={(event) => setNoteDescription(event.target.value)}
-                  placeholder="Describe the closure evidence"
-                />
-                <Button
-                  type="button"
-                  disabled={
-                    props.busyAction !== null ||
-                    !metadataIsComplete ||
-                    !selectedEvidenceControlLink ||
-                    noteTitle.trim().length === 0 ||
-                    noteDescription.trim().length === 0
-                  }
-                  onClick={() => {
-                    if (!activeFollowUp || !selectedEvidenceControlLink) {
-                      return;
-                    }
-                    const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                    if (evidenceDate === null) {
-                      return;
-                    }
-                    void props.onAddFollowUpEvidenceNote({
-                      description: noteDescription.trim(),
-                      evidenceDate,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                      reviewDueIntervalMonths,
-                      source,
-                      sufficiency,
-                      title: noteTitle.trim(),
-                    });
-                  }}
-                >
-                  {props.busyAction === `follow-up:evidence-note:${activeFollowUp.id}`
-                    ? 'Saving…'
-                    : 'Attach note evidence'}
-                </Button>
-              </TabsContent>
+              <Tabs
+                value={evidenceTab}
+                onValueChange={(value) => setEvidenceTab(value as 'link' | 'note' | 'file')}
+                className="space-y-3"
+              >
+                <TabsList className="w-full justify-start overflow-auto">
+                  <TabsTrigger value="link">Link</TabsTrigger>
+                  <TabsTrigger value="note">Note</TabsTrigger>
+                  <TabsTrigger value="file">File</TabsTrigger>
+                </TabsList>
 
-              <TabsContent value="file" className="space-y-2">
-                <Input
-                  value={fileTitle}
-                  onChange={(event) => setFileTitle(event.target.value)}
-                  placeholder="Evidence title"
-                />
-                <Textarea
-                  value={fileDescription}
-                  onChange={(event) => setFileDescription(event.target.value)}
-                  placeholder="Optional file description"
-                />
-                <Input
-                  type="file"
-                  onChange={(event) => {
-                    setFile(event.target.files?.[0] ?? null);
-                  }}
-                />
-                <Button
-                  type="button"
-                  disabled={
-                    props.busyAction !== null ||
-                    !metadataIsComplete ||
-                    !selectedEvidenceControlLink ||
-                    fileTitle.trim().length === 0 ||
-                    file === null
-                  }
-                  onClick={() => {
-                    if (!activeFollowUp || !selectedEvidenceControlLink || !file) {
-                      return;
+                <TabsContent value="link" className="space-y-2">
+                  <Input
+                    value={linkTitle}
+                    onChange={(event) => setLinkTitle(event.target.value)}
+                    placeholder="Evidence title"
+                  />
+                  <Input
+                    value={linkUrl}
+                    onChange={(event) => setLinkUrl(event.target.value)}
+                    placeholder="https://…"
+                  />
+                  <Textarea
+                    value={linkDescription}
+                    onChange={(event) => setLinkDescription(event.target.value)}
+                    placeholder="What this closure evidence proves"
+                  />
+                  <Button
+                    type="button"
+                    disabled={
+                      props.busyAction !== null ||
+                      !metadataIsComplete ||
+                      !selectedEvidenceControlLink ||
+                      linkTitle.trim().length === 0 ||
+                      linkUrl.trim().length === 0
                     }
-                    const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                    if (evidenceDate === null) {
-                      return;
+                    onClick={() => {
+                      if (!activeFollowUp || !selectedEvidenceControlLink) {
+                        return;
+                      }
+                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                      if (evidenceDate === null) {
+                        return;
+                      }
+                      void props.onAddFollowUpEvidenceLink({
+                        description: linkDescription.trim() || undefined,
+                        evidenceDate,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                        reviewDueIntervalMonths,
+                        source,
+                        sufficiency,
+                        title: linkTitle.trim(),
+                        url: linkUrl.trim(),
+                      });
+                    }}
+                  >
+                    {props.busyAction === `follow-up:evidence-link:${activeFollowUp.id}`
+                      ? 'Saving…'
+                      : 'Attach link evidence'}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="note" className="space-y-2">
+                  <Input
+                    value={noteTitle}
+                    onChange={(event) => setNoteTitle(event.target.value)}
+                    placeholder="Evidence title"
+                  />
+                  <Textarea
+                    value={noteDescription}
+                    onChange={(event) => setNoteDescription(event.target.value)}
+                    placeholder="Describe the closure evidence"
+                  />
+                  <Button
+                    type="button"
+                    disabled={
+                      props.busyAction !== null ||
+                      !metadataIsComplete ||
+                      !selectedEvidenceControlLink ||
+                      noteTitle.trim().length === 0 ||
+                      noteDescription.trim().length === 0
                     }
-                    void props.onUploadFollowUpEvidenceFile({
-                      description: fileDescription.trim() || undefined,
-                      evidenceDate,
-                      file,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                      reviewDueIntervalMonths,
-                      source,
-                      sufficiency,
-                      title: fileTitle.trim(),
-                    });
-                  }}
-                >
-                  {props.busyAction === `follow-up:evidence-file:${activeFollowUp.id}`
-                    ? 'Uploading…'
-                    : 'Upload file evidence'}
-                </Button>
-              </TabsContent>
-            </Tabs>
-          </div>
+                    onClick={() => {
+                      if (!activeFollowUp || !selectedEvidenceControlLink) {
+                        return;
+                      }
+                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                      if (evidenceDate === null) {
+                        return;
+                      }
+                      void props.onAddFollowUpEvidenceNote({
+                        description: noteDescription.trim(),
+                        evidenceDate,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                        reviewDueIntervalMonths,
+                        source,
+                        sufficiency,
+                        title: noteTitle.trim(),
+                      });
+                    }}
+                  >
+                    {props.busyAction === `follow-up:evidence-note:${activeFollowUp.id}`
+                      ? 'Saving…'
+                      : 'Attach note evidence'}
+                  </Button>
+                </TabsContent>
+
+                <TabsContent value="file" className="space-y-2">
+                  <Input
+                    value={fileTitle}
+                    onChange={(event) => setFileTitle(event.target.value)}
+                    placeholder="Evidence title"
+                  />
+                  <Textarea
+                    value={fileDescription}
+                    onChange={(event) => setFileDescription(event.target.value)}
+                    placeholder="Optional file description"
+                  />
+                  <Input
+                    type="file"
+                    onChange={(event) => {
+                      setFile(event.target.files?.[0] ?? null);
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    disabled={
+                      props.busyAction !== null ||
+                      !metadataIsComplete ||
+                      !selectedEvidenceControlLink ||
+                      fileTitle.trim().length === 0 ||
+                      file === null
+                    }
+                    onClick={() => {
+                      if (!activeFollowUp || !selectedEvidenceControlLink || !file) {
+                        return;
+                      }
+                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                      if (evidenceDate === null) {
+                        return;
+                      }
+                      void props.onUploadFollowUpEvidenceFile({
+                        description: fileDescription.trim() || undefined,
+                        evidenceDate,
+                        file,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                        reviewDueIntervalMonths,
+                        source,
+                        sufficiency,
+                        title: fileTitle.trim(),
+                      });
+                    }}
+                  >
+                    {props.busyAction === `follow-up:evidence-file:${activeFollowUp.id}`
+                      ? 'Uploading…'
+                      : 'Upload file evidence'}
+                  </Button>
+                </TabsContent>
+              </Tabs>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
       ) : (
         <div className="space-y-4 rounded-lg border p-4">

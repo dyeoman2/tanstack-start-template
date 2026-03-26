@@ -22,6 +22,7 @@ export function AdminSecurityReviewTaskGroup(props: {
   documents: Record<string, { label: string; url: string; version: string }>;
   notes: Record<string, string>;
   onAttestTask: (task: ReviewTaskDetail) => Promise<void>;
+  onBatchReview?: () => void;
   onChangeDocumentField: (
     taskId: string,
     field: 'label' | 'url' | 'version',
@@ -40,6 +41,15 @@ export function AdminSecurityReviewTaskGroup(props: {
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle>{props.title}</CardTitle>
           <Badge variant="outline">{props.tasks.length}</Badge>
+          <Badge variant="outline">
+            {props.tasks.filter((t) => t.status === 'completed' || t.status === 'exception').length}{' '}
+            of {props.tasks.length} done
+          </Badge>
+          {props.onBatchReview && props.tasks.length > 1 ? (
+            <Button type="button" variant="outline" size="sm" onClick={props.onBatchReview}>
+              Review all
+            </Button>
+          ) : null}
         </div>
         <CardDescription>{props.description}</CardDescription>
       </CardHeader>

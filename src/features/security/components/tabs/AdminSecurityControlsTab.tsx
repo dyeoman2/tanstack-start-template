@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   DataTable,
@@ -5,6 +6,7 @@ import {
   type TableFilterOption,
   TableSearch,
 } from '~/components/data-table';
+import { Button } from '~/components/ui/button';
 import { ExportButton } from '~/components/ui/export-button';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import type { SecurityControlWorkspaceSummary } from '~/features/security/types';
@@ -44,6 +46,13 @@ export function AdminSecurityControlsTab(props: {
     selectedControl?: string | undefined;
   }) => void;
 }) {
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  const advancedFilterCount = [
+    props.familyFilter !== 'all',
+    props.responsibilityFilter !== 'all',
+  ].filter(Boolean).length;
+
   return (
     <>
       <AdminSecurityTabHeader
@@ -58,24 +67,6 @@ export function AdminSecurityControlsTab(props: {
             {props.sortedControls.length} matches
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <TableFilter<string>
-              value={props.familyFilter}
-              options={props.familyOptions}
-              onValueChange={(value) => {
-                props.updateControlSearch({ family: value });
-              }}
-              className="shrink-0"
-              ariaLabel="Filter controls by family"
-            />
-            <TableFilter<'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>>
-              value={props.responsibilityFilter}
-              options={props.responsibilityOptions}
-              onValueChange={(value) => {
-                props.updateControlSearch({ responsibility: value });
-              }}
-              className="shrink-0"
-              ariaLabel="Filter controls by responsibility"
-            />
             <TableFilter<'all' | SecurityControlWorkspaceSummary['support']>
               value={props.supportFilter}
               options={props.supportOptions}
@@ -87,6 +78,40 @@ export function AdminSecurityControlsTab(props: {
               className="shrink-0"
               ariaLabel="Filter controls by support"
             />
+            {showAdvancedFilters && (
+              <>
+                <TableFilter<string>
+                  value={props.familyFilter}
+                  options={props.familyOptions}
+                  onValueChange={(value) => {
+                    props.updateControlSearch({ family: value });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by family"
+                />
+                <TableFilter<'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>>
+                  value={props.responsibilityFilter}
+                  options={props.responsibilityOptions}
+                  onValueChange={(value) => {
+                    props.updateControlSearch({ responsibility: value });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by responsibility"
+                />
+              </>
+            )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setShowAdvancedFilters((prev) => !prev);
+              }}
+            >
+              {showAdvancedFilters
+                ? 'Fewer filters'
+                : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
+            </Button>
           </div>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">

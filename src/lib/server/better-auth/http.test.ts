@@ -123,7 +123,37 @@ describe('better-auth trusted proxy headers', () => {
       }),
     );
 
-    expect(getTrustedClientIp(request)).toBeUndefined();
+    expect(getTrustedClientIp(request)).toBe('203.0.113.9');
     expect(request.headers.get('x-forwarded-for')).toBeNull();
+  });
+
+  it('falls back to forwarded proxy headers when no signed canonical ip is present', async () => {
+    const request = await buildTrustedConvexAuthRequest(
+      new Request('https://deployment.convex.site/api/auth/get-session', {
+        headers: {
+          'cf-connecting-ip': '198.51.100.8',
+          'user-agent': 'Vitest',
+          'x-forwarded-for': '203.0.113.9, 198.51.100.2',
+        },
+        method: 'GET',
+      }),
+    );
+
+    expect(getTrustedClientIp(request)).toBe('198.51.100.8');
+    expect(request.headers.get('cf-connecting-ip')).toBeNull();
+    expect(request.headers.get('x-forwarded-for')).toBeNull();
+  });
+
+  it('uses a loopback ip in development when Convex does not provide a client ip', async () => {
+    const request = await buildTrustedConvexAuthRequest(
+      new Request('https://deployment.convex.site/api/auth/get-session', {
+        headers: {
+          'user-agent': 'Vitest',
+        },
+        method: 'GET',
+      }),
+    );
+
+    expect(getTrustedClientIp(request)).toBe('127.0.0.1');
   });
 });

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-26T22:51:06.849Z",
+  "generatedAt": "2026-03-26T23:23:35.586Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -2157,7 +2157,7 @@
       "title": "Incident Handling",
       "familyId": "IR",
       "familyTitle": "Incident Response",
-      "implementationSummary": "This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, and a documented provider incident-response policy that can assist incident analysis, but fuller provider procedures and customer-side response workflows must still be documented and operated outside these workspace artifacts.",
+      "implementationSummary": "This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, a documented provider incident-response policy, and an annual review workflow that can link the current provider incident-response procedure, but the current procedure artifact and customer-side response workflows must still be supplied outside these workspace artifacts.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -2246,8 +2246,8 @@
         },
         {
           "itemId": "provider-incident-response-procedure",
-          "label": "Provider incident response procedure is documented",
-          "description": "The provider should maintain documented incident response procedures covering triage, escalation, containment, customer coordination, and post-incident follow-up.",
+          "label": "Provider incident response procedure can be linked and reviewed",
+          "description": "The provider should retain and annually review the current incident response procedure covering triage, escalation, containment, customer coordination, and post-incident follow-up.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2257,7 +2257,7 @@
           "seed": {
             "status": "in_progress",
             "owner": "Security Incident Response",
-            "notes": "The workspace now includes a documented provider incident-response policy, but it does not yet attach fuller procedure detail covering triage, escalation, containment, customer coordination, and post-incident follow-up.",
+            "notes": "The workspace now includes a documented provider incident-response policy and an annual document-link workflow for the current procedure, but the current procedure artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Incident response policy",
@@ -2268,7 +2268,7 @@
               },
               {
                 "title": "Annual incident response procedure task",
-                "description": "Documentation Annual review task definition requiring the provider incident-response procedure to be reviewed and attested as current during the site admin security review cycle.",
+                "description": "Documentation Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -4323,7 +4323,7 @@
       "title": "Control Assessments",
       "familyId": "CA",
       "familyTitle": "Assessment, Authorization, and Monitoring",
-      "implementationSummary": "This control ensures the hosted service can generate and retain structured control assessment outputs for provider review. The platform supports that objective through evidence report generation, review-state retention, and exportable assessment artifacts in the site admin workspace, but a formal provider assessment plan, assessor assignment model, and approval workflow are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service can generate and retain structured control assessment outputs for provider review. The platform supports that objective through evidence report generation, review-state retention, exportable assessment artifacts, and an annual review workflow that can link the current provider assessment plan in the site admin workspace, but the current assessment plan and related reviewer or approval context still must be supplied through the workspace.",
       "controlStatement": "Select the appropriate assessor or assessment team for the type of assessment to be conducted; Develop a control assessment plan that describes the scope of the assessment including: Controls and control enhancements under assessment; Assessment procedures to be used to determine control effectiveness; and Assessment environment, assessment team, and assessment roles and responsibilities; Ensure the control assessment plan is reviewed and approved by the authorizing official or designated representative prior to conducting the assessment; Assess the controls in the system and its environment of operation {{ insert: param, ca-02_odp.01 }} to determine the extent to which the controls are implemented correctly, operating as intended, and producing the desired outcome with respect to meeting established security and privacy requirements; Produce a control assessment report that document the results of the assessment; and Provide the results of the control assessment to {{ insert: param, ca-02_odp.02 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4446,8 +4446,8 @@
         },
         {
           "itemId": "provider-assessment-plan-documented",
-          "label": "Provider control assessment plan and approval workflow is documented",
-          "description": "The provider should document assessment scope, reviewer roles, approval expectations, and recurring assessment cadence for the hosted service.",
+          "label": "Provider control assessment plan can be linked and reviewed",
+          "description": "The provider should retain and annually review the current control assessment plan describing scope, reviewer roles, approval expectations, and recurring assessment cadence for the hosted service.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -4455,10 +4455,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Assurance",
-            "notes": "The workspace does not yet include a formal provider assessment plan, assessor assignment record, or approval workflow for recurring control assessments.",
-            "evidence": []
+            "notes": "The workspace now includes an annual document-link workflow for the current provider assessment plan, but the current assessment plan and reviewer or approval context still have to be linked during review.",
+            "evidence": [
+              {
+                "title": "Annual assessment plan task",
+                "description": "Annual assessment plan task Annual review task definition requiring the current provider control assessment plan to be linked into the site admin security review cycle.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -4497,7 +4505,7 @@
       "title": "Baseline Configuration",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site admin-visible baseline posture summaries, and a documented provider baseline policy, but fuller review cadence and approval workflow detail are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site admin-visible baseline posture summaries, a documented provider baseline policy, and an annual review workflow that can link the current baseline review procedure, but the current provider procedure artifact still must be supplied through the workspace.",
       "controlStatement": "Develop, document, and maintain under configuration control, a current baseline configuration of the system; and Review and update the baseline configuration of the system: {{ insert: param, cm-02_odp.01 }}; When required due to {{ insert: param, cm-02_odp.02 }} ; and When system components are installed or upgraded.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4613,8 +4621,8 @@
         },
         {
           "itemId": "provider-baseline-review-procedure-documented",
-          "label": "Provider baseline review and update procedure is documented",
-          "description": "The provider should document how the hosted-service baseline configuration is reviewed, approved, and updated when components or requirements change.",
+          "label": "Provider baseline review procedure can be linked and reviewed",
+          "description": "The provider should retain and annually review the current procedure describing how the hosted-service baseline configuration is reviewed, approved, and updated when components or requirements change.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -4624,11 +4632,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Configuration Management",
-            "notes": "The workspace now includes documented baseline-review expectations, but it does not yet attach fuller cadence, approval, or update-trigger detail.",
+            "notes": "The workspace now includes documented baseline-review expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Configuration and change management policy",
                 "description": "Configuration and change management policy Provider policy documenting that managed baselines are documented and reviewed for provider-managed hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual baseline review procedure task",
+                "description": "Documentation Annual review task definition requiring the current provider baseline review and update procedure to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -4679,7 +4694,7 @@
       "title": "Configuration Change Control",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, and a documented provider change policy, while fuller approval, rollback, and emergency-change procedure detail is not yet fully evidenced in this workspace.",
+      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, a documented provider change policy, and an annual review workflow that can link the current change procedure, but the current provider procedure artifact still must be supplied through the workspace.",
       "controlStatement": "Determine and document the types of changes to the system that are configuration-controlled; Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses; Document configuration change decisions associated with the system; Implement approved configuration-controlled changes to the system; Retain records of configuration-controlled changes to the system for {{ insert: param, cm-03_odp.01 }}; Monitor and review activities associated with configuration-controlled changes to the system; and Coordinate and provide oversight for configuration change control activities through {{ insert: param, cm-03_odp.02 }} that convenes {{ insert: param, cm-03_odp.03 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4717,8 +4732,8 @@
         },
         {
           "itemId": "provider-change-approval-and-rollback-procedure-documented",
-          "label": "Provider change approval and rollback procedure is documented",
-          "description": "The provider should document approval expectations, rollback planning, and emergency-change handling for security-relevant changes to the hosted service.",
+          "label": "Provider change procedure can be linked and reviewed",
+          "description": "The provider should retain and annually review the current procedure covering approval expectations, rollback planning, and emergency-change handling for security-relevant hosted-service changes.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -4728,11 +4743,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Change Management",
-            "notes": "The workspace now includes documented approved-change expectations, but it does not yet attach fuller rollback and emergency-change procedure detail for hosted-service changes.",
+            "notes": "The workspace now includes documented approved-change expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Configuration and change management policy",
                 "description": "Configuration and change management policy Provider policy documenting that production-impacting changes follow an approved change path for provider-managed hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual change procedure task",
+                "description": "Documentation Annual review task definition requiring the current provider change approval and rollback procedure, including emergency-change handling expectations, to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -5001,8 +5023,8 @@
         },
         {
           "itemId": "provider-component-inventory-review-procedure-documented",
-          "label": "Provider component inventory review procedure is documented",
-          "description": "The provider should document how the hosted-service component inventory is reviewed, updated, and kept current over time.",
+          "label": "Provider component inventory review procedure can be linked and reviewed",
+          "description": "The provider should retain and annually review the current procedure describing how the hosted-service component inventory is reviewed, updated, and kept current over time.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -5012,11 +5034,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Configuration Management",
-            "notes": "The workspace now includes documented component-inventory expectations, but it does not yet attach fuller review cadence or update-procedure detail for a complete system inventory.",
+            "notes": "The workspace now includes documented component-inventory expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Configuration and change management policy",
                 "description": "Configuration and change management policy Provider policy documenting that the provider-managed component inventory remains current for hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual component inventory procedure task",
+                "description": "Documentation Annual review task definition requiring the current provider component inventory review procedure to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -5564,7 +5593,7 @@
       "title": "System Security and Privacy Plans",
       "familyId": "PL",
       "familyTitle": "Planning",
-      "implementationSummary": "This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, and a documented governance policy, but formal plan approval and fuller recurring review workflow evidence are not yet attached here.",
+      "implementationSummary": "This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, a documented governance policy, and an annual review workflow that can link the current planning artifact, but the current provider planning artifact and any approval context still must be supplied through the workspace.",
       "controlStatement": "Develop security and privacy plans for the system that: Are consistent with the organization’s enterprise architecture; Explicitly define the constituent system components; Describe the operational context of the system in terms of mission and business processes; Identify the individuals that fulfill system roles and responsibilities; Identify the information types processed, stored, and transmitted by the system; Provide the security categorization of the system, including supporting rationale; Describe any specific threats to the system that are of concern to the organization; Provide the results of a privacy risk assessment for systems processing personally identifiable information; Describe the operational environment for the system and any dependencies on or connections to other systems or system components; Provide an overview of the security and privacy requirements for the system; Identify any relevant control baselines or overlays, if applicable; Describe the controls in place or planned for meeting the security and privacy requirements, including a rationale for any tailoring decisions; Include risk determinations for security and privacy architecture and design decisions; Include security- and privacy-related activities affecting the system that require planning and coordination with {{ insert: param, pl-02_odp.01 }} ; and Are reviewed and approved by the authorizing official or designated representative prior to plan implementation. Distribute copies of the plans and communicate subsequent changes to the plans to {{ insert: param, pl-02_odp.02 }}; Review the plans {{ insert: param, pl-02_odp.03 }}; Update the plans to address changes to the system and environment of operation or problems identified during plan implementation or control assessments; and Protect the plans from unauthorized disclosure and modification.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5641,8 +5670,8 @@
         },
         {
           "itemId": "provider-plan-review-and-approval-documented",
-          "label": "Provider plan review and approval workflow is documented",
-          "description": "The provider should document how the system security and privacy plan is reviewed, approved, and updated over time.",
+          "label": "Provider security planning artifact can be linked and reviewed",
+          "description": "The provider should retain and annually review the current system security or privacy planning artifact, including version or approval context when that metadata exists.",
           "verificationMethod": "Planning procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -5652,11 +5681,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Security Planning",
-            "notes": "The workspace now includes documented governance review expectations, but it does not yet attach a formal approval record or fuller update procedure for these planning artifacts.",
+            "notes": "The workspace now includes documented governance review expectations and an annual document-link workflow for the current planning artifact, but the current artifact and any approval context still have to be linked during review.",
             "evidence": [
               {
                 "title": "Information security governance policy",
                 "description": "Information security governance policy Provider governance policy documenting annual review expectations for the security program and retained review outcomes for planning and control artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual security planning artifact task",
+                "description": "Annual security planning artifact task Annual review task definition requiring the current provider security planning artifact to be linked into the site admin security review cycle, including version or approval context when available.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -6178,7 +6214,7 @@
       "title": "Unsupported System Components",
       "familyId": "SA",
       "familyTitle": "System and Services Acquisition",
-      "implementationSummary": "This control addresses identification and handling of unsupported or deprecated managed components used by the hosted service. The platform currently supports that objective through code-health audit workflows, curated model inventory metadata with deprecation state, and site admin visibility into deprecated managed models, but a formal provider unsupported-component review cadence, replacement plan process, and exception workflow are not yet evidenced in this workspace.",
+      "implementationSummary": "This control addresses identification and handling of unsupported or deprecated managed components used by the hosted service. The platform currently supports that objective through code-health audit workflows, curated model inventory metadata with deprecation state, site admin visibility into deprecated managed models, and an annual review workflow that can link the current unsupported-component procedure, but the current provider procedure artifact still must be supplied through the workspace.",
       "controlStatement": "Replace system components when support for the components is no longer available from the developer, vendor, or manufacturer; or Provide the following options for alternative sources for continued support for unsupported components {{ insert: param, sa-22_odp.01 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -6280,8 +6316,8 @@
         },
         {
           "itemId": "provider-unsupported-component-replacement-workflow-documented",
-          "label": "Provider unsupported-component review and replacement workflow is documented",
-          "description": "The provider should document how unsupported or deprecated components are reviewed, approved for continued use or replacement, and retired from the hosted service.",
+          "label": "Provider unsupported-component procedure can be linked and reviewed",
+          "description": "The provider should retain and annually review the current procedure describing how unsupported or deprecated components are reviewed, approved for continued use or replacement, and retired from the hosted service.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -6291,11 +6327,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Secure Engineering",
-            "notes": "The workspace now includes documented unsupported-component expectations, but it does not yet attach fuller review cadence, exception workflow, or replacement-plan detail.",
+            "notes": "The workspace now includes documented unsupported-component expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Configuration and change management policy",
                 "description": "Configuration and change management policy Provider policy documenting that unsupported components must be identified and addressed within the provider-managed hosted-service environment.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual unsupported-component procedure task",
+                "description": "Documentation Annual review task definition requiring the current provider unsupported-component review and replacement procedure to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -6508,7 +6551,7 @@
       "title": "Cryptographic Protection",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, and cryptographic signing or hashing for authenticated file redemption and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this workspace.",
+      "implementationSummary": "This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, cryptographic signing or hashing for authenticated file redemption and exported evidence, and an annual review workflow that can link the current cryptography standards artifact. Selection of approved cryptographic standards and broader key-governance detail still must be supplied through the workspace.",
       "controlStatement": "Determine the {{ insert: param, sc-13_odp.01 }} ; and Implement the following types of cryptography required for each specified cryptographic use: {{ insert: param, sc-13_odp.02 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -6603,8 +6646,8 @@
         },
         {
           "itemId": "provider-cryptography-standard-selection-documented",
-          "label": "Provider cryptography standard selection is documented",
-          "description": "The provider should document which cryptographic uses are required in the hosted service and which approved cryptographic approaches or standards are expected for those uses.",
+          "label": "Provider cryptography standards artifact can be linked and reviewed",
+          "description": "The provider should retain and annually review the current cryptography standards artifact describing required cryptographic uses and approved approaches or standards for those uses.",
           "verificationMethod": "Cryptography policy and standards review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -6614,11 +6657,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The workspace now includes a documented cryptography policy, but it does not yet attach fuller approved-standard or approved-module selection detail.",
+            "notes": "The workspace now includes a documented cryptography policy and an annual document-link workflow for the current standards artifact, but the current approved-standards artifact still has to be linked during review.",
             "evidence": [
               {
                 "title": "Cryptography and data protection policy",
                 "description": "Cryptography and data protection policy Provider policy documenting required cryptographic uses and key-management expectations for information in transit, at rest, and in protected hosted-service workflows.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual cryptography standards task",
+                "description": "Annual cryptography standards task Annual review task definition requiring the current provider cryptography standards artifact to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null

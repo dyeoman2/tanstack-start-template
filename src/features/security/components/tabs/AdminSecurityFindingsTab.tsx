@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -117,6 +118,15 @@ export function AdminSecurityFindingsTab(props: {
   >;
   setFindingNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+
+  const advancedFilterCount = [
+    props.findingDispositionFilter !== 'all',
+    props.findingSeverityFilter !== 'all',
+    props.findingFollowUpFilter !== 'all',
+    props.findingTypeFilter !== 'all',
+  ].filter(Boolean).length;
+
   return (
     <>
       <AdminSecurityTabHeader
@@ -147,105 +157,123 @@ export function AdminSecurityFindingsTab(props: {
         />
       </div>
 
-      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,0.7fr))]">
-        <Input
-          value={props.findingSearch}
-          onChange={(event) => {
-            props.onChangeFindingSearch(event.target.value);
-          }}
-          placeholder="Search findings by title, source, notes, or summary"
-          aria-label="Search findings"
-          className="bg-background"
-        />
-        <Select
-          value={props.findingStatusFilter}
-          onValueChange={(value: 'all' | SecurityFindingListItem['status']) => {
-            props.onChangeFindingStatusFilter(value);
-          }}
-        >
-          <SelectTrigger aria-label="Filter findings by status" className="bg-background">
-            <SelectValue placeholder="All statuses" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={props.findingDispositionFilter}
-          onValueChange={(value: 'all' | SecurityFindingListItem['disposition']) => {
-            props.onChangeFindingDispositionFilter(value);
-          }}
-        >
-          <SelectTrigger aria-label="Filter findings by disposition" className="bg-background">
-            <SelectValue placeholder="All dispositions" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All dispositions</SelectItem>
-            <SelectItem value="pending_review">Pending review</SelectItem>
-            <SelectItem value="investigating">Investigating</SelectItem>
-            <SelectItem value="accepted_risk">Accepted risk</SelectItem>
-            <SelectItem value="false_positive">False positive</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={props.findingSeverityFilter}
-          onValueChange={(value: 'all' | SecurityFindingListItem['severity']) => {
-            props.onChangeFindingSeverityFilter(value);
-          }}
-        >
-          <SelectTrigger aria-label="Filter findings by severity" className="bg-background">
-            <SelectValue placeholder="All severities" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={props.findingFollowUpFilter}
-          onValueChange={(
-            value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
-          ) => {
-            props.onChangeFindingFollowUpFilter(value);
-          }}
-        >
-          <SelectTrigger
-            aria-label="Filter findings by tracked follow-up"
+      <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_auto]">
+          <Input
+            value={props.findingSearch}
+            onChange={(event) => {
+              props.onChangeFindingSearch(event.target.value);
+            }}
+            placeholder="Search findings by title, source, notes, or summary"
+            aria-label="Search findings"
             className="bg-background"
+          />
+          <Select
+            value={props.findingStatusFilter}
+            onValueChange={(value: 'all' | SecurityFindingListItem['status']) => {
+              props.onChangeFindingStatusFilter(value);
+            }}
           >
-            <SelectValue placeholder="All follow-up states" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All follow-up states</SelectItem>
-            <SelectItem value="has_follow_up">Has follow-up</SelectItem>
-            <SelectItem value="no_follow_up">No follow-up</SelectItem>
-            <SelectItem value="overdue_follow_up">Overdue follow-up</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select
-          value={props.findingTypeFilter}
-          onValueChange={(value: 'all' | SecurityFindingListItem['findingType']) => {
-            props.onChangeFindingTypeFilter(value);
-          }}
-        >
-          <SelectTrigger aria-label="Filter findings by type" className="bg-background">
-            <SelectValue placeholder="All finding types" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All finding types</SelectItem>
-            <SelectItem value="audit_archive_health">Archive health</SelectItem>
-            <SelectItem value="audit_request_context_gaps">Request context gaps</SelectItem>
-            <SelectItem value="audit_integrity_failures">Audit integrity</SelectItem>
-            <SelectItem value="document_scan_quarantines">Scan quarantines</SelectItem>
-            <SelectItem value="document_scan_rejections">Scan rejections</SelectItem>
-            <SelectItem value="release_security_validation">Release validation</SelectItem>
-          </SelectContent>
-        </Select>
+            <SelectTrigger aria-label="Filter findings by status" className="bg-background">
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setShowAdvancedFilters((prev) => !prev);
+            }}
+          >
+            {showAdvancedFilters
+              ? 'Fewer filters'
+              : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
+          </Button>
+        </div>
+        {showAdvancedFilters && (
+          <div className="grid gap-3 lg:grid-cols-4">
+            <Select
+              value={props.findingDispositionFilter}
+              onValueChange={(value: 'all' | SecurityFindingListItem['disposition']) => {
+                props.onChangeFindingDispositionFilter(value);
+              }}
+            >
+              <SelectTrigger aria-label="Filter findings by disposition" className="bg-background">
+                <SelectValue placeholder="All dispositions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All dispositions</SelectItem>
+                <SelectItem value="pending_review">Pending review</SelectItem>
+                <SelectItem value="investigating">Investigating</SelectItem>
+                <SelectItem value="accepted_risk">Accepted risk</SelectItem>
+                <SelectItem value="false_positive">False positive</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={props.findingSeverityFilter}
+              onValueChange={(value: 'all' | SecurityFindingListItem['severity']) => {
+                props.onChangeFindingSeverityFilter(value);
+              }}
+            >
+              <SelectTrigger aria-label="Filter findings by severity" className="bg-background">
+                <SelectValue placeholder="All severities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All severities</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="warning">Warning</SelectItem>
+                <SelectItem value="info">Info</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={props.findingFollowUpFilter}
+              onValueChange={(
+                value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
+              ) => {
+                props.onChangeFindingFollowUpFilter(value);
+              }}
+            >
+              <SelectTrigger
+                aria-label="Filter findings by tracked follow-up"
+                className="bg-background"
+              >
+                <SelectValue placeholder="All follow-up states" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All follow-up states</SelectItem>
+                <SelectItem value="has_follow_up">Has follow-up</SelectItem>
+                <SelectItem value="no_follow_up">No follow-up</SelectItem>
+                <SelectItem value="overdue_follow_up">Overdue follow-up</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={props.findingTypeFilter}
+              onValueChange={(value: 'all' | SecurityFindingListItem['findingType']) => {
+                props.onChangeFindingTypeFilter(value);
+              }}
+            >
+              <SelectTrigger aria-label="Filter findings by type" className="bg-background">
+                <SelectValue placeholder="All finding types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All finding types</SelectItem>
+                <SelectItem value="audit_archive_health">Archive health</SelectItem>
+                <SelectItem value="audit_request_context_gaps">Request context gaps</SelectItem>
+                <SelectItem value="audit_integrity_failures">Audit integrity</SelectItem>
+                <SelectItem value="document_scan_quarantines">Scan quarantines</SelectItem>
+                <SelectItem value="document_scan_rejections">Scan rejections</SelectItem>
+                <SelectItem value="release_security_validation">Release validation</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="space-y-4">
@@ -325,11 +353,31 @@ export function AdminSecurityFindingsTab(props: {
                             <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
                               Follow-up
                             </p>
-                            <p className="mt-1 text-foreground">
-                              {finding.activeFollowUp
-                                ? `${finding.activeFollowUp.status.replaceAll('_', ' ')}${finding.followUpOverdue ? ' · overdue' : ''}`
-                                : 'Not tracked'}
-                            </p>
+                            {finding.activeFollowUp ? (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className="text-foreground">
+                                  {finding.activeFollowUp.status.replaceAll('_', ' ')}
+                                </span>
+                                {finding.activeFollowUp.assigneeDisplay ? (
+                                  <Badge variant="secondary" className="text-[11px]">
+                                    {finding.activeFollowUp.assigneeDisplay}
+                                  </Badge>
+                                ) : null}
+                                {finding.activeFollowUp.dueAt ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    Due{' '}
+                                    {new Date(finding.activeFollowUp.dueAt).toLocaleDateString()}
+                                  </span>
+                                ) : null}
+                                {finding.followUpOverdue ? (
+                                  <Badge variant="destructive" className="text-[11px]">
+                                    Overdue
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <p className="mt-1 text-foreground">Not tracked</p>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -453,11 +501,29 @@ export function AdminSecurityFindingsTab(props: {
                           </p>
                           {finding.activeFollowUp ? (
                             <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                              Tracked follow-up:{' '}
-                              <span className="font-medium text-foreground">
-                                {finding.activeFollowUp.title}
-                              </span>{' '}
-                              ({finding.activeFollowUp.status.replaceAll('_', ' ')})
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>Tracked follow-up:</span>
+                                <span className="font-medium text-foreground">
+                                  {finding.activeFollowUp.title}
+                                </span>
+                                <span>({finding.activeFollowUp.status.replaceAll('_', ' ')})</span>
+                                {finding.activeFollowUp.assigneeDisplay ? (
+                                  <Badge variant="secondary" className="text-[11px]">
+                                    {finding.activeFollowUp.assigneeDisplay}
+                                  </Badge>
+                                ) : null}
+                                {finding.activeFollowUp.dueAt ? (
+                                  <span className="text-xs">
+                                    Due{' '}
+                                    {new Date(finding.activeFollowUp.dueAt).toLocaleDateString()}
+                                  </span>
+                                ) : null}
+                                {finding.followUpOverdue ? (
+                                  <Badge variant="destructive" className="text-[11px]">
+                                    Overdue
+                                  </Badge>
+                                ) : null}
+                              </div>
                             </div>
                           ) : null}
                           {finding.latestLinkedReviewRun ? (

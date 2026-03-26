@@ -2195,7 +2195,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
-      'This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, and a documented provider incident-response policy that can assist incident analysis, but fuller provider procedures and customer-side response workflows must still be documented and operated outside these repo-backed product artifacts.',
+      'This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, a documented provider incident-response policy, and an annual review workflow that can link the current provider incident-response procedure, but the current procedure artifact and customer-side response workflows must still be supplied outside these repo-backed product artifacts.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
@@ -2271,15 +2271,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-incident-response-procedure',
-        label: 'Provider incident response procedure is documented',
+        label: 'Provider incident response procedure can be linked and reviewed',
         description:
-          'The provider should maintain documented incident response procedures covering triage, escalation, containment, customer coordination, and post-incident follow-up.',
+          'The provider should retain and annually review the current incident response procedure covering triage, escalation, containment, customer coordination, and post-incident follow-up.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes a documented provider incident-response policy, but it does not yet attach fuller procedure detail covering triage, escalation, containment, customer coordination, and post-incident follow-up.',
+          'The workspace now includes a documented provider incident-response policy and an annual document-link workflow for the current procedure, but the current procedure artifact still has to be linked during review.',
           [
             seededEvidence(
               'Incident response policy',
@@ -2288,7 +2288,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Annual incident response procedure task',
-              'Annual review task definition requiring the provider incident-response procedure to be reviewed and attested as current during the site admin security review cycle.',
+              'Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -2729,7 +2729,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-13',
     internalControlId: 'CTRL-SC-013',
     implementationSummary:
-      'This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, and cryptographic signing or hashing for authenticated file redemption and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this workspace.',
+      'This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, cryptographic signing or hashing for authenticated file redemption and exported evidence, and an annual review workflow that can link the current cryptography standards artifact. Selection of approved cryptographic standards and broader key-governance detail still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -2809,19 +2809,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-cryptography-standard-selection-documented',
-        label: 'Provider cryptography standard selection is documented',
+        label: 'Provider cryptography standards artifact can be linked and reviewed',
         description:
-          'The provider should document which cryptographic uses are required in the hosted service and which approved cryptographic approaches or standards are expected for those uses.',
+          'The provider should retain and annually review the current cryptography standards artifact describing required cryptographic uses and approved approaches or standards for those uses.',
         verificationMethod: 'Cryptography policy and standards review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes a documented cryptography policy, but it does not yet attach fuller approved-standard or approved-module selection detail.',
+          'The workspace now includes a documented cryptography policy and an annual document-link workflow for the current standards artifact, but the current approved-standards artifact still has to be linked during review.',
           [
             seededEvidence(
               'Cryptography and data protection policy',
               'Provider policy documenting required cryptographic uses and key-management expectations for information in transit, at rest, and in protected hosted-service workflows.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual cryptography standards task',
+              'Annual review task definition requiring the current provider cryptography standards artifact to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -3422,7 +3427,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SA-22',
     internalControlId: 'CTRL-SA-022',
     implementationSummary:
-      'This control addresses identification and handling of unsupported or deprecated managed components used by the hosted service. The platform currently supports that objective through code-health audit workflows, curated model inventory metadata with deprecation state, and site admin visibility into deprecated managed models, but a formal provider unsupported-component review cadence, replacement plan process, and exception workflow are not yet evidenced in this repo-backed workspace.',
+      'This control addresses identification and handling of unsupported or deprecated managed components used by the hosted service. The platform currently supports that objective through code-health audit workflows, curated model inventory metadata with deprecation state, site admin visibility into deprecated managed models, and an annual review workflow that can link the current unsupported-component procedure, but the current provider procedure artifact still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -3508,19 +3513,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-unsupported-component-replacement-workflow-documented',
-        label: 'Provider unsupported-component review and replacement workflow is documented',
+        label: 'Provider unsupported-component procedure can be linked and reviewed',
         description:
-          'The provider should document how unsupported or deprecated components are reviewed, approved for continued use or replacement, and retired from the hosted service.',
+          'The provider should retain and annually review the current procedure describing how unsupported or deprecated components are reviewed, approved for continued use or replacement, and retired from the hosted service.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes documented unsupported-component expectations, but it does not yet attach fuller review cadence, exception workflow, or replacement-plan detail.',
+          'The workspace now includes documented unsupported-component expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.',
           [
             seededEvidence(
               'Configuration and change management policy',
               'Provider policy documenting that unsupported components must be identified and addressed within the provider-managed hosted-service environment.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual unsupported-component procedure task',
+              'Annual review task definition requiring the current provider unsupported-component review and replacement procedure to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -3727,7 +3737,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-2',
     internalControlId: 'CTRL-CM-002',
     implementationSummary:
-      'This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site-admin-visible baseline posture summaries, and a documented provider baseline policy, but fuller review cadence and approval workflow detail are not yet evidenced in this workspace.',
+      'This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site-admin-visible baseline posture summaries, a documented provider baseline policy, and an annual review workflow that can link the current baseline review procedure, but the current provider procedure artifact still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -3819,19 +3829,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-baseline-review-procedure-documented',
-        label: 'Provider baseline review and update procedure is documented',
+        label: 'Provider baseline review procedure can be linked and reviewed',
         description:
-          'The provider should document how the hosted-service baseline configuration is reviewed, approved, and updated when components or requirements change.',
+          'The provider should retain and annually review the current procedure describing how the hosted-service baseline configuration is reviewed, approved, and updated when components or requirements change.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes documented baseline-review expectations, but it does not yet attach fuller cadence, approval, or update-trigger detail.',
+          'The workspace now includes documented baseline-review expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.',
           [
             seededEvidence(
               'Configuration and change management policy',
               'Provider policy documenting that managed baselines are documented and reviewed for provider-managed hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual baseline review procedure task',
+              'Annual review task definition requiring the current provider baseline review and update procedure to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -4059,19 +4074,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-component-inventory-review-procedure-documented',
-        label: 'Provider component inventory review procedure is documented',
+        label: 'Provider component inventory review procedure can be linked and reviewed',
         description:
-          'The provider should document how the hosted-service component inventory is reviewed, updated, and kept current over time.',
+          'The provider should retain and annually review the current procedure describing how the hosted-service component inventory is reviewed, updated, and kept current over time.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes documented component-inventory expectations, but it does not yet attach fuller review cadence or update-procedure detail for a complete system inventory.',
+          'The workspace now includes documented component-inventory expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.',
           [
             seededEvidence(
               'Configuration and change management policy',
               'Provider policy documenting that the provider-managed component inventory remains current for hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual component inventory procedure task',
+              'Annual review task definition requiring the current provider component inventory review procedure to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -4177,7 +4197,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CA-2',
     internalControlId: 'CTRL-CA-002',
     implementationSummary:
-      'This control ensures the hosted service can generate and retain structured control assessment outputs for provider review. The platform supports that objective through evidence report generation, review-state retention, and exportable assessment artifacts in the site admin workspace, but a formal provider assessment plan, assessor assignment model, and approval workflow are not yet evidenced in this repo-backed workspace.',
+      'This control ensures the hosted service can generate and retain structured control assessment outputs for provider review. The platform supports that objective through evidence report generation, review-state retention, exportable assessment artifacts, and an annual review workflow that can link the current provider assessment plan in the site admin workspace, but the current assessment plan and related reviewer or approval context still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4273,16 +4293,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-assessment-plan-documented',
-        label: 'Provider control assessment plan and approval workflow is documented',
+        label: 'Provider control assessment plan can be linked and reviewed',
         description:
-          'The provider should document assessment scope, reviewer roles, approval expectations, and recurring assessment cadence for the hosted service.',
+          'The provider should retain and annually review the current control assessment plan describing scope, reviewer roles, approval expectations, and recurring assessment cadence for the hosted service.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider assessment plan, assessor assignment record, or approval workflow for recurring control assessments.',
-          [],
+          'in_progress',
+          'The workspace now includes an annual document-link workflow for the current provider assessment plan, but the current assessment plan and reviewer or approval context still have to be linked during review.',
+          [
+            seededEvidence(
+              'Annual assessment plan task',
+              'Annual review task definition requiring the current provider control assessment plan to be linked into the site admin security review cycle.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Assurance',
         ),
       },
@@ -4538,7 +4564,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-3',
     internalControlId: 'CTRL-CM-003',
     implementationSummary:
-      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, and a documented provider change policy, while fuller approval, rollback, and emergency-change procedure detail is not yet fully evidenced in this workspace.',
+      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, a documented provider change policy, and an annual review workflow that can link the current change procedure, but the current provider procedure artifact still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4575,19 +4601,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-change-approval-and-rollback-procedure-documented',
-        label: 'Provider change approval and rollback procedure is documented',
+        label: 'Provider change procedure can be linked and reviewed',
         description:
-          'The provider should document approval expectations, rollback planning, and emergency-change handling for security-relevant changes to the hosted service.',
+          'The provider should retain and annually review the current procedure covering approval expectations, rollback planning, and emergency-change handling for security-relevant hosted-service changes.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes documented approved-change expectations, but it does not yet attach fuller rollback and emergency-change procedure detail for hosted-service changes.',
+          'The workspace now includes documented approved-change expectations and an annual document-link workflow for the current provider procedure, but the current procedure artifact still has to be linked during review.',
           [
             seededEvidence(
               'Configuration and change management policy',
               'Provider policy documenting that production-impacting changes follow an approved change path for provider-managed hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual change procedure task',
+              'Annual review task definition requiring the current provider change approval and rollback procedure, including emergency-change handling expectations, to be linked into the site admin security review cycle.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -4655,7 +4686,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'PL-2',
     internalControlId: 'CTRL-PL-002',
     implementationSummary:
-      'This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, and a documented governance policy, but formal plan approval and fuller recurring review workflow evidence are not yet attached here.',
+      'This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, a documented governance policy, and an annual review workflow that can link the current planning artifact, but the current provider planning artifact and any approval context still must be supplied through the workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4723,19 +4754,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-plan-review-and-approval-documented',
-        label: 'Provider plan review and approval workflow is documented',
+        label: 'Provider security planning artifact can be linked and reviewed',
         description:
-          'The provider should document how the system security and privacy plan is reviewed, approved, and updated over time.',
+          'The provider should retain and annually review the current system security or privacy planning artifact, including version or approval context when that metadata exists.',
         verificationMethod: 'Planning procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace now includes documented governance review expectations, but it does not yet attach a formal approval record or fuller update procedure for these planning artifacts.',
+          'The workspace now includes documented governance review expectations and an annual document-link workflow for the current planning artifact, but the current artifact and any approval context still have to be linked during review.',
           [
             seededEvidence(
               'Information security governance policy',
               'Provider governance policy documenting annual review expectations for the security program and retained review outcomes for planning and control artifacts.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual security planning artifact task',
+              'Annual review task definition requiring the current provider security planning artifact to be linked into the site admin security review cycle, including version or approval context when available.',
               { sufficiency: 'partial' },
             ),
           ],

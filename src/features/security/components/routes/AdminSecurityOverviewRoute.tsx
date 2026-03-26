@@ -10,8 +10,13 @@ export function AdminSecurityOverviewRoute() {
 
   return (
     <AdminSecurityOverviewTab
+      auditReadiness={workspaceOverview?.auditReadiness}
       controlSummary={workspaceOverview?.controlSummary}
+      currentAnnualReviewRun={workspaceOverview?.currentAnnualReviewRun}
+      findingSummary={workspaceOverview?.findingSummary}
+      queues={workspaceOverview?.queues}
       summary={workspaceOverview?.postureSummary}
+      vendorSummary={workspaceOverview?.vendorSummary}
     />
   );
 }

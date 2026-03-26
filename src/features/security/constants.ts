@@ -4,7 +4,6 @@ export const SECURITY_TABS = [
   'controls',
   'vendors',
   'findings',
-  'reports',
   'reviews',
 ] as const;
 export const SECURITY_TAB_PATHS = {
@@ -13,7 +12,6 @@ export const SECURITY_TAB_PATHS = {
   controls: '/app/admin/security/controls',
   vendors: '/app/admin/security/vendors',
   findings: '/app/admin/security/findings',
-  reports: '/app/admin/security/reports',
   reviews: '/app/admin/security/reviews',
 } as const;
 

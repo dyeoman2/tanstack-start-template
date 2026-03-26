@@ -5,7 +5,6 @@ import { AdminSecurityControlsRoute } from '~/features/security/components/route
 import { AdminSecurityFindingsRoute } from '~/features/security/components/routes/AdminSecurityFindingsRoute';
 import { AdminSecurityOverviewRoute } from '~/features/security/components/routes/AdminSecurityOverviewRoute';
 import { AdminSecurityPoliciesRoute } from '~/features/security/components/routes/AdminSecurityPoliciesRoute';
-import { AdminSecurityReportsRoute } from '~/features/security/components/routes/AdminSecurityReportsRoute';
 import { AdminSecurityReviewsRoute } from '~/features/security/components/routes/AdminSecurityReviewsRoute';
 import { AdminSecurityPageShell } from '~/features/security/components/routes/AdminSecurityShell';
 import { AdminSecurityVendorsRoute } from '~/features/security/components/routes/AdminSecurityVendorsRoute';
@@ -131,7 +130,7 @@ vi.mock('~/features/security/server/security-reviews', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reports' | 'reviews';
+  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reviews';
   findingDisposition?:
     | 'all'
     | 'accepted_risk'
@@ -180,7 +179,7 @@ type SearchState = {
 };
 
 const defaultSearch: SearchState = {
-  tab: 'reports',
+  tab: 'reviews',
   findingDisposition: 'all',
   findingFollowUp: 'all',
   findingSearch: '',
@@ -872,19 +871,13 @@ function renderRoute() {
           }}
         />
       ) : null}
-      {activeTab === 'reports' ? (
-        <AdminSecurityReportsRoute
+      {activeTab === 'reviews' ? (
+        <AdminSecurityReviewsRoute
           search={{
             reportKind: search.reportKind ?? 'all',
             reportReviewStatus: search.reportReviewStatus ?? 'all',
             reportSearch: search.reportSearch ?? '',
             selectedReport: search.selectedReport,
-          }}
-        />
-      ) : null}
-      {activeTab === 'reviews' ? (
-        <AdminSecurityReviewsRoute
-          search={{
             selectedReviewRun: search.selectedReviewRun,
           }}
         />
@@ -965,7 +958,7 @@ function mockSecurityActions(actions: Partial<Record<string, (...args: never[]) 
 function mockSecurityMutations(mutations: Partial<Record<string, (...args: never[]) => unknown>>) {
   useMutationMock.mockImplementation((mutation: unknown) => {
     const functionName = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
-    return mutations[functionName] ?? vi.fn();
+    return mutations[functionName] ?? vi.fn().mockResolvedValue(undefined);
   });
 }
 
@@ -980,6 +973,7 @@ describe('Admin security route', () => {
     useSearchMock.mockReturnValue(defaultSearch);
     useActionMock.mockReset();
     useMutationMock.mockReset();
+    useMutationMock.mockReturnValue(vi.fn().mockResolvedValue(undefined));
     useQueryMock.mockReset();
     useConvexMock.mockReset();
     useAuthMock.mockReset();
@@ -1373,7 +1367,7 @@ describe('Admin security route', () => {
       search: expect.objectContaining({
         selectedReport: 'report-1',
       }),
-      to: '/app/admin/security/reports',
+      to: '/app/admin/security/reviews',
     });
 
     useSearchMock.mockReturnValue({
@@ -1381,13 +1375,14 @@ describe('Admin security route', () => {
       selectedReport: 'report-1',
     });
     view.rerender(
-      <AdminSecurityPageShell activeTab="reports">
-        <AdminSecurityReportsRoute
+      <AdminSecurityPageShell activeTab="reviews">
+        <AdminSecurityReviewsRoute
           search={{
             reportKind: 'all',
             reportReviewStatus: 'all',
             reportSearch: '',
             selectedReport: (useSearchMock() as SearchState).selectedReport,
+            selectedReviewRun: undefined,
           }}
         />
       </AdminSecurityPageShell>,
@@ -1500,7 +1495,8 @@ describe('Admin security route', () => {
     });
   });
 
-  it('shows tracked follow-up state on retained findings', () => {
+  it('shows tracked follow-up state on retained findings', async () => {
+    const user = userEvent.setup();
     useSearchMock.mockReturnValue({
       ...defaultSearch,
       tab: 'findings',
@@ -1550,7 +1546,11 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    expect(screen.getByText(/open · overdue/i)).toBeInTheDocument();
+    await user.click(screen.getByText('Audit integrity monitoring'));
+
+    expect(screen.getByText('Tracked follow-up:')).toBeInTheDocument();
+    expect(screen.getByText('(open)')).toBeInTheDocument();
+    expect(screen.getAllByText('Overdue').length).toBeGreaterThan(0);
     expect(screen.getByText('Active follow-up')).toBeInTheDocument();
   });
 
@@ -1643,6 +1643,7 @@ describe('Admin security route', () => {
 
     expect(screen.getByText('Current Annual Review')).toBeInTheDocument();
     expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
+    expect(screen.getByText('Needs document upload')).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: 'Details' })[0]!);
 
@@ -1656,6 +1657,32 @@ describe('Admin security route', () => {
         documentVersion: undefined,
         note: 'reviewed this procedure',
         reviewTaskId: 'review-task-1',
+      });
+    });
+
+    await user.click(screen.getAllByRole('button', { name: 'Details' })[1]!);
+    await user.type(
+      screen.getByPlaceholderText('Document label'),
+      'Provider control assessment plan',
+    );
+    await user.type(
+      screen.getByPlaceholderText('Document URL'),
+      'https://example.com/policies/assessment-plan.pdf',
+    );
+    await user.type(screen.getByPlaceholderText('Version'), '2026.03');
+    await user.type(
+      screen.getAllByPlaceholderText('Task note')[1]!,
+      'linked approved assessment plan',
+    );
+    await user.click(screen.getByRole('button', { name: /upload \/ link latest document/i }));
+
+    await waitFor(() => {
+      expect(attestReviewTaskMock).toHaveBeenCalledWith({
+        documentLabel: 'Provider control assessment plan',
+        documentUrl: 'https://example.com/policies/assessment-plan.pdf',
+        documentVersion: '2026.03',
+        note: 'linked approved assessment plan',
+        reviewTaskId: 'review-task-2',
       });
     });
 
@@ -1751,10 +1778,10 @@ describe('Admin security route', () => {
     });
   });
 
-  it('keeps vendor editing out of the reports route', () => {
+  it('keeps vendor editing out of the reviews route', () => {
     useSearchMock.mockReturnValue({
       ...defaultSearch,
-      tab: 'reports',
+      tab: 'reviews',
     });
     mockSecurityQueries({
       vendorWorkspaces: [buildVendorWorkspace()],

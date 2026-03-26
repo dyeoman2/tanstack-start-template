@@ -27,6 +27,7 @@ let getAuditReadinessSnapshotHandler: typeof import('./lib/security/posture').ge
 let getLatestEvidenceReportExportsByReportIdFn: typeof import('./lib/security/core').getLatestEvidenceReportExportsByReportId;
 let _getSecurityPostureSummaryHandler: typeof import('./lib/security/posture').getSecurityPostureSummaryHandler;
 let buildSecurityWorkspaceControlSummary: typeof import('./lib/security/operations_core').buildSecurityWorkspaceControlSummary;
+let getSecurityControlWorkspaceRecord: typeof import('./lib/security/control_workspace_core').getSecurityControlWorkspaceRecord;
 let listSecurityFindingsHandler: typeof import('./lib/security/workspace').listSecurityFindingsHandler;
 let _listSecurityControlEvidenceActivityHandler: typeof import('./lib/security/workspace').listSecurityControlEvidenceActivityHandler;
 let securityWorkspaceModuleRef: typeof import('./securityWorkspace');
@@ -401,6 +402,7 @@ beforeAll(async () => {
     reportsHelperModule,
     opsHelperModule,
     coreModule,
+    controlWorkspaceCoreModule,
     reviewRunsReadModelsModule,
     auditModule,
   ] = await Promise.all([
@@ -414,6 +416,7 @@ beforeAll(async () => {
     import('./lib/security/reports'),
     import('./lib/security/operations_core'),
     import('./lib/security/core'),
+    import('./lib/security/control_workspace_core'),
     import('./lib/security/review_runs_read_models'),
     import('./audit'),
   ]);
@@ -432,6 +435,7 @@ beforeAll(async () => {
   getLatestEvidenceReportExportsByReportIdFn = coreModule.getLatestEvidenceReportExportsByReportId;
   _getSecurityPostureSummaryHandler = postureHelperModule.getSecurityPostureSummaryHandler;
   buildSecurityWorkspaceControlSummary = opsHelperModule.buildSecurityWorkspaceControlSummary;
+  getSecurityControlWorkspaceRecord = controlWorkspaceCoreModule.getSecurityControlWorkspaceRecord;
   listSecurityFindingsHandler = workspaceHelperModule.listSecurityFindingsHandler;
   _listSecurityControlEvidenceActivityHandler =
     workspaceHelperModule.listSecurityControlEvidenceActivityHandler;
@@ -470,6 +474,66 @@ describe('audit evidence helpers', () => {
     expect(securityReportsModuleRef.generateEvidenceReport).toBeDefined();
     expect(securityReviewsModuleRef.refreshReviewRunAutomation).toBeDefined();
     expect(securityOpsModuleRef.recordDocumentScanEventInternal).toBeDefined();
+  });
+
+  it('requires a document label and URL for annual document-upload review tasks', async () => {
+    const attestReviewTaskHandler = (securityReviewsModuleRef.attestReviewTask as any)._handler as (
+      ctx: unknown,
+      args: {
+        documentLabel?: string;
+        documentUrl?: string;
+        documentVersion?: string;
+        note?: string;
+        reviewTaskId: string;
+      },
+    ) => Promise<null>;
+
+    await expect(
+      attestReviewTaskHandler(
+        {
+          db: {
+            async get(id: string) {
+              if (id !== 'review-task-1') {
+                return null;
+              }
+              return {
+                _id: 'review-task-1',
+                controlLinks: [
+                  {
+                    internalControlId: 'CTRL-CA-002',
+                    itemId: 'provider-assessment-plan-documented',
+                  },
+                ],
+                freshnessWindowDays: 365,
+                reviewRunId: 'review-run-1',
+                taskType: 'document_upload',
+                templateKey: 'annual:document:assessment-plan',
+              };
+            },
+            query() {
+              return {
+                withIndex() {
+                  return {
+                    async collect() {
+                      return [];
+                    },
+                    async unique() {
+                      return null;
+                    },
+                  };
+                },
+              };
+            },
+          },
+          runMutation: vi.fn(async () => null),
+          runQuery: vi.fn(async () => null),
+        } as never,
+        {
+          note: 'missing linked document',
+          reviewTaskId: 'review-task-1',
+        },
+      ),
+    ).rejects.toThrow(/require both a document label and URL/i);
   });
 
   it('ignores missing relationship rows during cleanup', async () => {
@@ -1320,6 +1384,44 @@ describe('audit evidence helpers', () => {
       summary.controlSummary.bySupport.partial + summary.controlSummary.bySupport.complete,
     ).toBeGreaterThan(0);
     expect(summary.missingSupportControls).toBeLessThan(summary.controlSummary.totalControls);
+    vi.useRealTimers();
+  });
+
+  it('marks CA-2 complete when reviewed assessment-plan evidence is active', async () => {
+    vi.useFakeTimers();
+    const generatedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+    const now = generatedAt + 7 * 24 * 60 * 60 * 1000;
+    vi.setSystemTime(new Date(now));
+    const { db } = createSecurityDb({
+      evidence: [
+        {
+          _id: 'ca2-review-document-1',
+          internalControlId: 'CTRL-CA-002',
+          itemId: 'provider-assessment-plan-documented',
+          evidenceType: 'review_document',
+          title: 'Provider control assessment plan',
+          url: 'https://example.com/policies/assessment-plan.pdf',
+          sufficiency: 'sufficient',
+          source: 'review_document',
+          uploadedByUserId: 'admin-user',
+          reviewStatus: 'reviewed',
+          reviewedAt: now,
+          validUntil: now + 365 * 24 * 60 * 60 * 1000,
+          lifecycleStatus: 'active',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    const record = await getSecurityControlWorkspaceRecord({ db } as never, 'CTRL-CA-002');
+
+    expect(record?.support).toBe('complete');
+    expect(
+      record?.platformChecklist.find(
+        (item) => item.itemId === 'provider-assessment-plan-documented',
+      )?.support,
+    ).toBe('complete');
     vi.useRealTimers();
   });
 

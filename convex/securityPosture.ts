@@ -32,6 +32,7 @@ import { listSecurityFindingsHandler } from './lib/security/workspace';
 
 export const createEvidenceReport = internalMutation({
   args: {
+    autoReview: v.optional(v.boolean()),
     contentJson: v.string(),
     contentHash: v.string(),
     generatedByUserId: v.string(),
@@ -40,14 +41,19 @@ export const createEvidenceReport = internalMutation({
   },
   returns: v.id('evidenceReports'),
   handler: async (ctx, args) => {
+    const createdAt = Date.now();
     return await ctx.db.insert('evidenceReports', {
       ...getSecurityScopeFields(),
-      ...args,
+      contentJson: args.contentJson,
+      contentHash: args.contentHash,
+      generatedByUserId: args.generatedByUserId,
+      organizationId: args.organizationId,
+      reportKind: args.reportKind,
       internalReviewNotes: null,
-      reviewStatus: 'pending',
-      reviewedAt: null,
+      reviewStatus: args.autoReview ? 'reviewed' : 'pending',
+      reviewedAt: args.autoReview ? createdAt : null,
       reviewedByUserId: null,
-      createdAt: Date.now(),
+      createdAt,
     });
   },
 });

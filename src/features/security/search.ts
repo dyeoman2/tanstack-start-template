@@ -42,25 +42,21 @@ export const securityFindingsSearchSchema = z.object({
   selectedFinding: z.string().optional(),
 });
 
-export const securityReportsSearchSchema = z.object({
-  reportKind: z.enum(REPORT_KIND_FILTER_VALUES).default('all'),
-  reportReviewStatus: z.enum(REPORT_REVIEW_STATUS_FILTER_VALUES).default('all'),
-  reportSearch: z.string().default(''),
-  selectedReport: z.string().optional(),
-});
-
 export const securityVendorsSearchSchema = z.object({
   selectedVendor: z.string().optional(),
 });
 
 export const securityReviewsSearchSchema = z.object({
   selectedReviewRun: z.string().optional(),
+  reportKind: z.enum(REPORT_KIND_FILTER_VALUES).default('all'),
+  reportReviewStatus: z.enum(REPORT_REVIEW_STATUS_FILTER_VALUES).default('all'),
+  reportSearch: z.string().default(''),
+  selectedReport: z.string().optional(),
 });
 
 export type SecurityTab = (typeof SECURITY_TABS)[number];
 export type SecurityControlsSearch = z.infer<typeof securityControlsSearchSchema>;
 export type SecurityPoliciesSearch = z.infer<typeof securityPoliciesSearchSchema>;
 export type SecurityFindingsSearch = z.infer<typeof securityFindingsSearchSchema>;
-export type SecurityReportsSearch = z.infer<typeof securityReportsSearchSchema>;
 export type SecurityVendorsSearch = z.infer<typeof securityVendorsSearchSchema>;
 export type SecurityReviewsSearch = z.infer<typeof securityReviewsSearchSchema>;

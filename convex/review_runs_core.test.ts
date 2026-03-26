@@ -4,6 +4,7 @@ import {
   applyReviewTaskState,
   buildReviewRunDetail,
   syncAnnualPolicyReviewTasks,
+  upsertAnnualReviewTasks,
 } from './lib/security/review_runs_core';
 
 type DocId = string;
@@ -21,6 +22,8 @@ type ReviewTableMap = {
   securityRelationships: Map<DocId, Record<string, unknown>>;
   securityPolicies: Map<DocId, Record<string, unknown>>;
   securityPolicyControlMappings: Map<DocId, Record<string, unknown>>;
+  securityVendorControlMappings: Map<DocId, Record<string, unknown>>;
+  securityVendors: Map<DocId, Record<string, unknown>>;
   securityControlChecklistItems: Map<DocId, Record<string, unknown>>;
   userProfiles: Map<DocId, Record<string, unknown>>;
 };
@@ -64,6 +67,12 @@ function createReviewMutationCtx(
     ),
     securityPolicyControlMappings: new Map(
       (seed?.securityPolicyControlMappings ?? []).map((doc) => [doc._id as string, clone(doc)]),
+    ),
+    securityVendorControlMappings: new Map(
+      (seed?.securityVendorControlMappings ?? []).map((doc) => [doc._id as string, clone(doc)]),
+    ),
+    securityVendors: new Map(
+      (seed?.securityVendors ?? []).map((doc) => [doc._id as string, clone(doc)]),
     ),
     securityControlChecklistItems: new Map(
       (seed?.securityControlChecklistItems ?? []).map((doc) => [doc._id as string, clone(doc)]),
@@ -316,6 +325,76 @@ describe('review outcome evidence materialization', () => {
     expect([...tables.securityControlEvidenceActivity.values()]).toHaveLength(1);
   });
 
+  it('creates a typed evidence artifact for document-upload outcomes', async () => {
+    const seed = buildBaseSeed({
+      attestation: {
+        _id: 'attestation-1',
+        documentLabel: 'Provider control assessment plan',
+        documentUrl: 'https://example.com/policies/assessment-plan.pdf',
+        documentVersion: '2026.03',
+        statementText: 'Linked current assessment plan.',
+      },
+      reviewTaskEvidenceLinks: [
+        {
+          _id: 'task-link-1',
+          reviewRunId: 'review-run-1',
+          reviewTaskId: 'review-task-1',
+          role: 'primary',
+          sourceId: 'https://example.com/policies/assessment-plan.pdf',
+          sourceLabel: 'Provider control assessment plan',
+          sourceType: 'external_document',
+        },
+      ],
+    });
+    seed.reviewTasks = [
+      {
+        ...seed.reviewTasks[0],
+        controlLinks: [
+          {
+            internalControlId: 'CTRL-CA-002',
+            itemId: 'provider-assessment-plan-documented',
+          },
+        ],
+        taskType: 'document_upload',
+        templateKey: 'annual:document:assessment-plan',
+        title: 'Control assessment plan linked',
+      },
+    ];
+    const { ctx, tables } = createReviewMutationCtx(seed);
+
+    await applyReviewTaskState(ctx as never, {
+      actorUserId: 'admin-user',
+      latestAttestationId: 'attestation-1' as never,
+      mode: 'document_upload',
+      note: 'Linked current approved document.',
+      resultType: 'document_linked',
+      reviewTaskId: 'review-task-1' as never,
+      satisfiedAt: Date.parse('2026-03-23T10:00:00.000Z'),
+      satisfiedThroughAt: Date.parse('2027-03-23T10:00:00.000Z'),
+      status: 'completed',
+    });
+
+    const evidenceRows = [...tables.securityControlEvidence.values()];
+    expect(evidenceRows).toHaveLength(1);
+    expect(evidenceRows[0]).toMatchObject({
+      evidenceType: 'review_document',
+      internalControlId: 'CTRL-CA-002',
+      itemId: 'provider-assessment-plan-documented',
+      reviewOriginReviewAttestationId: 'attestation-1',
+      reviewOriginReviewRunId: 'review-run-1',
+      reviewOriginReviewTaskId: 'review-task-1',
+      reviewOriginSourceId: 'https://example.com/policies/assessment-plan.pdf',
+      reviewOriginSourceLabel: 'Provider control assessment plan',
+      reviewOriginSourceType: 'external_document',
+      reviewStatus: 'reviewed',
+      source: 'review_document',
+      sufficiency: 'sufficient',
+      title: 'Provider control assessment plan',
+      url: 'https://example.com/policies/assessment-plan.pdf',
+    });
+    expect([...tables.securityControlEvidenceActivity.values()]).toHaveLength(1);
+  });
+
   it('supersedes prior review-origin evidence when the same task is rerun', async () => {
     const { ctx, tables } = createReviewMutationCtx(buildBaseSeed());
 
@@ -416,6 +495,78 @@ describe('review outcome evidence materialization', () => {
 });
 
 describe('policy review orchestration contracts', () => {
+  it('creates annual document-upload tasks for procedure-backed controls', async () => {
+    const { ctx, tables } = createReviewMutationCtx({
+      reviewRuns: [
+        {
+          _id: 'review-run-1',
+          createdAt: Date.parse('2026-03-23T00:00:00.000Z'),
+          kind: 'annual',
+          runKey: 'annual:2026',
+          scopeId: 'provider',
+          scopeType: 'provider_global',
+          snapshotHash: 'snapshot-hash',
+          snapshotJson: '{}',
+          status: 'ready',
+          title: 'Annual Security Review 2026',
+          updatedAt: Date.parse('2026-03-23T00:00:00.000Z'),
+          year: 2026,
+        },
+      ],
+      securityPolicies: buildPolicySeedRows(),
+    });
+
+    await upsertAnnualReviewTasks(ctx as never, 'review-run-1' as never);
+
+    const taskByTemplateKey = new Map(
+      [...tables.reviewTasks.values()].map((task) => [String(task.templateKey), task] as const),
+    );
+
+    expect(taskByTemplateKey.get('annual:document:assessment-plan')).toMatchObject({
+      controlLinks: [
+        {
+          internalControlId: 'CTRL-CA-002',
+          itemId: 'provider-assessment-plan-documented',
+        },
+      ],
+      required: true,
+      taskType: 'document_upload',
+      title: 'Control assessment plan linked',
+    });
+    expect(taskByTemplateKey.get('annual:document:baseline-review-procedure')).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Baseline review procedure linked',
+    });
+    expect(
+      taskByTemplateKey.get('annual:document:change-approval-and-rollback-procedure'),
+    ).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Change approval and rollback procedure linked',
+    });
+    expect(
+      taskByTemplateKey.get('annual:document:component-inventory-review-procedure'),
+    ).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Component inventory review procedure linked',
+    });
+    expect(taskByTemplateKey.get('annual:attest:incident-response-procedure')).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Incident response procedure linked',
+    });
+    expect(taskByTemplateKey.get('annual:document:security-planning-artifact')).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Security planning artifact linked',
+    });
+    expect(taskByTemplateKey.get('annual:document:unsupported-component-procedure')).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Unsupported-component procedure linked',
+    });
+    expect(taskByTemplateKey.get('annual:document:cryptography-standards')).toMatchObject({
+      taskType: 'document_upload',
+      title: 'Cryptography standards artifact linked',
+    });
+  });
+
   it('creates deterministic attestation tasks for policies and removes stale policy tasks', async () => {
     const staleTemplateKey = 'annual:attest:policy:retired-policy';
     const { ctx, tables } = createReviewMutationCtx({

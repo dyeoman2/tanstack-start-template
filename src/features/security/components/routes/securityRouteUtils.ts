@@ -54,7 +54,7 @@ export function useSecurityNavigation() {
   const navigateToReport = useCallback(
     (reportId: string) => {
       void navigate({
-        to: getSecurityPath('reports'),
+        to: getSecurityPath('reviews'),
         search: {
           selectedReport: reportId,
         },

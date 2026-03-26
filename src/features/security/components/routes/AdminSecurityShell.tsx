@@ -36,7 +36,6 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
           <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="findings">Findings</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -56,7 +55,6 @@ export function AdminSecurityLayout(props: { children: React.ReactNode }) {
     if (pathname === getSecurityPath('policies')) return 'policies';
     if (pathname === getSecurityPath('vendors')) return 'vendors';
     if (pathname === getSecurityPath('findings')) return 'findings';
-    if (pathname === getSecurityPath('reports')) return 'reports';
     if (pathname === getSecurityPath('reviews')) return 'reviews';
     return 'overview';
   }, [location.pathname]);
