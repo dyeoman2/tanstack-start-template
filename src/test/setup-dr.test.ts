@@ -15,6 +15,7 @@ import {
   parseGitHubRepoFromRemote,
   parseSetupDrArgs,
 } from '../../scripts/lib/setup-dr';
+import { CONVEX_STORAGE_RUNTIME_ENV_NAMES } from '../../scripts/lib/storage-env-contract';
 
 describe('parseSetupDrArgs', () => {
   it('parses supported flags and values', () => {
@@ -104,24 +105,9 @@ describe('storage helpers', () => {
   });
 
   it('requires extra env keys for s3-backed storage', () => {
-    expect(getRequiredStorageDrEnvKeys({ FILE_STORAGE_BACKEND: 's3-primary' })).toEqual([
-      'FILE_STORAGE_BACKEND',
-      'AWS_REGION',
-      'AWS_S3_QUARANTINE_BUCKET',
-      'AWS_S3_CLEAN_BUCKET',
-      'AWS_S3_REJECTED_BUCKET',
-      'AWS_S3_MIRROR_BUCKET',
-      'AWS_S3_QUARANTINE_KMS_KEY_ARN',
-      'AWS_S3_CLEAN_KMS_KEY_ARN',
-      'AWS_S3_REJECTED_KMS_KEY_ARN',
-      'AWS_S3_MIRROR_KMS_KEY_ARN',
-      'AWS_FILE_SERVE_SIGNING_SECRET',
-      'STORAGE_BROKER_URL',
-      'STORAGE_BROKER_SHARED_SECRET',
-      'STORAGE_WORKER_URL',
-      'STORAGE_WORKER_SHARED_SECRET',
-      'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
-    ]);
+    expect(getRequiredStorageDrEnvKeys({ FILE_STORAGE_BACKEND: 's3-primary' })).toEqual(
+      CONVEX_STORAGE_RUNTIME_ENV_NAMES,
+    );
   });
 
   it('requires auth-critical env keys for recovery readiness', () => {
