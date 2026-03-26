@@ -9,18 +9,22 @@ describe('aws:destroy:all', () => {
   it('orchestrates teardown in the safe order', () => {
     expect(buildAwsDestroyAllSteps(false)).toEqual([
       {
+        args: ['run', 'dr:destroy', '--', '--stack', 'all'],
         command: 'pnpm run dr:destroy -- --stack all',
         label: 'DR teardown',
       },
       {
+        args: ['run', 'storage:destroy:prod'],
         command: 'pnpm run storage:destroy:prod',
         label: 'prod storage teardown',
       },
       {
+        args: ['run', 'storage:destroy:dev'],
         command: 'pnpm run storage:destroy:dev',
         label: 'dev storage teardown',
       },
       {
+        args: ['run', 'audit-archive:destroy'],
         command: 'pnpm run audit-archive:destroy',
         label: 'audit archive teardown',
       },
@@ -30,18 +34,22 @@ describe('aws:destroy:all', () => {
   it('passes through --yes to child teardown commands', () => {
     expect(buildAwsDestroyAllSteps(true)).toEqual([
       {
+        args: ['run', 'dr:destroy', '--', '--stack', 'all', '--yes'],
         command: 'pnpm run dr:destroy -- --stack all --yes',
         label: 'DR teardown',
       },
       {
+        args: ['run', 'storage:destroy:prod', '--', '--yes'],
         command: 'pnpm run storage:destroy:prod -- --yes',
         label: 'prod storage teardown',
       },
       {
+        args: ['run', 'storage:destroy:dev', '--', '--yes'],
         command: 'pnpm run storage:destroy:dev -- --yes',
         label: 'dev storage teardown',
       },
       {
+        args: ['run', 'audit-archive:destroy', '--', '--yes'],
         command: 'pnpm run audit-archive:destroy -- --yes',
         label: 'audit archive teardown',
       },
