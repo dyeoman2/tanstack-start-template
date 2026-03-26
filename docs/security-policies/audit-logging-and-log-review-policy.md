@@ -9,3 +9,5 @@ This policy defines the provider requirements for audit logging, audit record pr
 - Security-relevant events are logged in provider-managed systems.
 - Audit records are protected against unauthorized modification or deletion.
 - Audit logs are reviewed and reported through documented provider procedures.
+- Audit review findings and related follow-up actions are retained through the provider security review workflow.
+- Audit review procedures are revalidated during the annual security review.

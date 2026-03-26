@@ -22,6 +22,8 @@ This policy defines the provider requirements for audit logging, audit record pr
 - Security-relevant events are logged in provider-managed systems.
 - Audit records are protected against unauthorized modification or deletion.
 - Audit logs are reviewed and reported through documented provider procedures.
+- Audit review findings and related follow-up actions are retained through the provider security review workflow.
+- Audit review procedures are revalidated during the annual security review.
 `,
   'docs/security-policies/backup-contingency-and-disaster-recovery-policy.md': `# Backup, Contingency, and Disaster Recovery Policy
 
@@ -57,6 +59,7 @@ This policy defines the provider requirements for continuous monitoring, vulnera
 ## Requirements
 
 - Continuous monitoring signals are collected and reviewed.
+- Security alerts and monitored findings are triaged through provider review and tracked follow-up workflows.
 - Vulnerabilities and security findings are tracked through provider workflows.
 - Monitoring outputs are retained for annual review and security reporting.
 `,
@@ -95,6 +98,7 @@ This policy defines the provider requirements for incident response planning, tr
 - The provider maintains a documented incident response plan and procedure set.
 - Incident response training and testing occur on the defined cadence.
 - Incident response exercises are conducted at least annually as part of the annual security review.
+- The incident response plan and procedure set are reviewed during the provider annual security review.
 - Incident handling evidence is retained for annual review.
 `,
   'docs/security-policies/information-security-governance-policy.md': `# Information Security Governance Policy

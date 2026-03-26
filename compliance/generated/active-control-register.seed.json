@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-26T21:01:08.548Z",
+  "generatedAt": "2026-03-26T22:51:06.849Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -877,7 +877,7 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Audit log access is restricted, audit writes are append-only, CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths, the immutable S3 audit archive bucket has server-side access logging, and DR VPC flow logs and ECS container logs are retained with 1-month retention even if the DR stack is torn down.",
+            "notes": "Audit log access is restricted, audit writes are append-only, and CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths.",
             "evidence": [
               {
                 "title": "Restricted audit query access",
@@ -896,20 +896,6 @@
               {
                 "title": "Audit log immutability guardrail",
                 "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "S3 access logging on immutable audit archive",
-                "description": "Server-side access logging enabled on the immutable audit archive S3 bucket, recording all object access events to a dedicated access logs bucket with 365-day retention, SSL-only access, and blocked public access.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "DR audit log retention survives stack teardown",
-                "description": "DR VPC flow logs and ECS container logs use RETAIN removal policy with 1-month retention, ensuring network and application audit trails survive DR stack teardown during or after an incident.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1082,7 +1068,7 @@
               },
               {
                 "title": "Explicit secure session settings",
-                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, cookie-cache protections, and sameSite=strict cookie policy.",
+                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, and cookie-cache protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1263,7 +1249,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, regulated organization access checks continue to enforce MFA requirements, and both the server-side route guard and client-side auth hook default to MFA-required (fail-closed) when the user profile has not yet loaded.",
+            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, and regulated organization access checks continue to enforce MFA requirements.",
             "evidence": [
               {
                 "title": "Account setup MFA enrollment flow",
@@ -1512,7 +1498,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling. The DR ALB is protected by WAFv2 managed rule groups, VPC flow logs capture all network traffic to CloudWatch Logs with 1-month retention, and ALB access logs record HTTP request details to S3. Both custom-domain and provider-hostnames strategies are supported end-to-end.",
+            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.",
             "evidence": [
               {
                 "title": "Trusted-origin validation helpers",
@@ -1524,27 +1510,6 @@
               {
                 "title": "Auth middleware origin rejection",
                 "description": "Auth middleware origin rejection rejecting authentication requests from untrusted origins before processing credentials.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "AWS WAFv2 managed rule groups on DR ALB",
-                "description": "WAFv2 Web ACL attached to the disaster-recovery ALB with AWSManagedRulesCommonRuleSet (OWASP Top 10), AWSManagedRulesKnownBadInputsRuleSet (Log4Shell and similar), AWSManagedRulesSQLiRuleSet (SQL injection), and an IP-based rate-limiting rule (2000 requests per 5 minutes per IP). CloudWatch metrics enabled for all rule groups.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "VPC Flow Logs on DR network",
-                "description": "VPC Flow Logs enabled on the disaster-recovery VPC capturing all traffic types to a dedicated CloudWatch Logs group with 1-month retention and RETAIN removal policy for network-layer audit and threat detection.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "ALB access logging on DR load balancer",
-                "description": "ALB access logs enabled on the disaster-recovery Application Load Balancer, recording HTTP request details to a dedicated S3 bucket with 90-day retention and SSL-only access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2015,7 +1980,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational. GitHub Actions workflows authenticate via OIDC-assumed AWS roles with no long-lived credentials, CDK deploys run a synth pre-flight check before deployment, and the DR backup S3 bucket has server-side access logging.",
+            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational.",
             "evidence": [
               {
                 "title": "Weekly DR backup workflow",
@@ -2041,27 +2006,6 @@
               {
                 "title": "Retained backup workflow run record",
                 "description": "Workflow Stored backup verification records retain GitHub Actions run metadata, backup artifact location, step outcomes, and related evidence showing the hosted production export path is active.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "GitHub OIDC federated authentication for DR workflows",
-                "description": "DR backup and recovery GitHub Actions workflows authenticate via OIDC-assumed AWS roles scoped to the DR backup bucket and recovery resources. No long-lived IAM access keys are stored in GitHub secrets, eliminating static credential rotation and blast-radius risk.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "CDK synth pre-flight gate on DR deploys",
-                "description": "DR and storage deploy wrappers run a CDK synth pre-flight check before deployment, aborting with a clear error if the synthesized template is invalid.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "S3 access logging on DR backup bucket",
-                "description": "Server-side access logging enabled on the DR backup S3 bucket, recording all object access events to a dedicated access logs bucket with 90-day retention, SSL-only access, and blocked public access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2784,11 +2728,11 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Session cookies are configured for secure transport on HTTPS origins with sameSite=strict to prevent cross-site cookie transmission, and temporary file access links remain short-lived within the regulated transport posture.",
+            "notes": "Session cookies are configured for secure transport on HTTPS origins, and temporary file access links remain short-lived within the regulated transport posture.",
             "evidence": [
               {
                 "title": "Session transport configuration",
-                "description": "Session transport configuration showing secure cookie settings with sameSite=strict, session expiry values, fresh-session windows, and related transport protections.",
+                "description": "Session transport configuration showing secure cookie settings, session expiry values, fresh-session windows, and related transport protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2867,6 +2811,381 @@
             "trustServiceCategory": "security"
           }
         ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AU-006",
+      "nist80053Id": "AU-6",
+      "title": "Audit Record Review, Analysis, and Reporting",
+      "familyId": "AU",
+      "familyTitle": "Audit and Accountability",
+      "implementationSummary": "This control ensures the hosted service provides reviewable audit history and retains review records that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, a documented audit-review policy, and tracked provider follow-up workflows for audit-related findings in the site admin workspace.",
+      "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "review-queue-surface",
+          "label": "Authorized security administrators can review audit activity and related evidence",
+          "description": "The platform provides authorized security administrators with a supported administrative interface for reviewing audit activity, control records, and related security evidence.",
+          "verificationMethod": "Audit review UI walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Operations",
+            "notes": "Security administrators can review audit history and evidence state through built-in provider review interfaces.",
+            "evidence": [
+              {
+                "title": "Administrative security review route",
+                "description": "Administrative security route showing the control workspace, audit review records, and evidence review actions available to authorized security administrators.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "review-record-retention",
+          "label": "Audit review state and follow-up records can be retained",
+          "description": "The platform should retain review status, reviewer identity, notes, and export integrity data when audit evidence is reviewed.",
+          "verificationMethod": "Evidence report schema and review workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Operations",
+            "notes": "Evidence reports persist review status, notes, reviewer identity, and integrity-linked export data for later inspection.",
+            "evidence": [
+              {
+                "title": "Evidence report review record structure",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence report review workflow",
+                "description": "Review workflow for recording evidence report status, reviewer notes, and follow-up actions.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-review-procedure",
+          "label": "Provider audit review procedure is documented",
+          "description": "The provider documents internal audit review cadence, escalation expectations, and follow-up steps for the hosted service.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Operations",
+            "notes": "The workspace includes a documented provider audit-review procedure, annual revalidation tasking, and tracked follow-up workflow for audit-related findings.",
+            "evidence": [
+              {
+                "title": "Audit logging and log review policy",
+                "description": "Audit logging and log review policy Provider policy describing audit-log review expectations, retained audit-review follow-up, and annual revalidation of the provider audit-review procedure for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Tracked audit finding follow-up workflow",
+                "description": "Workflow Administrative workflow for triaging security findings, assigning follow-up owners, tracking due dates, and resolving audit-related follow-up with retained closure evidence.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Annual audit review attestation task",
+                "description": "Annual audit review attestation task Annual review task definition requiring the provider audit review procedure to be reviewed and attested as current during the site admin security review cycle.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Operations",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for their own review and follow-up processes for any audit exports or evidence they retain outside the hosted service.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
+            "title": "Information system activity review",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(D)",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "DE.AE-02",
+            "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC7.2",
+            "group": "common-criteria",
+            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-CA-005",
+      "nist80053Id": "CA-5",
+      "title": "Plan of Action and Milestones",
+      "familyId": "CA",
+      "familyTitle": "Assessment, Authorization, and Monitoring",
+      "implementationSummary": "This control ensures the hosted service can surface, retain, and export follow-up items that support provider remediation tracking after control or readiness reviews. The platform supports that objective through audit-readiness findings, tracked follow-up actions with assignees and due dates, retained reviewer notes, evidence activity history, and annual review of open remediation items in the site admin workspace.",
+      "controlStatement": "Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system; and Update existing plan of action and milestones {{ insert: param, ca-05_odp }} based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "follow-up-findings-can-be-surfaced",
+          "label": "Provider follow-up findings can be surfaced from readiness and control reviews",
+          "description": "The hosted service should surface review findings that providers may need to investigate or remediate after control and audit-readiness review.",
+          "verificationMethod": "Site admin findings and readiness review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Assurance",
+            "notes": "The site admin workspace surfaces metadata gaps, authorization denials, and generated review artifacts that can drive provider follow-up.",
+            "evidence": [
+              {
+                "title": "Audit readiness findings interface",
+                "description": "Interface showing metadata gaps, authorization denials, manifest history, and backup drill evidence in the site admin audit-readiness view.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Operational readiness note",
+                "description": "Control matrix documentation describing internal operational evidence and deployer-owned gaps surfaced in the site admin security workspace.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "follow-up-state-and-review-notes-retained",
+          "label": "Follow-up state and reviewer notes can be retained on assessment artifacts",
+          "description": "Assessment and review artifacts should retain follow-up state, reviewer attribution, and notes for later provider action.",
+          "verificationMethod": "Evidence report review workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Assurance",
+            "notes": "Evidence reports retain pending, reviewed, or needs-follow-up state with reviewer notes and reviewer attribution.",
+            "evidence": [
+              {
+                "title": "Evidence report follow-up metadata schema",
+                "description": "Schema describing reviewStatus, internalReviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence report follow-up workflow",
+                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "follow-up-evidence-history-retained",
+          "label": "Evidence changes and review history can be retained for follow-up tracking",
+          "description": "The hosted service should retain evidence activity history so providers can review how supporting artifacts changed during follow-up work.",
+          "verificationMethod": "Evidence activity history review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Assurance",
+            "notes": "Evidence creation, review, archival, and renewal activity is retained and surfaced in the site admin workspace for follow-up tracking.",
+            "evidence": [
+              {
+                "title": "Evidence activity storage and query path",
+                "description": "Evidence activity records and query path showing creation, review, archival, and renewal history by control and checklist item.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence activity history interface",
+                "description": "Interface showing evidence activity history showing review, archive, and renewal events in the evidence history dialog.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "follow-up-owners-dates-and-milestones-can-be-recorded",
+          "label": "Follow-up owners, dates, and milestone expectations can be retained with action artifacts",
+          "description": "The workspace should retain provider notes or attached artifacts that document ownership, target dates, and milestone expectations for follow-up actions.",
+          "verificationMethod": "Evidence review and attachment workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Assurance",
+            "notes": "The workspace retains reviewer notes and attached evidence artifacts that can document ownership, dates, and milestone expectations as follow-up support records.",
+            "evidence": [
+              {
+                "title": "Evidence report follow-up workflow",
+                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Security control evidence attachment workflow",
+                "description": "Workflow allowing site admins to attach, review, and retain security control evidence items with notes and history for follow-up tracking artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-poam-workflow-documented",
+          "label": "Provider plan-of-action workflow with milestones is documented",
+          "description": "The provider should document how follow-up items are converted into assigned actions, target dates, milestone tracking, and closure decisions for the hosted service.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Assurance",
+            "notes": "The workspace documents the provider POA&M workflow and implements tracked follow-up actions with assignment, due-date, and closure evidence handling.",
+            "evidence": [
+              {
+                "title": "Information security governance policy",
+                "description": "Information security governance policy Provider governance policy documenting that open follow-up actions serve as the provider plan of action and milestones and are reviewed during each annual security review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Tracked follow-up action record structure",
+                "description": "Schema Schema retaining tracked follow-up action summary, assignee, due date, status, notes, and resolution details for provider remediation work.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Tracked follow-up action workflow",
+                "description": "Workflow Administrative security workflow for creating, updating, and resolving tracked follow-up actions, including owner assignment, due-date updates, and required closure evidence before resolution.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Annual POA&M review task",
+                "description": "Annual POA&M review task Annual review task definition requiring open follow-up actions, assignments, and target dates to be reviewed and attested as current.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Assurance",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for maintaining their own remediation plans, milestones, and closure processes for customer-managed findings in connected systems, integrations, and operational procedures outside the hosted service boundary.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [],
+        "soc2": []
       }
     },
     {
@@ -3038,7 +3357,7 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
-      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, guarded credential or session recovery flows, and breached-password rejection via the HaveIBeenPwned k-anonymity API.",
+      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, and guarded credential or session recovery flows.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3105,7 +3424,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, authenticator onboarding issues backup codes for controlled recovery, and passwords found in known data breaches are rejected at signup, reset, and change via the Better Auth haveIBeenPwned plugin.",
+            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, and authenticator onboarding issues backup codes for controlled recovery.",
             "evidence": [
               {
                 "title": "Authentication recovery rate-limit rules",
@@ -3131,13 +3450,6 @@
               {
                 "title": "Authenticator backup-code recovery workflow",
                 "description": "Authenticator onboarding and account-recovery workflow showing backup codes are issued during setup and accepted later when a user needs to regain access.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Breached-password rejection via HaveIBeenPwned plugin",
-                "description": "Better Auth haveIBeenPwned plugin rejects passwords found in known data breaches during signup, password reset, and password change using the HIBP k-anonymity range API. Only the first 5 characters of the SHA-1 hash are transmitted. No API key required.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3229,6 +3541,524 @@
             "criterionId": "CC6.2",
             "group": "common-criteria",
             "label": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users whose access is administered by the entity. For those users whose access is administered by the entity, user system credentials are removed when user access is no longer authorized.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-IR-003",
+      "nist80053Id": "IR-3",
+      "title": "Incident Response Testing",
+      "familyId": "IR",
+      "familyTitle": "Incident Response",
+      "implementationSummary": "This control ensures incident response procedures can be exercised using current hosted-service evidence and investigation workflows. The hosted service supports that objective through audit-readiness reports, investigation-supporting exports, retained recovery evidence, a documented annual exercise expectation, and retained exercise-review artifacts in the site admin workspace.",
+      "controlStatement": "Incident Response Testing is tracked as an active control in the platform register.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "incident-exercise-support-artifacts-can-be-generated",
+          "label": "Incident exercise support artifacts can be generated from the site admin workspace",
+          "description": "The hosted service should generate evidence packages that providers can use during tabletop exercises or incident-response walkthroughs.",
+          "verificationMethod": "Evidence and readiness generation walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The site admin workspace can generate evidence and readiness artifacts that package current investigation-supporting material for incident exercises.",
+            "evidence": [
+              {
+                "title": "Site admin evidence and readiness actions",
+                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Generated investigation-supporting exports",
+                "description": "Generated exports containing posture, audit, review, and integrity metadata that can be reused during investigations and exercises.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "recovery-and-investigation-evidence-can-support-incident-exercises",
+          "label": "Recovery and investigation evidence can support incident-response exercises",
+          "description": "Providers should be able to review recovery and investigation artifacts together when validating incident-response assumptions or exercise scenarios.",
+          "verificationMethod": "Readiness and restore evidence review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Restore-drill evidence and investigation-supporting reports are both retained in the site admin workspace and can support exercise review.",
+            "evidence": [
+              {
+                "title": "Restore drill evidence records",
+                "description": "Restore drill evidence records Stored backup verification and restore-drill records retain recent recovery outcomes that can inform incident-response exercises.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit readiness evidence review",
+                "description": "Audit readiness evidence review The site admin security workflow packages recent metadata gaps, denial events, and restore-drill evidence into readiness reports for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "incident-exercise-results-can-be-retained",
+          "label": "Incident exercise artifacts and results can be retained for later review",
+          "description": "The hosted service should retain exercise-supporting records, review notes, or related recovery artifacts that providers can reference after an incident-response exercise.",
+          "verificationMethod": "Exercise artifact retention review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The workspace retains backup verification and restore drill records that providers can review later as incident-exercise-supporting artifacts.",
+            "evidence": [
+              {
+                "title": "Restore drill record structure",
+                "description": "Schema retaining backup verification records with drill type, status, timestamps, restored item counts, summaries, and artifact hashes for later provider review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Backup verification reporting workflow",
+                "description": "Workflow .github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/securityOps.ts recordBackupVerification handling.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Restore drill summary interface",
+                "description": "Interface showing the latest restore drill status, timestamp, and related backup verification summary in the audit-readiness view.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-incident-response-exercise-program-documented",
+          "label": "Provider incident response exercise cadence and retained results are documented",
+          "description": "The provider should document recurring incident-response exercise cadence, participant expectations, and how exercise results are retained for hosted-service testing.",
+          "verificationMethod": "Exercise program review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The workspace includes a documented annual exercise expectation, a dedicated annual exercise attestation task, and retained exercise-supporting records for later review.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy defining annual incident-response exercise expectations and retained incident-handling evidence for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Annual incident response exercise task",
+                "description": "Annual incident response exercise task Annual review task definition requiring the provider to conduct or review an incident-response tabletop exercise and retain the results.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Retained exercise-supporting recovery records",
+                "description": "Retained exercise-supporting recovery records Backup verification and restore-drill records retaining timestamps, summaries, restored item counts, and artifact hashes that can be reviewed as incident-exercise results.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Incident Response",
+      "responsibility": "shared-responsibility",
+      "customerResponsibilityNotes": "Customer organizations are responsible for testing their own incident response procedures, communication paths, and local recovery actions for systems and workflows they manage outside the hosted service boundary.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(6)",
+            "title": "Security incident procedures",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(6)",
+            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [],
+        "soc2": []
+      }
+    },
+    {
+      "internalControlId": "CTRL-IR-008",
+      "nist80053Id": "IR-8",
+      "title": "Incident Response Plan",
+      "familyId": "IR",
+      "familyTitle": "Incident Response",
+      "implementationSummary": "This control addresses incident response planning for the hosted service and connected customer environment. The platform provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, a documented provider incident-response plan, and annual review linkage for that plan in the site admin workspace.",
+      "controlStatement": "Develop an incident response plan that: Provides the organization with a roadmap for implementing its incident response capability; Describes the structure and organization of the incident response capability; Provides a high-level approach for how the incident response capability fits into the overall organization; Meets the unique requirements of the organization, which relate to mission, size, structure, and functions; Defines reportable incidents; Provides metrics for measuring the incident response capability within the organization; Defines the resources and management support needed to effectively maintain and mature an incident response capability; Addresses the sharing of incident information; Is reviewed and approved by {{ insert: param, ir-08_odp.01 }} {{ insert: param, ir-08_odp.02 }} ; and Explicitly designates responsibility for incident response to {{ insert: param, ir-08_odp.03 }}. Distribute copies of the incident response plan to {{ insert: param, ir-08_odp.04 }}; Update the incident response plan to address system and organizational changes or problems encountered during plan implementation, execution, or testing; Communicate incident response plan changes to {{ insert: param, ir-8_prm_5 }} ; and Protect the incident response plan from unauthorized disclosure and modification.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "incident-planning-artifacts-can-be-generated",
+          "label": "Incident-planning support artifacts can be generated from the site admin workspace",
+          "description": "The hosted service should generate exports and evidence packages that provider or customer responders can use during incident planning and coordination.",
+          "verificationMethod": "Evidence and audit-readiness generation walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The site admin workspace can generate evidence reports and audit-readiness outputs that package investigation-supporting material for later response use.",
+            "evidence": [
+              {
+                "title": "Evidence report generation and export",
+                "description": "Evidence report workflow generating structured exports containing posture, audit, review, and integrity data for reviewer use.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Site admin evidence and readiness actions",
+                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Operational evidence note",
+                "description": "Control matrix documentation describing retained operational evidence available for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "incident-supporting-context-can-be-retained",
+          "label": "Incident-supporting evidence retains integrity and review context",
+          "description": "The hosted service should retain hashes, review state, and export metadata for investigation artifacts that may be referenced during incident response planning or execution.",
+          "verificationMethod": "Evidence artifact retention review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Generated evidence and audit-readiness artifacts retain integrity-linked metadata and review context that can support later incident response use.",
+            "evidence": [
+              {
+                "title": "Integrity-linked evidence report metadata",
+                "description": "Evidence report schema and retained integrity metadata, including content hash, export hash, export integrity summary, and review metadata.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence report review record structure",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-incident-response-plan-documented",
+          "label": "Provider incident response plan is documented",
+          "description": "The provider should maintain a documented incident response plan covering roles, escalation paths, coordination expectations, and use of hosted-service investigation artifacts.",
+          "verificationMethod": "Plan review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The workspace includes a documented provider incident-response plan through the provider incident-response policy.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy defining the incident-response plan, planning expectations, training and testing cadence, and retained evidence expectations for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-incident-response-plan-review-cadence-documented",
+          "label": "Provider incident response plan review and update cadence is documented",
+          "description": "The provider should document how the incident response plan is reviewed, updated, and communicated when incident lessons or system changes require revision.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "The workspace includes documented annual review expectations for the incident response plan and a linked policy review workflow in the site admin workspace.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy documenting that the incident-response plan and procedure set are reviewed during the provider annual security review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Annual policy review task materialization",
+                "description": "Annual policy review task materialization Annual review task synchronization creates a dedicated policy-review attestation task for the incident-response policy so the review cadence is tracked in the security workspace.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Policy review linkage interface",
+                "description": "Interface Administrative security policy detail view shows the linked annual review task and current review status for each bundled provider policy, including incident response planning artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Incident Response",
+      "responsibility": "shared-responsibility",
+      "customerResponsibilityNotes": "Customer organizations are responsible for maintaining their own incident response plans, internal escalation paths, notification obligations, and coordination procedures for customer-managed systems and workflows outside the hosted service boundary. The hosted-service artifacts tracked here are intended to support planning and coordination, not replace either party's incident response plan.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(6)",
+            "title": "Security incident procedures",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(6)",
+            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [],
+        "soc2": []
+      }
+    },
+    {
+      "internalControlId": "CTRL-SI-004",
+      "nist80053Id": "SI-4",
+      "title": "System Monitoring",
+      "familyId": "SI",
+      "familyTitle": "System and Information Integrity",
+      "implementationSummary": "This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The hosted service supports that objective through document scan records, audit-integrity failure signals, security posture summaries, and tracked provider follow-up workflows for monitored findings.",
+      "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "monitoring-signals",
+          "label": "Security-relevant monitoring signals are collected for authorized review",
+          "description": "The hosted service provides security-relevant monitoring signals that authorized personnel can review for detection follow-up.",
+          "verificationMethod": "Telemetry and event review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, and security posture summaries.",
+            "evidence": [
+              {
+                "title": "Security monitoring summary",
+                "description": "Summary Administrative monitoring summary and related records showing document scan status, audit-integrity failure signals, and security posture indicators available for authorized review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-alert-procedure",
+          "label": "Provider alert response procedure is documented",
+          "description": "Provider alert routing and response expectations should be documented for the hosted platform.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "The workspace includes a documented monitoring response procedure and tracked workflow for triaging monitored findings into provider follow-up actions.",
+            "evidence": [
+              {
+                "title": "Continuous monitoring and security operations policy",
+                "description": "Continuous monitoring and security operations policy Provider policy documenting that monitored alerts and findings are triaged through provider review and tracked follow-up workflows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Tracked monitoring follow-up record structure",
+                "description": "Schema Follow-up action records retain assignee, due date, status, notes, and resolution detail for monitored security findings that require provider response.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Administrative findings and follow-up workflow",
+                "description": "Workflow Administrative security findings workflow allows site admins to review monitored findings, open tracked follow-up, update disposition, assign owners, and record closure evidence.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "monitoring-records-retained",
+          "label": "Monitoring records are retained for later review",
+          "description": "The platform should retain monitoring outputs that providers can review after signals are generated.",
+          "verificationMethod": "Monitoring record review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "Monitoring-related records are retained through document scan events, retention job state, and audit-integrity failure records.",
+            "evidence": [
+              {
+                "title": "Document scan event records",
+                "description": "Document scan records showing latest scan status, rejection counts, and quarantine counts for reviewed files.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Retention job records",
+                "description": "Retention job records showing retention posture and job outcomes available for later operational review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit integrity failure records",
+                "description": "Audit integrity failure records recording audit_integrity_check_failed events when the audit log hash chain does not verify.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Monitoring",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for reviewing service notifications, acting on customer-visible alerts, and integrating platform outputs into their own operational response processes.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
+            "title": "Information system activity review",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(c)(1)",
+            "title": "Integrity",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(D)",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "DE.AE-02",
+            "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
+          },
+          {
+            "subcategoryId": "DE.AE-03",
+            "label": "DE / DE.AE: Information is correlated from multiple sources"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC7.2",
+            "group": "common-criteria",
+            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
             "trustServiceCategory": "security"
           }
         ]
@@ -3488,159 +4318,6 @@
       }
     },
     {
-      "internalControlId": "CTRL-AU-006",
-      "nist80053Id": "AU-6",
-      "title": "Audit Record Review, Analysis, and Reporting",
-      "familyId": "AU",
-      "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures the hosted service provides reviewable audit history and retains review records that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, and a documented audit-review policy, but detailed provider cadence and escalation workflow evidence are not yet fully attached in this workspace.",
-      "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
-      "priority": "p1",
-      "platformChecklistItems": [
-        {
-          "itemId": "review-queue-surface",
-          "label": "Authorized security administrators can review audit activity and related evidence",
-          "description": "The platform provides authorized security administrators with a supported administrative interface for reviewing audit activity, control records, and related security evidence.",
-          "verificationMethod": "Audit review UI walkthrough",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Operations",
-            "notes": "Security administrators can review audit history and evidence state through built-in provider review interfaces.",
-            "evidence": [
-              {
-                "title": "Administrative security review route",
-                "description": "Administrative security route showing the control workspace, audit review records, and evidence review actions available to authorized security administrators.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "review-record-retention",
-          "label": "Audit review state and follow-up records can be retained",
-          "description": "The platform should retain review status, reviewer identity, notes, and export integrity data when audit evidence is reviewed.",
-          "verificationMethod": "Evidence report schema and review workflow inspection",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "link",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Operations",
-            "notes": "Evidence reports persist review status, notes, reviewer identity, and integrity-linked export data for later inspection.",
-            "evidence": [
-              {
-                "title": "Evidence report review record structure",
-                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Evidence report review workflow",
-                "description": "Review workflow for recording evidence report status, reviewer notes, and follow-up actions.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-review-procedure",
-          "label": "Provider audit review procedure is documented",
-          "description": "The provider documents internal audit review cadence, escalation expectations, and follow-up steps for the hosted service.",
-          "verificationMethod": "Procedure review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "in_progress",
-            "owner": "Security Operations",
-            "notes": "The workspace now includes a documented provider audit-review policy and annual review task, but it does not yet attach fuller cadence and escalation workflow detail.",
-            "evidence": [
-              {
-                "title": "Audit logging and log review policy",
-                "description": "Audit logging and log review policy Provider policy describing audit-log review expectations and documented review procedures for the hosted service environment.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              },
-              {
-                "title": "Annual audit review task",
-                "description": "Annual audit review task Annual review task definition requiring the provider audit review procedure to be reviewed and attested as current during the site admin security review cycle.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              }
-            ]
-          }
-        }
-      ],
-      "owner": "Security Operations",
-      "responsibility": "platform",
-      "customerResponsibilityNotes": "Customer organizations are responsible for their own review and follow-up processes for any audit exports or evidence they retain outside the hosted service.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
-            "title": "Information system activity review",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.312(b)",
-            "title": "Audit controls",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.316(b)(1)",
-            "title": "Documentation",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
-            "mappingType": "relationship"
-          },
-          {
-            "referenceId": "164.312(b)",
-            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "DE.AE-02",
-            "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          }
-        ]
-      }
-    },
-    {
       "internalControlId": "CTRL-CA-002",
       "nist80053Id": "CA-2",
       "title": "Control Assessments",
@@ -3807,192 +4484,6 @@
           {
             "referenceId": "164.308(a)(8)",
             "label": "HIPAA Standard: Perform a periodic technical and nontechnical evaluation, based initially upon the standards implemented under this rule and subsequently, in response to environmental or operational changes affecting the security of electronic protected health information, that establishes the extent to which a covered entity’s or business associate’s security policies and procedures meet the requirements of this subpart.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [],
-        "soc2": []
-      }
-    },
-    {
-      "internalControlId": "CTRL-CA-005",
-      "nist80053Id": "CA-5",
-      "title": "Plan of Action and Milestones",
-      "familyId": "CA",
-      "familyTitle": "Assessment, Authorization, and Monitoring",
-      "implementationSummary": "This control ensures the hosted service can surface, retain, and export follow-up items that support provider remediation tracking after control or readiness reviews. The platform supports that objective through audit-readiness findings, evidence-report follow-up state, retained reviewer notes, and evidence activity history in the site admin workspace, but a formal provider plan-of-action workflow with assigned milestones, target dates, and approval records is not yet evidenced in this workspace.",
-      "controlStatement": "Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system; and Update existing plan of action and milestones {{ insert: param, ca-05_odp }} based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
-      "priority": "p1",
-      "platformChecklistItems": [
-        {
-          "itemId": "follow-up-findings-can-be-surfaced",
-          "label": "Provider follow-up findings can be surfaced from readiness and control reviews",
-          "description": "The hosted service should surface review findings that providers may need to investigate or remediate after control and audit-readiness review.",
-          "verificationMethod": "Site admin findings and readiness review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Assurance",
-            "notes": "The site admin workspace surfaces metadata gaps, authorization denials, and generated review artifacts that can drive provider follow-up.",
-            "evidence": [
-              {
-                "title": "Audit readiness findings interface",
-                "description": "Interface showing metadata gaps, authorization denials, manifest history, and backup drill evidence in the site admin audit-readiness view.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Operational readiness note",
-                "description": "Control matrix documentation describing internal operational evidence and deployer-owned gaps surfaced in the site admin security workspace.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "follow-up-state-and-review-notes-retained",
-          "label": "Follow-up state and reviewer notes can be retained on assessment artifacts",
-          "description": "Assessment and review artifacts should retain follow-up state, reviewer attribution, and notes for later provider action.",
-          "verificationMethod": "Evidence report review workflow inspection",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Assurance",
-            "notes": "Evidence reports retain pending, reviewed, or needs-follow-up state with reviewer notes and reviewer attribution.",
-            "evidence": [
-              {
-                "title": "Evidence report follow-up metadata schema",
-                "description": "Schema describing reviewStatus, internalReviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Evidence report follow-up workflow",
-                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "follow-up-evidence-history-retained",
-          "label": "Evidence changes and review history can be retained for follow-up tracking",
-          "description": "The hosted service should retain evidence activity history so providers can review how supporting artifacts changed during follow-up work.",
-          "verificationMethod": "Evidence activity history review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Assurance",
-            "notes": "Evidence creation, review, archival, and renewal activity is retained and surfaced in the site admin workspace for follow-up tracking.",
-            "evidence": [
-              {
-                "title": "Evidence activity storage and query path",
-                "description": "Evidence activity records and query path showing creation, review, archival, and renewal history by control and checklist item.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Evidence activity history interface",
-                "description": "Interface showing evidence activity history showing review, archive, and renewal events in the evidence history dialog.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "follow-up-owners-dates-and-milestones-can-be-recorded",
-          "label": "Follow-up owners, dates, and milestone expectations can be retained with action artifacts",
-          "description": "The workspace should retain provider notes or attached artifacts that document ownership, target dates, and milestone expectations for follow-up actions.",
-          "verificationMethod": "Evidence review and attachment workflow inspection",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Assurance",
-            "notes": "The workspace retains reviewer notes and attached evidence artifacts that can document ownership, dates, and milestone expectations as follow-up support records.",
-            "evidence": [
-              {
-                "title": "Evidence report follow-up workflow",
-                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Security control evidence attachment workflow",
-                "description": "Workflow allowing site admins to attach, review, and retain security control evidence items with notes and history for follow-up tracking artifacts.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-poam-workflow-documented",
-          "label": "Provider plan-of-action workflow with milestones is documented",
-          "description": "The provider should document how follow-up items are converted into assigned actions, target dates, milestone tracking, and closure decisions for the hosted service.",
-          "verificationMethod": "Procedure review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "not_started",
-            "owner": "Security Assurance",
-            "notes": "The workspace does not yet include a formal provider plan-of-action workflow with assigned owners, target dates, milestones, or closure approval records.",
-            "evidence": []
-          }
-        }
-      ],
-      "owner": "Security Assurance",
-      "responsibility": "platform",
-      "customerResponsibilityNotes": "Customer organizations are responsible for maintaining their own remediation plans, milestones, and closure processes for customer-managed findings in connected systems, integrations, and operational procedures outside the hosted service boundary.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
-            "title": "Risk management",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.316(b)(1)",
-            "title": "Documentation",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(1)(ii)(B)",
-            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
             "mappingType": "relationship"
           }
         ],
@@ -5041,320 +5532,6 @@
       "owner": "Security Incident Response",
       "responsibility": "shared-responsibility",
       "customerResponsibilityNotes": "Customer organizations are responsible for incident response training for their own responders, escalation teams, and administrators who operate customer-managed systems or local procedures outside the hosted service boundary.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(6)",
-            "title": "Security incident procedures",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.316(b)(1)",
-            "title": "Documentation",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(6)",
-            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [],
-        "soc2": []
-      }
-    },
-    {
-      "internalControlId": "CTRL-IR-003",
-      "nist80053Id": "IR-3",
-      "title": "Incident Response Testing",
-      "familyId": "IR",
-      "familyTitle": "Incident Response",
-      "implementationSummary": "This control ensures incident response procedures can be exercised using current hosted-service evidence and investigation workflows. The hosted service supports that objective through audit-readiness reports, investigation-supporting exports, and retained recovery evidence that can inform tabletop or walkthrough exercises, but a formal provider incident response exercise cadence, scenario library, and recorded results are not yet evidenced in this workspace.",
-      "controlStatement": "Incident Response Testing is tracked as an active control in the platform register.",
-      "priority": "p1",
-      "platformChecklistItems": [
-        {
-          "itemId": "incident-exercise-support-artifacts-can-be-generated",
-          "label": "Incident exercise support artifacts can be generated from the site admin workspace",
-          "description": "The hosted service should generate evidence packages that providers can use during tabletop exercises or incident-response walkthroughs.",
-          "verificationMethod": "Evidence and readiness generation walkthrough",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "The site admin workspace can generate evidence and readiness artifacts that package current investigation-supporting material for incident exercises.",
-            "evidence": [
-              {
-                "title": "Site admin evidence and readiness actions",
-                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Generated investigation-supporting exports",
-                "description": "Generated exports containing posture, audit, review, and integrity metadata that can be reused during investigations and exercises.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "recovery-and-investigation-evidence-can-support-incident-exercises",
-          "label": "Recovery and investigation evidence can support incident-response exercises",
-          "description": "Providers should be able to review recovery and investigation artifacts together when validating incident-response assumptions or exercise scenarios.",
-          "verificationMethod": "Readiness and restore evidence review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "Restore-drill evidence and investigation-supporting reports are both retained in the site admin workspace and can support exercise review.",
-            "evidence": [
-              {
-                "title": "Restore drill evidence records",
-                "description": "Restore drill evidence records Stored backup verification and restore-drill records retain recent recovery outcomes that can inform incident-response exercises.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Audit readiness evidence review",
-                "description": "Audit readiness evidence review The site admin security workflow packages recent metadata gaps, denial events, and restore-drill evidence into readiness reports for provider review.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "incident-exercise-results-can-be-retained",
-          "label": "Incident exercise artifacts and results can be retained for later review",
-          "description": "The hosted service should retain exercise-supporting records, review notes, or related recovery artifacts that providers can reference after an incident-response exercise.",
-          "verificationMethod": "Exercise artifact retention review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "The workspace retains backup verification and restore drill records that providers can review later as incident-exercise-supporting artifacts.",
-            "evidence": [
-              {
-                "title": "Restore drill record structure",
-                "description": "Schema retaining backup verification records with drill type, status, timestamps, restored item counts, summaries, and artifact hashes for later provider review.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Backup verification reporting workflow",
-                "description": "Workflow .github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/securityOps.ts recordBackupVerification handling.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Restore drill summary interface",
-                "description": "Interface showing the latest restore drill status, timestamp, and related backup verification summary in the audit-readiness view.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-incident-response-exercise-program-documented",
-          "label": "Provider incident response exercise cadence and results are documented",
-          "description": "The provider should document exercise scenarios, recurring cadence, participant roles, and recorded results for hosted-service incident-response testing.",
-          "verificationMethod": "Exercise program review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "not_started",
-            "owner": "Security Incident Response",
-            "notes": "The workspace does not yet include a provider incident response exercise schedule, scenario set, or recorded exercise results.",
-            "evidence": []
-          }
-        }
-      ],
-      "owner": "Security Incident Response",
-      "responsibility": "shared-responsibility",
-      "customerResponsibilityNotes": "Customer organizations are responsible for testing their own incident response procedures, communication paths, and local recovery actions for systems and workflows they manage outside the hosted service boundary.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(6)",
-            "title": "Security incident procedures",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.316(b)(1)",
-            "title": "Documentation",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(6)",
-            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [],
-        "soc2": []
-      }
-    },
-    {
-      "internalControlId": "CTRL-IR-008",
-      "nist80053Id": "IR-8",
-      "title": "Incident Response Plan",
-      "familyId": "IR",
-      "familyTitle": "Incident Response",
-      "implementationSummary": "This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, and a documented provider incident-response plan that can support provider or customer incident response planning, but a formal plan review cadence and customer coordination procedure are not yet evidenced in this workspace.",
-      "controlStatement": "Develop an incident response plan that: Provides the organization with a roadmap for implementing its incident response capability; Describes the structure and organization of the incident response capability; Provides a high-level approach for how the incident response capability fits into the overall organization; Meets the unique requirements of the organization, which relate to mission, size, structure, and functions; Defines reportable incidents; Provides metrics for measuring the incident response capability within the organization; Defines the resources and management support needed to effectively maintain and mature an incident response capability; Addresses the sharing of incident information; Is reviewed and approved by {{ insert: param, ir-08_odp.01 }} {{ insert: param, ir-08_odp.02 }} ; and Explicitly designates responsibility for incident response to {{ insert: param, ir-08_odp.03 }}. Distribute copies of the incident response plan to {{ insert: param, ir-08_odp.04 }}; Update the incident response plan to address system and organizational changes or problems encountered during plan implementation, execution, or testing; Communicate incident response plan changes to {{ insert: param, ir-8_prm_5 }} ; and Protect the incident response plan from unauthorized disclosure and modification.",
-      "priority": "p1",
-      "platformChecklistItems": [
-        {
-          "itemId": "incident-planning-artifacts-can-be-generated",
-          "label": "Incident-planning support artifacts can be generated from the site admin workspace",
-          "description": "The hosted service should generate exports and evidence packages that provider or customer responders can use during incident planning and coordination.",
-          "verificationMethod": "Evidence and audit-readiness generation walkthrough",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "The site admin workspace can generate evidence reports and audit-readiness outputs that package investigation-supporting material for later response use.",
-            "evidence": [
-              {
-                "title": "Evidence report generation and export",
-                "description": "Evidence report workflow generating structured exports containing posture, audit, review, and integrity data for reviewer use.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Site admin evidence and readiness actions",
-                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Operational evidence note",
-                "description": "Control matrix documentation describing retained operational evidence available for provider review.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "incident-supporting-context-can-be-retained",
-          "label": "Incident-supporting evidence retains integrity and review context",
-          "description": "The hosted service should retain hashes, review state, and export metadata for investigation artifacts that may be referenced during incident response planning or execution.",
-          "verificationMethod": "Evidence artifact retention review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "Generated evidence and audit-readiness artifacts retain integrity-linked metadata and review context that can support later incident response use.",
-            "evidence": [
-              {
-                "title": "Integrity-linked evidence report metadata",
-                "description": "Evidence report schema and retained integrity metadata, including content hash, export hash, export integrity summary, and review metadata.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Evidence report review record structure",
-                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-incident-response-plan-documented",
-          "label": "Provider incident response plan is documented",
-          "description": "The provider should maintain a documented incident response plan covering roles, escalation paths, coordination expectations, and use of hosted-service investigation artifacts.",
-          "verificationMethod": "Plan review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "The workspace includes a documented provider incident-response plan through the provider incident-response policy.",
-            "evidence": [
-              {
-                "title": "Incident response policy",
-                "description": "Incident response policy Provider policy defining the incident-response plan, planning expectations, training and testing cadence, and retained evidence expectations for the hosted service environment.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-incident-response-plan-review-cadence-documented",
-          "label": "Provider incident response plan review and update cadence is documented",
-          "description": "The provider should document how the incident response plan is reviewed, updated, and communicated when incident lessons or system changes require revision.",
-          "verificationMethod": "Procedure review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "not_started",
-            "owner": "Security Incident Response",
-            "notes": "The workspace does not yet include a formal provider review cadence or revision workflow for the incident response plan.",
-            "evidence": []
-          }
-        }
-      ],
-      "owner": "Security Incident Response",
-      "responsibility": "shared-responsibility",
-      "customerResponsibilityNotes": "Customer organizations are responsible for maintaining their own incident response plans, internal escalation paths, notification obligations, and coordination procedures for customer-managed systems and workflows outside the hosted service boundary. The hosted-service artifacts tracked here are intended to support planning and coordination, not replace either party's incident response plan.",
       "mappings": {
         "hipaa": [
           {
@@ -6497,144 +6674,6 @@
           }
         ],
         "soc2": []
-      }
-    },
-    {
-      "internalControlId": "CTRL-SI-004",
-      "nist80053Id": "SI-4",
-      "title": "System Monitoring",
-      "familyId": "SI",
-      "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The hosted service supports that objective through document scan records, audit-integrity failure signals, and security posture summaries available for authorized review, but provider alert response procedures are not yet evidenced in this workspace.",
-      "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
-      "priority": "p1",
-      "platformChecklistItems": [
-        {
-          "itemId": "monitoring-signals",
-          "label": "Security-relevant monitoring signals are collected for authorized review",
-          "description": "The hosted service provides security-relevant monitoring signals that authorized personnel can review for detection follow-up.",
-          "verificationMethod": "Telemetry and event review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Monitoring",
-            "notes": "Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, and security posture summaries.",
-            "evidence": [
-              {
-                "title": "Security monitoring summary",
-                "description": "Summary Administrative monitoring summary and related records showing document scan status, audit-integrity failure signals, and security posture indicators available for authorized review.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "provider-alert-procedure",
-          "label": "Provider alert response procedure is documented",
-          "description": "Provider alert routing and response expectations should be documented for the hosted platform.",
-          "verificationMethod": "Procedure review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "not_started",
-            "owner": "Security Monitoring",
-            "notes": "No provider-owned monitoring response procedure is attached in the control workspace yet.",
-            "evidence": []
-          }
-        },
-        {
-          "itemId": "monitoring-records-retained",
-          "label": "Monitoring records are retained for later review",
-          "description": "The platform should retain monitoring outputs that providers can review after signals are generated.",
-          "verificationMethod": "Monitoring record review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "link",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Monitoring",
-            "notes": "Monitoring-related records are retained through document scan events, retention job state, and audit-integrity failure records.",
-            "evidence": [
-              {
-                "title": "Document scan event records",
-                "description": "Document scan records showing latest scan status, rejection counts, and quarantine counts for reviewed files.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Retention job records",
-                "description": "Retention job records showing retention posture and job outcomes available for later operational review.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Audit integrity failure records",
-                "description": "Audit integrity failure records recording audit_integrity_check_failed events when the audit log hash chain does not verify.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        }
-      ],
-      "owner": "Security Monitoring",
-      "responsibility": "platform",
-      "customerResponsibilityNotes": "Customer organizations are responsible for reviewing service notifications, acting on customer-visible alerts, and integrating platform outputs into their own operational response processes.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
-            "title": "Information system activity review",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.312(c)(1)",
-            "title": "Integrity",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "DE.AE-02",
-            "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
-          },
-          {
-            "subcategoryId": "DE.AE-03",
-            "label": "DE / DE.AE: Information is correlated from multiple sources"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          }
-        ]
       }
     }
   ]

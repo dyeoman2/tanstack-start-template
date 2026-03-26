@@ -8,4 +8,5 @@ This policy defines the governance structure used to oversee the provider securi
 
 - The provider maintains a documented security program that is reviewed at least annually.
 - Security planning, control assessment, and tracked remediation remain part of the documented governance process.
+- Open follow-up actions serve as the provider plan of action and milestones (POA&M) and are reviewed during each annual security review.
 - Policy and control review outcomes are retained as part of the annual review record.

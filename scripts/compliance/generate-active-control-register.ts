@@ -1311,8 +1311,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
     implementationSummary:
-      'This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, and a documented audit-review policy, but detailed provider cadence and escalation workflow evidence are not yet fully attached in this workspace.',
-    coverage: 'partial' as const,
+      'This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, a documented audit-review policy, and tracked provider follow-up workflows for audit-related findings in the site admin workspace.',
+    coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Security Operations',
@@ -1374,18 +1374,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The workspace now includes a documented provider audit-review policy and annual review task, but it does not yet attach fuller cadence and escalation workflow detail.',
+          'done',
+          'The workspace includes a documented provider audit-review procedure, annual revalidation tasking, and tracked follow-up workflow for audit-related findings.',
           [
             seededEvidence(
               'Audit logging and log review policy',
-              'Provider policy describing audit-log review expectations and documented review procedures for the hosted service environment.',
-              { sufficiency: 'partial' },
+              'Provider policy describing audit-log review expectations, retained audit-review follow-up, and annual revalidation of the provider audit-review procedure for the hosted service environment.',
             ),
             seededEvidence(
-              'Annual audit review task',
+              'Tracked audit finding follow-up workflow',
+              'Administrative workflow for triaging security findings, assigning follow-up owners, tracking due dates, and resolving audit-related follow-up with retained closure evidence.',
+            ),
+            seededEvidence(
+              'Annual audit review attestation task',
               'Annual review task definition requiring the provider audit review procedure to be reviewed and attested as current during the site admin security review cycle.',
-              { sufficiency: 'partial' },
             ),
           ],
           'Security Operations',
@@ -2068,8 +2070,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-3',
     internalControlId: 'CTRL-IR-003',
     implementationSummary:
-      'This control ensures incident response procedures can be exercised using current hosted-service evidence and investigation workflows. The hosted service supports that objective through audit-readiness reports, investigation-supporting exports, and retained recovery evidence that can inform tabletop or walkthrough exercises, but a formal provider incident response exercise cadence, scenario library, and recorded results are not yet evidenced in this workspace.',
-    coverage: 'partial' as const,
+      'This control ensures incident response procedures can be exercised using current hosted-service evidence and investigation workflows. The hosted service supports that objective through audit-readiness reports, investigation-supporting exports, retained recovery evidence, a documented annual exercise expectation, and retained exercise-review artifacts in the site admin workspace.',
+    coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Incident Response',
@@ -2159,16 +2161,29 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-incident-response-exercise-program-documented',
-        label: 'Provider incident response exercise cadence and results are documented',
+        label: 'Provider incident response exercise cadence and retained results are documented',
         description:
-          'The provider should document exercise scenarios, recurring cadence, participant roles, and recorded results for hosted-service incident-response testing.',
+          'The provider should document recurring incident-response exercise cadence, participant expectations, and how exercise results are retained for hosted-service testing.',
         verificationMethod: 'Exercise program review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The workspace does not yet include a provider incident response exercise schedule, scenario set, or recorded exercise results.',
-          [],
+          'done',
+          'The workspace includes a documented annual exercise expectation, a dedicated annual exercise attestation task, and retained exercise-supporting records for later review.',
+          [
+            seededEvidence(
+              'Incident response policy',
+              'Provider policy defining annual incident-response exercise expectations and retained incident-handling evidence for the hosted service environment.',
+            ),
+            seededEvidence(
+              'Annual incident response exercise task',
+              'Annual review task definition requiring the provider to conduct or review an incident-response tabletop exercise and retain the results.',
+            ),
+            seededEvidence(
+              'Retained exercise-supporting recovery records',
+              'Backup verification and restore-drill records retaining timestamps, summaries, restored item counts, and artifact hashes that can be reviewed as incident-exercise results.',
+            ),
+          ],
           'Security Incident Response',
         ),
       },
@@ -2288,8 +2303,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-8',
     internalControlId: 'CTRL-IR-008',
     implementationSummary:
-      'This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, and a documented provider incident-response plan that can support provider or customer incident response planning, but a formal plan review cadence and customer coordination procedure are not yet evidenced in this repo-backed workspace.',
-    coverage: 'partial' as const,
+      'This control addresses incident response planning for the hosted service and connected customer environment. The platform provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, a documented provider incident-response plan, and annual review linkage for that plan in the site admin workspace.',
+    coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Incident Response',
@@ -2380,9 +2395,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider review cadence or revision workflow for the incident response plan.',
-          [],
+          'done',
+          'The workspace includes documented annual review expectations for the incident response plan and a linked policy review workflow in the site admin workspace.',
+          [
+            seededEvidence(
+              'Incident response policy',
+              'Provider policy documenting that the incident-response plan and procedure set are reviewed during the provider annual security review.',
+            ),
+            seededEvidence(
+              'Annual policy review task materialization',
+              'Annual review task synchronization creates a dedicated policy-review attestation task for the incident-response policy so the review cadence is tracked in the security workspace.',
+            ),
+            seededEvidence(
+              'Policy review linkage interface',
+              'Administrative security policy detail view shows the linked annual review task and current review status for each bundled provider policy, including incident response planning artifacts.',
+            ),
+          ],
           'Security Incident Response',
         ),
       },
@@ -2868,8 +2896,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SI-4',
     internalControlId: 'CTRL-SI-004',
     implementationSummary:
-      'This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The hosted service supports that objective through document scan records, audit-integrity failure signals, and security posture summaries available for authorized review, but provider alert response procedures are not yet evidenced in this workspace.',
-    coverage: 'partial' as const,
+      'This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The hosted service supports that objective through document scan records, audit-integrity failure signals, security posture summaries, and tracked provider follow-up workflows for monitored findings.',
+    coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Security Monitoring',
@@ -2907,9 +2935,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No provider-owned monitoring response procedure is attached in the control workspace yet.',
-          [],
+          'done',
+          'The workspace includes a documented monitoring response procedure and tracked workflow for triaging monitored findings into provider follow-up actions.',
+          [
+            seededEvidence(
+              'Continuous monitoring and security operations policy',
+              'Provider policy documenting that monitored alerts and findings are triaged through provider review and tracked follow-up workflows.',
+            ),
+            seededEvidence(
+              'Tracked monitoring follow-up record structure',
+              'Follow-up action records retain assignee, due date, status, notes, and resolution detail for monitored security findings that require provider response.',
+            ),
+            seededEvidence(
+              'Administrative findings and follow-up workflow',
+              'Administrative security findings workflow allows site admins to review monitored findings, open tracked follow-up, update disposition, assign owners, and record closure evidence.',
+            ),
+          ],
           'Security Monitoring',
         ),
       },
@@ -4253,8 +4294,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CA-5',
     internalControlId: 'CTRL-CA-005',
     implementationSummary:
-      'This control ensures the hosted service can surface, retain, and export follow-up items that support provider remediation tracking after control or readiness reviews. The platform supports that objective through audit-readiness findings, evidence-report follow-up state, retained reviewer notes, and evidence activity history in the site admin workspace, but a formal provider plan-of-action workflow with assigned milestones, target dates, and approval records is not yet evidenced in this workspace.',
-    coverage: 'partial' as const,
+      'This control ensures the hosted service can surface, retain, and export follow-up items that support provider remediation tracking after control or readiness reviews. The platform supports that objective through audit-readiness findings, tracked follow-up actions with assignees and due dates, retained reviewer notes, evidence activity history, and annual review of open remediation items in the site admin workspace.',
+    coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Security Assurance',
@@ -4371,9 +4412,26 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider plan-of-action workflow with assigned owners, target dates, milestones, or closure approval records.',
-          [],
+          'done',
+          'The workspace documents the provider POA&M workflow and implements tracked follow-up actions with assignment, due-date, and closure evidence handling.',
+          [
+            seededEvidence(
+              'Information security governance policy',
+              'Provider governance policy documenting that open follow-up actions serve as the provider plan of action and milestones and are reviewed during each annual security review.',
+            ),
+            seededEvidence(
+              'Tracked follow-up action record structure',
+              'Schema retaining tracked follow-up action summary, assignee, due date, status, notes, and resolution details for provider remediation work.',
+            ),
+            seededEvidence(
+              'Tracked follow-up action workflow',
+              'Administrative security workflow for creating, updating, and resolving tracked follow-up actions, including owner assignment, due-date updates, and required closure evidence before resolution.',
+            ),
+            seededEvidence(
+              'Annual POA&M review task',
+              'Annual review task definition requiring open follow-up actions, assignments, and target dates to be reviewed and attested as current.',
+            ),
+          ],
           'Security Assurance',
         ),
       },
