@@ -65,7 +65,7 @@
           "seed": {
             "status": "done",
             "owner": "Identity and Access Management",
-            "notes": "Organization policies constrain invitations and seat growth, while SCIM and member-state workflows support lifecycle changes.",
+            "notes": "Organization policies constrain invitations and seat growth, SCIM and member-state workflows support lifecycle changes, and progressive account lockout temporarily bans accounts after repeated failed sign-in attempts.",
             "evidence": [
               {
                 "title": "Organization access policy controls",
@@ -77,6 +77,13 @@
               {
                 "title": "SCIM provisioning workflow",
                 "description": "Workflow managing SCIM endpoint and bearer-token lifecycle for automated provisioning.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Progressive account lockout",
+                "description": "After 5 consecutive failed sign-in attempts within 15 minutes, the account is temporarily banned for 30 minutes using Better Auth native banned and banExpires fields. Lockout is tracked per email address, clears on successful sign-in, and emits an auditable account_locked_out event.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1054,7 +1061,7 @@
               },
               {
                 "title": "Explicit secure session settings",
-                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, and cookie-cache protections.",
+                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, cookie-cache protections, and sameSite=strict cookie policy.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1228,7 +1235,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, and regulated organization access checks continue to enforce MFA requirements.",
+            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, regulated organization access checks continue to enforce MFA requirements, and both the server-side route guard and client-side auth hook default to MFA-required (fail-closed) when the user profile has not yet loaded.",
             "evidence": [
               {
                 "title": "Account setup MFA enrollment flow",
@@ -1453,7 +1460,7 @@
       "title": "Boundary Protection",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures protected functions, files, and tenant-scoped resources are only accessible through approved boundary paths. The platform supports that objective through trusted-origin validation, signed file-serving paths, scoped storage access checks, and organization-boundary authorization logic.",
+      "implementationSummary": "This control ensures protected functions, files, and tenant-scoped resources are only accessible through approved boundary paths. The platform supports that objective through trusted-origin validation, signed file-serving paths, scoped storage access checks, organization-boundary authorization logic, and AWS WAFv2 managed rule groups on the disaster-recovery ALB.",
       "controlStatement": "Monitor and control communications at the external managed interfaces to the system and at key internal managed interfaces within the system; Implement subnetworks for publicly accessible system components that are {{ insert: param, sc-07_odp }} separated from internal organizational networks; and Connect to external networks or systems only through managed interfaces consisting of boundary protection devices arranged in accordance with an organizational security and privacy architecture.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1470,7 +1477,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.",
+            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling. The disaster-recovery ALB is protected by AWS WAFv2 managed rule groups covering OWASP common threats, known bad inputs, SQL injection, and IP-based rate limiting.",
             "evidence": [
               {
                 "title": "Trusted-origin validation helpers",
@@ -1489,6 +1496,13 @@
               {
                 "title": "Redirect target boundary normalization",
                 "description": "Redirect target boundary normalization Authentication redirect handling limits post-authentication destinations to approved in-app routes and rejects agent-auth redirects that are not same-origin relative paths.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "AWS WAFv2 managed rule groups on DR ALB",
+                "description": "WAFv2 Web ACL attached to the disaster-recovery ALB with AWSManagedRulesCommonRuleSet (OWASP Top 10), AWSManagedRulesKnownBadInputsRuleSet (Log4Shell and similar), AWSManagedRulesSQLiRuleSet (SQL injection), and an IP-based rate-limiting rule (2000 requests per 5 minutes per IP). CloudWatch metrics enabled for all rule groups.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2693,11 +2707,11 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Session cookies are configured for secure transport on HTTPS origins, and temporary file access links remain short-lived within the regulated transport posture.",
+            "notes": "Session cookies are configured for secure transport on HTTPS origins with sameSite=strict to prevent cross-site cookie transmission, and temporary file access links remain short-lived within the regulated transport posture.",
             "evidence": [
               {
                 "title": "Session transport configuration",
-                "description": "Session transport configuration showing secure cookie settings, session expiry values, fresh-session windows, and related transport protections.",
+                "description": "Session transport configuration showing secure cookie settings with sameSite=strict, session expiry values, fresh-session windows, and related transport protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2947,7 +2961,7 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
-      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, and guarded credential or session recovery flows.",
+      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, guarded credential or session recovery flows, and breached-password rejection via the HaveIBeenPwned k-anonymity API.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3014,7 +3028,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, and authenticator onboarding issues backup codes for controlled recovery.",
+            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, authenticator onboarding issues backup codes for controlled recovery, and passwords found in known data breaches are rejected at signup, reset, and change via the Better Auth haveIBeenPwned plugin.",
             "evidence": [
               {
                 "title": "Authentication recovery rate-limit rules",
@@ -3040,6 +3054,13 @@
               {
                 "title": "Authenticator backup-code recovery workflow",
                 "description": "Authenticator onboarding and account-recovery workflow showing backup codes are issued during setup and accepted later when a user needs to regain access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Breached-password rejection via HaveIBeenPwned plugin",
+                "description": "Better Auth haveIBeenPwned plugin rejects passwords found in known data breaches during signup, password reset, and password change using the HIBP k-anonymity range API. Only the first 5 characters of the SHA-1 hash are transmitted. No API key required.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
