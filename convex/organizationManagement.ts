@@ -79,6 +79,7 @@ import {
   allowedResultValidator,
   chatThreadsDocValidator,
   directoryOrganizationValidator,
+  internalOrganizationEnterpriseAuthResolutionResultValidator,
   organizationAuditResponseValidator,
   organizationCreationEligibilityValidator,
   organizationDirectoryResponseValidator,
@@ -117,10 +118,35 @@ import { recordUserAuditEvent } from './lib/auditEmitters';
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
 type OrganizationAuditSortField = 'label' | 'identifier' | 'userId' | 'createdAt';
+const ENTERPRISE_AUTH_DISCOVERY_RATE_LIMIT = {
+  config: {
+    kind: 'token bucket' as const,
+    rate: 15,
+    period: 15 * 60 * 1000,
+    capacity: 15,
+  },
+  name: 'organization:enterprise-auth-discovery',
+};
 
 type OrganizationAuditEventViewSource = NonNullable<
   ReturnType<typeof buildOrganizationAuditProjection>
 >;
+type InternalEnterpriseAuthResolution = {
+  canUsePasswordFallback: boolean;
+  managedDomain: string;
+  organizationId: string;
+  protocol: 'oidc';
+  providerKey: 'google-workspace' | 'entra' | 'okta';
+  providerStatus: 'active' | 'coming_soon' | 'not_configured';
+  requiresEnterpriseAuth: boolean;
+} | null;
+type PublicEnterpriseAuthResolution = {
+  canUsePasswordFallback: boolean;
+  protocol: 'oidc';
+  providerKey: 'google-workspace' | 'entra' | 'okta';
+  requiresEnterpriseAuth: boolean;
+} | null;
+
 type OrganizationCleanupRequestRecord = {
   completedAt: number | null;
   createdAt: number;
@@ -787,6 +813,35 @@ function createOrganizationDomainVerificationToken() {
 function normalizeEmailDomain(email: string) {
   const [, domain = ''] = email.trim().toLowerCase().split('@');
   return domain;
+}
+
+function createEnterpriseAuthDiscoveryRateLimitKey(kind: 'domain' | 'email', value: string) {
+  return `${kind}:${value.trim().toLowerCase()}`;
+}
+
+async function enforceEnterpriseAuthDiscoveryRateLimitOrNull(
+  ctx: ActionCtx,
+  email: string,
+  emailDomain: string,
+) {
+  const keys = [
+    createEnterpriseAuthDiscoveryRateLimitKey('domain', emailDomain),
+    createEnterpriseAuthDiscoveryRateLimitKey('email', email),
+  ];
+
+  for (const key of keys) {
+    const result = await ctx.runAction(internal.auth.rateLimitAction, {
+      name: ENTERPRISE_AUTH_DISCOVERY_RATE_LIMIT.name,
+      key,
+      config: ENTERPRISE_AUTH_DISCOVERY_RATE_LIMIT.config,
+    });
+
+    if (!result.ok) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function getOrganizationDomainVerificationRecordName(domain: string) {
@@ -1896,58 +1951,96 @@ export const getOrganizationLegalHold = query({
   },
 });
 
-export const resolveOrganizationEnterpriseAuthByEmail = query({
+async function resolveOrganizationEnterpriseAuthByEmailRecord(
+  ctx: QueryCtx,
+  email: string,
+): Promise<InternalEnterpriseAuthResolution> {
+  const emailDomain = normalizeEmailDomain(email);
+  if (!emailDomain) {
+    return null;
+  }
+
+  const domainRecord = await ctx.db
+    .query('organizationDomains')
+    .withIndex('by_normalized_domain', (q) => q.eq('normalizedDomain', emailDomain))
+    .first();
+  if (!domainRecord || domainRecord.status !== 'verified') {
+    return null;
+  }
+
+  const policies = await getOrganizationPolicies(ctx, domainRecord.organizationId);
+  if (!policies.enterpriseProviderKey || !policies.enterpriseProtocol) {
+    return null;
+  }
+
+  const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
+    ctx,
+    domainRecord.organizationId,
+    policies,
+  );
+  if (!enterpriseAuth || enterpriseAuth.providerStatus !== 'active') {
+    return null;
+  }
+
+  return {
+    canUsePasswordFallback:
+      policies.enterpriseAuthMode !== 'required' || policies.allowBreakGlassPasswordLogin,
+    managedDomain: emailDomain,
+    organizationId: domainRecord.organizationId,
+    protocol: enterpriseAuth.protocol,
+    providerKey: enterpriseAuth.providerKey,
+    providerStatus: enterpriseAuth.providerStatus,
+    requiresEnterpriseAuth: policies.enterpriseAuthMode === 'required',
+  } as const;
+}
+
+export const resolveOrganizationEnterpriseAuthByEmailInternal = internalQuery({
+  args: {
+    email: v.string(),
+  },
+  returns: internalOrganizationEnterpriseAuthResolutionResultValidator,
+  handler: async (ctx, args): Promise<InternalEnterpriseAuthResolution> => {
+    return await resolveOrganizationEnterpriseAuthByEmailRecord(ctx, args.email);
+  },
+});
+
+export const resolveOrganizationEnterpriseAuthByEmail = action({
   args: {
     email: v.string(),
   },
   returns: organizationEnterpriseAuthResolutionResultValidator,
-  handler: async (ctx, args) => {
-    /* security-lint-ok: public-query reason: enterprise sign-in discovery must work before the user has an authenticated session. */
-    const emailDomain = normalizeEmailDomain(args.email);
+  handler: async (ctx, args): Promise<PublicEnterpriseAuthResolution> => {
+    /* security-lint-ok: public reason: pre-auth enterprise sign-in discovery is required for login routing, but this action intentionally returns only minimal routing fields and hides tenant identity, domain inventory, and provider posture details. */
+    const normalizedEmail = args.email.trim().toLowerCase();
+    const emailDomain = normalizeEmailDomain(normalizedEmail);
     if (!emailDomain) {
       return null;
     }
 
-    const domainRecord = await ctx.db
-      .query('organizationDomains')
-      .withIndex('by_normalized_domain', (q) => q.eq('normalizedDomain', emailDomain))
-      .first();
-    if (!domainRecord || domainRecord.status !== 'verified') {
-      return null;
-    }
-
-    const organization = await findBetterAuthOrganizationById(ctx, domainRecord.organizationId);
-    if (!organization) {
-      return null;
-    }
-
-    const policies = await getOrganizationPolicies(ctx, domainRecord.organizationId);
-    if (!policies.enterpriseProviderKey || !policies.enterpriseProtocol) {
-      return null;
-    }
-
-    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
+    const allowed = await enforceEnterpriseAuthDiscoveryRateLimitOrNull(
       ctx,
-      domainRecord.organizationId,
-      policies,
+      normalizedEmail,
+      emailDomain,
     );
-    if (!enterpriseAuth) {
+    if (!allowed) {
+      return null;
+    }
+
+    const resolution: InternalEnterpriseAuthResolution = await ctx.runQuery(
+      internal.organizationManagement.resolveOrganizationEnterpriseAuthByEmailInternal,
+      {
+        email: normalizedEmail,
+      },
+    );
+    if (!resolution) {
       return null;
     }
 
     return {
-      organizationId: domainRecord.organizationId,
-      organizationSlug: organization.slug,
-      organizationName: organization.name,
-      providerKey: enterpriseAuth.providerKey,
-      providerLabel: enterpriseAuth.providerLabel,
-      providerStatus: enterpriseAuth.providerStatus,
-      protocol: enterpriseAuth.protocol,
-      enterpriseAuthMode: policies.enterpriseAuthMode,
-      managedDomain: emailDomain,
-      verifiedDomains: enterpriseAuth.managedDomains,
-      canUsePasswordFallback:
-        policies.enterpriseAuthMode !== 'required' || policies.allowBreakGlassPasswordLogin,
+      canUsePasswordFallback: resolution.canUsePasswordFallback,
+      protocol: resolution.protocol,
+      providerKey: resolution.providerKey,
+      requiresEnterpriseAuth: resolution.requiresEnterpriseAuth,
     };
   },
 });
@@ -3786,44 +3879,6 @@ async function recordOrganizationBulkAuditEventsMutation(
     success: true as const,
   };
 }
-
-export const recordOrganizationBulkAuditEvents = mutation({
-  args: {
-    organizationId: v.string(),
-    eventType: v.union(
-      v.literal('bulk_invite_revoked'),
-      v.literal('bulk_invite_resent'),
-      v.literal('bulk_member_removed'),
-    ),
-    entries: v.array(
-      v.object({
-        targetId: v.string(),
-        targetEmail: v.string(),
-        targetRole: v.optional(
-          v.union(v.literal('owner'), v.literal('admin'), v.literal('member')),
-        ),
-      }),
-    ),
-  },
-  returns: v.object({
-    success: v.literal(true),
-  }),
-  handler: async (ctx, args): Promise<{ success: true }> => {
-    const user = await getVerifiedCurrentUserOrThrow(ctx);
-    await requireOrganizationPermission(ctx, {
-      organizationId: args.organizationId,
-      permission: 'manageMembers',
-    });
-
-    return await recordOrganizationBulkAuditEventsMutation(ctx, {
-      actorEmail: typeof user.authUser.email === 'string' ? user.authUser.email : undefined,
-      actorUserId: user.authUserId,
-      entries: args.entries,
-      eventType: args.eventType,
-      organizationId: args.organizationId,
-    });
-  },
-});
 
 async function changeOrganizationMemberStatus(
   ctx: MutationCtx,

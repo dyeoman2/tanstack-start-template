@@ -7,7 +7,7 @@ import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
-import { action } from './_generated/server';
+import { action, internalAction } from './_generated/server';
 import {
   getVerifiedCurrentUserFromActionOrThrow,
   requireStorageReadAccessFromActionOrThrow,
@@ -33,20 +33,15 @@ type IssuedFileAccessUrl = {
 };
 
 function timingSafeEqual(left: string, right: string) {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
+  if (left.length !== right.length) {
     return false;
   }
+
   let mismatch = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    const leftByte = leftBytes[index];
-    const rightByte = rightBytes[index];
-    if (leftByte === undefined || rightByte === undefined) {
-      return false;
-    }
-    mismatch |= leftByte ^ rightByte;
+  for (let index = 0; index < left.length; index += 1) {
+    mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
   }
+
   return mismatch === 0;
 }
 
@@ -488,6 +483,25 @@ export const createSignedServeUrl = action({
   },
 });
 
+export const redeemFileAccessTicketInternal = internalAction({
+  args: {
+    authenticatedSessionId: v.string(),
+    authenticatedUserId: v.string(),
+    expiresAt: v.number(),
+    requestIpAddress: v.union(v.string(), v.null()),
+    requestUserAgent: v.union(v.string(), v.null()),
+    signature: v.string(),
+    ticketId: v.string(),
+  },
+  returns: v.object({
+    storageId: v.string(),
+    url: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    return await redeemFileAccessTicketOrThrow(ctx, args);
+  },
+});
+
 export async function redeemFileAccessTicketOrThrow(
   ctx: FileServingCtx,
   args: {
@@ -533,6 +547,23 @@ export async function redeemFileAccessTicketOrThrow(
 
   return redirect;
 }
+
+export const recordFileAccessRedeemFailureInternal = internalAction({
+  args: {
+    authenticatedSessionId: v.optional(v.union(v.string(), v.null())),
+    authenticatedUserId: v.optional(v.union(v.string(), v.null())),
+    errorMessage: v.string(),
+    expiresAt: v.optional(v.number()),
+    requestIpAddress: v.union(v.string(), v.null()),
+    requestUserAgent: v.union(v.string(), v.null()),
+    ticketId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await recordFileAccessRedeemFailure(ctx, args);
+    return null;
+  },
+});
 
 export async function recordFileAccessRedeemFailure(
   ctx: FileServingCtx,

@@ -470,6 +470,24 @@ export async function generateBetterAuthOrganizationScimToken(
   );
 }
 
+export async function listBetterAuthOrganizationScimProviders(
+  input: {
+    organizationId: string;
+  },
+  mapErrorMessage?: BetterAuthErrorMapper,
+): Promise<{
+  providers: Array<{
+    id: string;
+    organizationId: string | null;
+    providerId: string;
+  }>;
+}> {
+  return unwrapResult(
+    await convexAuthReactStart.fetchAuthAction(api.auth.listOrganizationScimProvidersServer, input),
+    mapErrorMessage,
+  );
+}
+
 export async function deleteBetterAuthOrganizationScimProvider(
   input: {
     organizationId: string;

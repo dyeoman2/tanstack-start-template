@@ -843,19 +843,25 @@ export const organizationDomainsResponseValidator = v.object({
   domains: v.array(organizationDomainValidator),
 });
 
-export const organizationEnterpriseAuthResolutionResultValidator = v.union(
+export const internalOrganizationEnterpriseAuthResolutionResultValidator = v.union(
   v.null(),
   v.object({
     organizationId: v.string(),
-    organizationSlug: v.string(),
-    organizationName: v.string(),
     providerKey: organizationEnterpriseProviderKeyValidator,
-    providerLabel: v.string(),
     providerStatus: organizationEnterpriseProviderStatusValidator,
     protocol: organizationEnterpriseAuthProtocolValidator,
-    enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
     managedDomain: v.string(),
-    verifiedDomains: v.array(v.string()),
+    requiresEnterpriseAuth: v.boolean(),
+    canUsePasswordFallback: v.boolean(),
+  }),
+);
+
+export const organizationEnterpriseAuthResolutionResultValidator = v.union(
+  v.null(),
+  v.object({
+    providerKey: organizationEnterpriseProviderKeyValidator,
+    protocol: organizationEnterpriseAuthProtocolValidator,
+    requiresEnterpriseAuth: v.boolean(),
     canUsePasswordFallback: v.boolean(),
   }),
 );

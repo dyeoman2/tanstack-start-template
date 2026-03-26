@@ -81,6 +81,8 @@ function copyAllowedAuthHeaders(source: Headers) {
   return headers;
 }
 
+// Both inputs are HMAC-SHA256 hex strings (always 64 chars), so the early
+// return on length mismatch does not leak exploitable timing information.
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);

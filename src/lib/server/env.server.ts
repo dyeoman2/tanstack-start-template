@@ -521,6 +521,21 @@ function parseAppDeploymentEnv(value: string): AppDeploymentEnv {
   throw new Error(`APP_DEPLOYMENT_ENV must be one of: ${APP_DEPLOYMENT_ENVS.join(', ')}.`);
 }
 
+// Fail-loud: E2E test auth must never be enabled in production deployments.
+// The runtime double-gate in convex/e2e.ts provides defense-in-depth, but this
+// assertion catches the misconfiguration at module load time.
+(function assertNoE2EInProduction() {
+  if (
+    process.env.ENABLE_E2E_TEST_AUTH === 'true' &&
+    process.env.APP_DEPLOYMENT_ENV === 'production'
+  ) {
+    throw new Error(
+      'FATAL: ENABLE_E2E_TEST_AUTH must not be set in production deployments. ' +
+        'Remove it from your production environment configuration.',
+    );
+  }
+})();
+
 export function getAppDeploymentEnv(): AppDeploymentEnv | null {
   const value = readOptionalServerEnv('APP_DEPLOYMENT_ENV');
   if (!value) {

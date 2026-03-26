@@ -507,7 +507,8 @@ export const getUserCount = query({
   args: {},
   returns: userCountValidator,
   handler: async (ctx) => {
-    const authUser = await getCurrentAuthUserOrNull(ctx);
+    // Do not expose bootstrap/user-count state to anonymous callers.
+    await getCurrentAuthUserOrThrow(ctx);
     let rawResult: unknown;
 
     try {
@@ -532,7 +533,7 @@ export const getUserCount = query({
 
     return {
       totalUsers: observedUsers < USER_COUNT_LOOKUP_LIMIT ? observedUsers : null,
-      isFirstUser: authUser ? observedUsers === 1 : observedUsers === 0,
+      isFirstUser: observedUsers === 1,
     };
   },
 });

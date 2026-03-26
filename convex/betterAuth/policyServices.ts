@@ -137,19 +137,15 @@ export async function getPasswordAuthBlockMessage(
   email: string,
 ): Promise<string | null> {
   const resolution = await ctx.runQuery(
-    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
+    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmailInternal,
     { email },
   );
   if (!resolution) {
     return null;
   }
 
-  if (
-    resolution.enterpriseAuthMode === 'required' &&
-    resolution.providerStatus === 'active' &&
-    !resolution.canUsePasswordFallback
-  ) {
-    return `${resolution.organizationName} requires ${resolution.providerLabel} sign-in for this email domain.`;
+  if (resolution.requiresEnterpriseAuth && !resolution.canUsePasswordFallback) {
+    return 'This email domain requires organization-managed sign-in. Use Continue with Google.';
   }
 
   return null;
@@ -220,7 +216,7 @@ export async function resolveEnterpriseSessionContext(
   }
 
   const resolution = await ctx.runQuery(
-    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
+    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmailInternal,
     { email: input.userEmail },
   );
   if (!resolution || resolution.providerKey !== GOOGLE_WORKSPACE_PROVIDER_KEY) {
@@ -231,10 +227,7 @@ export async function resolveEnterpriseSessionContext(
     return null;
   }
 
-  if (
-    hostedDomain !== resolution.managedDomain ||
-    !resolution.verifiedDomains.includes(hostedDomain)
-  ) {
+  if (hostedDomain !== resolution.managedDomain) {
     return null;
   }
 

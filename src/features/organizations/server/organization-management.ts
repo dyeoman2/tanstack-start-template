@@ -3,6 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { runConvexAdminMutation } from '~/lib/server/convex-admin.server';
 import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
 import { resolveRequestAuditContext } from '~/lib/server/request-audit-context';
 import { normalizeOrganizationSlug } from '~/features/organizations/lib/organization-slug';
@@ -228,8 +229,8 @@ async function recordBulkOrganizationAuditEvents(input: {
     targetRole?: 'owner' | 'admin' | 'member';
   }>;
 }) {
-  await convexAuthReactStart.fetchAuthMutation(
-    api.organizationManagement.recordOrganizationBulkAuditEvents,
+  await runConvexAdminMutation(
+    'organizationManagement:recordOrganizationBulkAuditEventsInternal',
     input,
   );
 }

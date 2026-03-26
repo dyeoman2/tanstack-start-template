@@ -29,7 +29,9 @@ describe('csp.server', () => {
     expect(policy).toContain(
       "connect-src 'self' https://happy-animal-123.convex.cloud wss://happy-animal-123.convex.cloud https://o123.ingest.sentry.io",
     );
-    expect(policy).toContain("style-src 'self'");
+    expect(policy).toContain(
+      "style-src 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='",
+    );
     expect(policy).toContain("style-src-attr 'unsafe-inline'");
     expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(policy).not.toContain("'unsafe-eval'");

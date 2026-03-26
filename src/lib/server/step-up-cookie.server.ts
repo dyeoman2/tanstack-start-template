@@ -9,6 +9,12 @@ export type PendingStepUpCookie = {
   challengeId: string;
 };
 
+// SameSite=Lax is intentional. The step-up flow redirects back from the MFA
+// verification page after passkey/TOTP completion, and SameSite=Strict would
+// prevent the cookie from being sent on that top-level navigation redirect.
+// The CSRF risk is mitigated by the challenge ID being session-bound in the
+// authStepUpChallenges table — an attacker cannot forge or replay a challenge
+// for another user's session.
 function getCookieAttributes() {
   const secure = shouldUseSecureAuthCookies(getRequiredBetterAuthUrl());
 

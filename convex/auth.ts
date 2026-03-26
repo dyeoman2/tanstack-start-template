@@ -893,15 +893,15 @@ async function assertSiteAdminWriteAccess(
   return currentUser;
 }
 
-async function assertOrganizationSettingsWriteAccess(ctx: ActionCtx, organizationId: string) {
+async function assertOrganizationScimManagementAccess(ctx: ActionCtx, organizationId: string) {
   const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
-    action: 'update-settings',
+    action: 'manage-scim',
     organizationId,
   });
 
   if (!access.allowed) {
     throw new APIError('FORBIDDEN', {
-      message: access.reason ?? 'Organization admin access required',
+      message: access.reason ?? 'Organization SCIM management access required',
     });
   }
 }
@@ -3493,7 +3493,7 @@ export const generateOrganizationScimTokenServer = action({
     }
 
     try {
-      await assertOrganizationSettingsWriteAccess(ctx, args.organizationId);
+      await assertOrganizationScimManagementAccess(ctx, args.organizationId);
 
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
         return await auth.api.generateSCIMToken({
@@ -3514,14 +3514,22 @@ export const generateOrganizationScimTokenServer = action({
 });
 
 export const listOrganizationScimProvidersServer = action({
-  args: {},
+  args: {
+    organizationId: v.string(),
+  },
   returns: betterAuthActionResultValidator(betterAuthScimProviderListValidator),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     try {
+      await assertOrganizationScimManagementAccess(ctx, args.organizationId);
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
-        return await auth.api.listSCIMProviderConnections({
+        const result = await auth.api.listSCIMProviderConnections({
           headers,
         });
+        return {
+          providers: result.providers.filter(
+            (provider) => provider.organizationId === args.organizationId,
+          ),
+        };
       });
     } catch (error) {
       return {
@@ -3544,7 +3552,7 @@ export const deleteOrganizationScimProviderServer = action({
   ),
   handler: async (ctx, args) => {
     try {
-      await assertOrganizationSettingsWriteAccess(ctx, args.organizationId);
+      await assertOrganizationScimManagementAccess(ctx, args.organizationId);
 
       const providerId = getOrganizationScimProviderId(args.organizationId, args.providerKey);
       const result = await runBetterAuthAction(ctx, async ({ auth, headers }) => {

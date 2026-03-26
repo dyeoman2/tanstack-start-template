@@ -297,6 +297,34 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
     ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
   [
+    'retention_purge_completed',
+    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'chat_attachment_uploaded',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'chat_run_completed',
+    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'chat_web_search_used',
+    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'outbound_vendor_access_used',
+    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
     'admin_step_up_challenged',
     ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
@@ -379,7 +407,7 @@ function requireMetadataKey(
   eventType: string,
   metadata: Record<string, unknown>,
   key: string,
-  kind: 'string' | 'number' | 'object' | 'array',
+  kind: 'string' | 'number' | 'object' | 'array' | 'boolean',
 ) {
   const value = metadata[key];
   if (kind === 'string') {
@@ -394,6 +422,12 @@ function requireMetadataKey(
     }
     return;
   }
+  if (kind === 'boolean') {
+    if (typeof value !== 'boolean') {
+      throw new Error(`Audit event ${eventType} metadata is missing required boolean key: ${key}`);
+    }
+    return;
+  }
   if (kind === 'array') {
     if (!Array.isArray(value)) {
       throw new Error(`Audit event ${eventType} metadata is missing required array key: ${key}`);
@@ -405,9 +439,42 @@ function requireMetadataKey(
   }
 }
 
+function requireMetadataNullableKey(
+  eventType: string,
+  metadata: Record<string, unknown>,
+  key: string,
+  kind: 'number' | 'string',
+) {
+  const value = metadata[key];
+  if (value === null) {
+    return;
+  }
+  if (kind === 'string') {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(
+        `Audit event ${eventType} metadata is missing required string|null key: ${key}`,
+      );
+    }
+    return;
+  }
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new Error(
+      `Audit event ${eventType} metadata is missing required number|null key: ${key}`,
+    );
+  }
+}
+
 function validateEventSpecificMetadata(record: { eventType: string; metadata?: string }) {
   const metadata = parseMetadata(record.metadata);
   switch (record.eventType) {
+    case 'chat_attachment_uploaded': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'attachmentId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'kind', 'string');
+      requireMetadataKey(record.eventType, parsed, 'mimeType', 'string');
+      requireMetadataKey(record.eventType, parsed, 'sizeBytes', 'number');
+      return;
+    }
     case 'audit_log_exported':
     case 'directory_exported': {
       const parsed = requireMetadataObject(record.eventType, metadata);
@@ -500,6 +567,36 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'purpose', 'string');
       return;
     }
+    case 'file_access_ticket_issued': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'expiresInMinutes', 'number');
+      requireMetadataKey(record.eventType, parsed, 'issuedIpAddress', 'string');
+      requireMetadataKey(record.eventType, parsed, 'issuedUserAgent', 'string');
+      requireMetadataKey(record.eventType, parsed, 'purpose', 'string');
+      requireMetadataKey(record.eventType, parsed, 'ticketId', 'string');
+      return;
+    }
+    case 'file_access_redeemed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataNullableKey(record.eventType, parsed, 'ipAddress', 'string');
+      requireMetadataKey(record.eventType, parsed, 'purpose', 'string');
+      requireMetadataKey(record.eventType, parsed, 'sourceSurface', 'string');
+      requireMetadataKey(record.eventType, parsed, 'ticketId', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'userAgent', 'string');
+      return;
+    }
+    case 'file_access_redeem_failed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataNullableKey(record.eventType, parsed, 'attemptedSessionId', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'attemptedUserId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'error', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'expiresAt', 'number');
+      requireMetadataNullableKey(record.eventType, parsed, 'ipAddress', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'sourceSurface', 'string');
+      requireMetadataKey(record.eventType, parsed, 'ticketId', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'userAgent', 'string');
+      return;
+    }
     case 'admin_user_sessions_viewed': {
       const parsed = requireMetadataObject(record.eventType, metadata);
       requireMetadataKey(record.eventType, parsed, 'targetUserId', 'string');
@@ -523,6 +620,36 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'drillType', 'string');
       requireMetadataKey(record.eventType, parsed, 'verificationMethod', 'string');
       requireMetadataKey(record.eventType, parsed, 'restoredItemCount', 'number');
+      return;
+    }
+    case 'chat_run_completed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'runId', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'model', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'provider', 'string');
+      requireMetadataKey(record.eventType, parsed, 'useWebSearch', 'boolean');
+      return;
+    }
+    case 'chat_web_search_used': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'runId', 'string');
+      requireMetadataNullableKey(record.eventType, parsed, 'model', 'string');
+      requireMetadataKey(record.eventType, parsed, 'fetchedDomains', 'array');
+      requireMetadataKey(record.eventType, parsed, 'sourceCount', 'number');
+      return;
+    }
+    case 'outbound_vendor_access_used': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'runId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'useWebSearch', 'boolean');
+      requireMetadataKey(record.eventType, parsed, 'vendor', 'string');
+      return;
+    }
+    case 'retention_purge_completed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'batchId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'deletedCount', 'number');
+      requireMetadataKey(record.eventType, parsed, 'failedCount', 'number');
       return;
     }
     default:

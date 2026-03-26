@@ -102,7 +102,9 @@ export function buildDocumentContentSecurityPolicy({
     "form-action 'self'",
     "object-src 'none'",
     `script-src ${scriptSrcParts.join(' ')}`,
-    "style-src 'self'",
+    // react-remove-scroll (Radix Dialog / Sheet / AlertDialog) injects a fixed <style> for scroll lock;
+    // allow that exact stylesheet via hash without opening all inline styles.
+    "style-src 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='",
     // Accepted residual risk: 'unsafe-inline' is required for style-src-attr because Tailwind CSS
     // and shadcn/ui apply inline style attributes (e.g., style="--radix-*") that cannot be nonce-gated.
     // CSS injection via style attributes is lower severity than script injection — it cannot execute

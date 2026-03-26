@@ -1,7 +1,5 @@
-import { api } from '@convex/_generated/api';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
 import { Fingerprint, Loader2 } from 'lucide-react';
 import { type FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -26,6 +24,7 @@ import {
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { resolveEnterpriseAuthDiscoveryServerFn } from '~/features/auth/server/enterprise-auth';
 
 export const Route = createFileRoute('/login')({
   staticData: true,
@@ -58,9 +57,10 @@ function getPasswordSignInError(message: string) {
 
   if (
     normalizedMessage.includes('requires enterprise sign-in') ||
-    normalizedMessage.includes('password sign-in is disabled')
+    normalizedMessage.includes('password sign-in is disabled') ||
+    normalizedMessage.includes('organization-managed sign-in')
   ) {
-    return 'Your organization requires Google Workspace sign-in. Use Continue with Google.';
+    return 'Your organization requires managed sign-in. Use Continue with Google.';
   }
 
   return message;
@@ -69,19 +69,16 @@ function getPasswordSignInError(message: string) {
 function getGoogleSignInError(
   resolution:
     | {
-        enterpriseAuthMode: 'off' | 'optional' | 'required';
-        organizationName: string;
-        providerStatus: string;
+        canUsePasswordFallback: boolean;
+        protocol: 'oidc';
+        providerKey: 'google-workspace' | 'entra' | 'okta';
+        requiresEnterpriseAuth: boolean;
       }
     | null
     | undefined,
 ) {
   if (!resolution) {
     return 'No Google Workspace sign-in is configured for this account.';
-  }
-
-  if (resolution.providerStatus !== 'active') {
-    return 'Google Workspace sign-in is not available yet. Ask your organization owner to finish setup.';
   }
 
   return null;
@@ -112,10 +109,15 @@ function LoginPage() {
   const normalizedEmail = normalizeEmail(emailInput);
   const parsedEmail = emailSchema.safeParse(normalizedEmail);
   const emailForLookup = parsedEmail.success ? normalizedEmail : '';
-  const enterpriseResolution = useQuery(
-    api.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
-    emailForLookup ? { email: emailForLookup } : 'skip',
-  );
+  const { data: enterpriseResolution } = useQuery({
+    enabled: emailForLookup.length > 0,
+    queryFn: async () =>
+      await resolveEnterpriseAuthDiscoveryServerFn({
+        data: { email: emailForLookup },
+      }),
+    queryKey: ['enterprise-auth-discovery', emailForLookup],
+    staleTime: 30_000,
+  });
   const postSignInRedirectUrl = useMemo(
     () =>
       typeof window === 'undefined'

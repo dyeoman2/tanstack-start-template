@@ -12,7 +12,7 @@ export const ALWAYS_ON_REGULATED_BASELINE = {
   requireVerifiedEmail: true,
   requireMfaOrPasskey: true,
   allowBreakGlassPasswordLogin: false,
-  webSearchAllowed: true,
+  webSearchAllowed: false,
 } as const;
 
 export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {

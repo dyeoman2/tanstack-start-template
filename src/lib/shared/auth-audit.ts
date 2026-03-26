@@ -278,9 +278,9 @@ export function normalizeAuditIdentifier(value: string | undefined) {
   return trimmed && trimmed.length > 0 ? trimmed.toLowerCase() : undefined;
 }
 
-// Re-export typed metadata shapes for compliance-critical audit events.
-// These types are advisory — the audit ledger accepts any metadata via v.any() for
-// backwards compatibility, but new audit emissions should use these types at the call site.
+// Re-export canonical metadata shapes for selected compliance-critical audit events.
+// Persisted audit ledger metadata is stored as stringified JSON, and covered
+// families are enforced in the append-path validator in convex/audit.ts.
 export type {
   ChatAttachmentScanResultMetadata,
   ChatAttachmentUploadedMetadata,

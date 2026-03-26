@@ -7,6 +7,8 @@ export const STORAGE_BROKER_SESSION_TTL_MS = 15 * 60 * 1000;
 export const STORAGE_BROKER_SESSION_REFRESH_WINDOW_MS = 60 * 1000;
 export const STORAGE_BROKER_SESSION_MAX_CLOCK_SKEW_MS = 60 * 1000;
 
+// Both inputs are HMAC-SHA256 hex strings (always 64 chars), so the early
+// return on length mismatch does not leak exploitable timing information.
 function timingSafeEqual(left: string, right: string) {
   if (left.length !== right.length) {
     return false;

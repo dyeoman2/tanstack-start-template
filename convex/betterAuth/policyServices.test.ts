@@ -115,15 +115,13 @@ describe('getPasswordAuthBlockMessage', () => {
     const ctx = createCtx({
       runQuery: vi.fn(async () => ({
         canUsePasswordFallback: false,
-        enterpriseAuthMode: 'required',
-        organizationName: 'Acme Health',
-        providerLabel: 'Google Workspace',
         providerStatus: 'active',
+        requiresEnterpriseAuth: true,
       })),
     });
 
     await expect(getPasswordAuthBlockMessage(ctx, 'clinician@example.com')).resolves.toBe(
-      'Acme Health requires Google Workspace sign-in for this email domain.',
+      'This email domain requires organization-managed sign-in. Use Continue with Google.',
     );
   });
 });
@@ -230,7 +228,6 @@ describe('resolveEnterpriseSessionContext', () => {
         organizationId: 'org_1',
         providerKey: 'google-workspace',
         providerStatus: 'active',
-        verifiedDomains: ['acmehealth.org'],
       })),
     });
 
@@ -258,7 +255,6 @@ describe('resolveEnterpriseSessionContext', () => {
         organizationId: 'org_1',
         providerKey: 'google-workspace',
         providerStatus: 'inactive',
-        verifiedDomains: ['acmehealth.org'],
       })),
     });
 
@@ -282,7 +278,6 @@ describe('resolveEnterpriseSessionContext', () => {
         organizationId: 'org_1',
         providerKey: 'google-workspace',
         providerStatus: 'active',
-        verifiedDomains: ['acmehealth.org'],
       })),
     });
 
@@ -308,7 +303,6 @@ describe('resolveEnterpriseSessionContext', () => {
         organizationId: 'org_1',
         providerKey: 'google-workspace',
         providerStatus: 'active',
-        verifiedDomains: ['acmehealth.org'],
       })),
     });
 

@@ -1,17 +1,15 @@
 /**
- * Typed metadata shapes for PHI-adjacent audit events.
+ * Canonical metadata shapes for selected PHI-adjacent audit events.
  *
- * These types improve the integrity story for compliance evidence exports by
- * ensuring metadata is structurally validated at the call site. The audit ledger
- * hash chain protects against post-hoc tampering; typed metadata ensures the
- * data captured at emission time is complete and well-formed.
+ * Persisted audit ledger metadata is stored as stringified JSON. For covered
+ * event families, the audit append path validates the structure documented here.
  */
 
 export type ChatAttachmentUploadedMetadata = {
   readonly attachmentId: string;
-  readonly fileName: string;
+  readonly kind: string;
   readonly mimeType: string;
-  readonly fileSizeBytes: number;
+  readonly sizeBytes: number;
 };
 
 export type ChatAttachmentScanResultMetadata = {
@@ -21,26 +19,36 @@ export type ChatAttachmentScanResultMetadata = {
 };
 
 export type FileAccessTicketIssuedMetadata = {
-  readonly ticketId: string;
-  readonly storageId: string;
-  readonly purpose: 'external_share' | 'interactive_open';
   readonly expiresInMinutes: number;
+  readonly issuedIpAddress: string;
+  readonly issuedUserAgent: string;
+  readonly ticketId: string;
+  readonly purpose: 'external_share' | 'interactive_open';
 };
 
 export type FileAccessRedeemedMetadata = {
+  readonly ipAddress: string | null;
+  readonly purpose: 'external_share' | 'interactive_open';
+  readonly sourceSurface: string;
   readonly ticketId: string;
-  readonly storageId: string;
+  readonly userAgent: string | null;
 };
 
 export type FileAccessRedeemFailedMetadata = {
+  readonly attemptedSessionId: string | null;
+  readonly attemptedUserId: string | null;
+  readonly error: string;
+  readonly expiresAt: number | null;
+  readonly ipAddress: string | null;
+  readonly sourceSurface: string | null;
   readonly ticketId: string;
-  readonly reason: 'expired' | 'already_redeemed' | 'invalid_signature' | 'not_found';
+  readonly userAgent: string | null;
 };
 
 export type OutboundVendorAccessUsedMetadata = {
   readonly vendor: string;
-  readonly runId?: string;
-  readonly useWebSearch?: boolean;
+  readonly runId: string;
+  readonly useWebSearch: boolean;
 };
 
 export type OutboundVendorAccessDeniedMetadata = {
@@ -52,24 +60,21 @@ export type OutboundVendorAccessDeniedMetadata = {
 };
 
 export type ChatWebSearchUsedMetadata = {
-  readonly runId?: string;
+  readonly runId: string;
+  readonly model: string | null;
   readonly fetchedDomains: readonly string[];
   readonly sourceCount: number;
 };
 
 export type RetentionPurgeCompletedMetadata = {
-  readonly resourceType: string;
-  readonly resourceId: string;
-  readonly organizationId: string;
-  readonly retentionDays: number;
+  readonly batchId: string;
+  readonly deletedCount: number;
+  readonly failedCount: number;
 };
 
 export type ChatRunCompletedMetadata = {
   readonly runId: string;
-  readonly modelId: string;
-  readonly usedWebSearch: boolean;
-  readonly tokenUsage?: {
-    readonly promptTokens: number;
-    readonly completionTokens: number;
-  };
+  readonly model: string | null;
+  readonly provider: string | null;
+  readonly useWebSearch: boolean;
 };

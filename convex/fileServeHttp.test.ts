@@ -6,20 +6,12 @@ import {
   buildBetterAuthProxyHeaders,
 } from '../src/lib/server/better-auth/http';
 
-const { createAuthMock, recordFileAccessRedeemFailureMock, redeemFileAccessTicketOrThrowMock } =
-  vi.hoisted(() => ({
-    createAuthMock: vi.fn(),
-    recordFileAccessRedeemFailureMock: vi.fn(),
-    redeemFileAccessTicketOrThrowMock: vi.fn(),
-  }));
+const { createAuthMock } = vi.hoisted(() => ({
+  createAuthMock: vi.fn(),
+}));
 
 vi.mock('./auth', () => ({
   createAuth: createAuthMock,
-}));
-
-vi.mock('./fileServing', () => ({
-  recordFileAccessRedeemFailure: recordFileAccessRedeemFailureMock,
-  redeemFileAccessTicketOrThrow: redeemFileAccessTicketOrThrowMock,
 }));
 
 import { handleFileServeRequest } from './fileServeHttp';
@@ -34,7 +26,6 @@ describe('handleFileServeRequest', () => {
       AUTH_PROXY_SHARED_SECRET: 'test-auth-proxy-shared-secret-abcdefghijklmnopqrstuvwxyz',
     };
     vi.clearAllMocks();
-    recordFileAccessRedeemFailureMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -74,12 +65,13 @@ describe('handleFileServeRequest', () => {
         }),
       },
     });
-    redeemFileAccessTicketOrThrowMock.mockResolvedValue({
+    const runAction = vi.fn().mockResolvedValue({
       url: 'https://download.example.test/file',
     });
 
     const response = await handleFileServeRequest(
       {
+        runAction,
         runMutation: vi.fn(),
         runQuery: vi.fn(),
       } as never,
@@ -89,7 +81,7 @@ describe('handleFileServeRequest', () => {
       }),
     );
 
-    expect(redeemFileAccessTicketOrThrowMock).toHaveBeenCalledWith(
+    expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         authenticatedSessionId: 'session_1',
@@ -99,7 +91,7 @@ describe('handleFileServeRequest', () => {
         ticketId: 'ticket_123',
       }),
     );
-    expect(recordFileAccessRedeemFailureMock).not.toHaveBeenCalled();
+    expect(runAction).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe('https://download.example.test/file');
   });
@@ -110,9 +102,11 @@ describe('handleFileServeRequest', () => {
         getSession: vi.fn().mockResolvedValue(null),
       },
     });
+    const runAction = vi.fn().mockResolvedValue(null);
 
     const response = await handleFileServeRequest(
       {
+        runAction,
         runMutation: vi.fn(),
         runQuery: vi.fn(),
       } as never,
@@ -131,7 +125,7 @@ describe('handleFileServeRequest', () => {
       ),
     );
 
-    expect(recordFileAccessRedeemFailureMock).toHaveBeenCalledWith(
+    expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         errorMessage: 'Authentication required to redeem a file access ticket.',
@@ -140,6 +134,7 @@ describe('handleFileServeRequest', () => {
         ticketId: 'ticket_123',
       }),
     );
+    expect(runAction).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(401);
   });
 });

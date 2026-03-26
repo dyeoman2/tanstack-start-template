@@ -1,20 +1,15 @@
+// Constant-time string comparison that does not leak length information.
+// This runs in the Convex edge runtime where node:crypto is unavailable,
+// so we pad to equal length and always iterate over the full input.
 function timingSafeEqual(left: string, right: string) {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
-    return false;
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+  const maxLen = Math.max(leftBytes.length, rightBytes.length);
+  let mismatch = leftBytes.length !== rightBytes.length ? 1 : 0;
+  for (let i = 0; i < maxLen; i++) {
+    mismatch |= (leftBytes[i] ?? 0) ^ (rightBytes[i] ?? 0);
   }
-
-  let mismatch = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    const leftByte = leftBytes[index];
-    const rightByte = rightBytes[index];
-    if (leftByte === undefined || rightByte === undefined) {
-      return false;
-    }
-    mismatch |= leftByte ^ rightByte;
-  }
-
   return mismatch === 0;
 }
 

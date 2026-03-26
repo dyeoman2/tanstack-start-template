@@ -3,9 +3,9 @@ import {
   getTrustedClientIp,
   getTrustedUserAgent,
 } from '../src/lib/shared/better-auth-http';
+import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { createAuth } from './auth';
-import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 
 type BetterAuthHttpSession = {
   session?: {
@@ -17,7 +17,7 @@ type BetterAuthHttpSession = {
   } | null;
 } | null;
 
-type FileServeCtx = Pick<ActionCtx, 'runMutation' | 'runQuery'>;
+type FileServeCtx = Pick<ActionCtx, 'runAction' | 'runMutation' | 'runQuery'>;
 
 export async function handleFileServeRequest(
   ctx: FileServeCtx,
@@ -32,7 +32,10 @@ export async function handleFileServeRequest(
   const requestIpAddress = getTrustedClientIp(trustedRequest) ?? null;
 
   if (!expiresAtParam || !signature || !ticketId) {
-    return new Response('Missing required file serve parameters.', { status: 400 });
+    return new Response('Missing required file serve parameters.', {
+      status: 400,
+      headers: { 'Referrer-Policy': 'no-referrer' },
+    });
   }
 
   const expiresAt = Number.parseInt(expiresAtParam, 10);
@@ -53,23 +56,26 @@ export async function handleFileServeRequest(
         : null;
 
   if (!authenticatedSessionId || !authenticatedUserId) {
-    await recordFileAccessRedeemFailure(ctx, {
-      authenticatedSessionId,
-      authenticatedUserId,
-      errorMessage: 'Authentication required to redeem a file access ticket.',
-      expiresAt,
-      requestIpAddress,
-      requestUserAgent: userAgent,
-      ticketId,
-    }).catch(() => undefined);
+    await ctx
+      .runAction(internal.fileServing.recordFileAccessRedeemFailureInternal, {
+        authenticatedSessionId,
+        authenticatedUserId,
+        errorMessage: 'Authentication required to redeem a file access ticket.',
+        expiresAt,
+        requestIpAddress,
+        requestUserAgent: userAgent,
+        ticketId,
+      })
+      .catch(() => undefined);
 
     return new Response('Authentication required to redeem a file access ticket.', {
       status: 401,
+      headers: { 'Referrer-Policy': 'no-referrer' },
     });
   }
 
   try {
-    const redirect = await redeemFileAccessTicketOrThrow(ctx, {
+    const redirect = await ctx.runAction(internal.fileServing.redeemFileAccessTicketInternal, {
       authenticatedSessionId,
       authenticatedUserId,
       expiresAt,
@@ -78,21 +84,30 @@ export async function handleFileServeRequest(
       signature,
       ticketId,
     });
-    return Response.redirect(redirect.url, 302);
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: redirect.url,
+        'Referrer-Policy': 'no-referrer',
+      },
+    });
   } catch (error) {
-    await recordFileAccessRedeemFailure(ctx, {
-      authenticatedSessionId,
-      authenticatedUserId,
-      errorMessage: error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
-      expiresAt,
-      requestIpAddress,
-      requestUserAgent: userAgent,
-      ticketId,
-    }).catch(() => undefined);
+    await ctx
+      .runAction(internal.fileServing.recordFileAccessRedeemFailureInternal, {
+        authenticatedSessionId,
+        authenticatedUserId,
+        errorMessage:
+          error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
+        expiresAt,
+        requestIpAddress,
+        requestUserAgent: userAgent,
+        ticketId,
+      })
+      .catch(() => undefined);
 
     return new Response(
       error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
-      { status: 403 },
+      { status: 403, headers: { 'Referrer-Policy': 'no-referrer' } },
     );
   }
 }

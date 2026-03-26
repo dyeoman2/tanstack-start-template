@@ -129,7 +129,8 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
   };
 
   const grants = useMemo(() => settings?.grants ?? [], [settings?.grants]);
-  const selectedGrant = grants.find((grant) => grant.id === selectedGrantId) ?? null;
+  const selectedGrant =
+    grants.find((grant: (typeof grants)[number]) => grant.id === selectedGrantId) ?? null;
 
   if (settings === undefined || settings === null || !settings.canManageSupportAccess) {
     return null;
@@ -331,11 +332,13 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
                 <SelectValue placeholder="Select a site admin" />
               </SelectTrigger>
               <SelectContent>
-                {settings.availableSiteAdmins.map((option) => (
-                  <SelectItem key={option.authUserId} value={option.authUserId}>
-                    {option.name ? `${option.name} (${option.email})` : option.email}
-                  </SelectItem>
-                ))}
+                {settings.availableSiteAdmins.map(
+                  (option: (typeof settings.availableSiteAdmins)[number]) => (
+                    <SelectItem key={option.authUserId} value={option.authUserId}>
+                      {option.name ? `${option.name} (${option.email})` : option.email}
+                    </SelectItem>
+                  ),
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -457,7 +460,7 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
             </div>
           ) : (
             <div className="space-y-3">
-              {grants.map((grant) => {
+              {grants.map((grant: (typeof grants)[number]) => {
                 const status = getGrantStatus(grant);
                 return (
                   <div

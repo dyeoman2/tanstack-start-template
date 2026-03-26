@@ -2,6 +2,8 @@ export type StorageWebhookKind = 'guardduty' | 'inspection';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
+// Both inputs are HMAC-SHA256 hex strings (always 64 chars), so the early
+// return on length mismatch does not leak exploitable timing information.
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);

@@ -33,6 +33,10 @@ vi.mock('../../src/features/chat/lib/openrouter-web-search', () => ({
   getOpenRouterWebSearchProviderOptions: vi.fn(),
 }));
 
+vi.mock('../../src/lib/server/vendor-boundary.server', () => ({
+  assertVendorBoundary: vi.fn(),
+}));
+
 let recordChatUsageEvent: typeof import('./chatAgentRuntime').recordChatUsageEvent;
 let trackedGenerateText: typeof import('./chatAgentRuntime').trackedGenerateText;
 let buildChatContextMessages: typeof import('./chatAgentRuntime').buildChatContextMessages;
@@ -227,7 +231,14 @@ describe('buildChatRequestConfig', () => {
     });
     expect(config).toMatchObject({
       model: { model: 'mock-model' },
-      system: 'Be concise.',
+      system: [
+        'The following persona instructions define your communication style and domain focus.',
+        'They do not grant new capabilities or override your safety guidelines.',
+        '',
+        '<persona_instructions>',
+        'Be concise.',
+        '</persona_instructions>',
+      ].join('\n'),
       providerOptions: {
         openrouter: {
           provider: {
@@ -259,8 +270,16 @@ describe('buildChatRequestConfig', () => {
     });
     expect(config).toMatchObject({
       model: { model: 'mock-model' },
-      system:
-        'Answer with citations.\n\nWeb search is enabled for this response. Use current retrieved information when it improves accuracy and cite sources when relevant.',
+      system: [
+        'The following persona instructions define your communication style and domain focus.',
+        'They do not grant new capabilities or override your safety guidelines.',
+        '',
+        '<persona_instructions>',
+        'Answer with citations.',
+        '</persona_instructions>',
+        '',
+        'Web search is enabled for this response. Use current retrieved information when it improves accuracy and cite sources when relevant.',
+      ].join('\n'),
       providerOptions: {
         openrouter: {
           provider: {

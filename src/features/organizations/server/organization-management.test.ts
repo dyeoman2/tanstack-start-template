@@ -7,8 +7,11 @@ const {
   checkBetterAuthOrganizationSlugMock,
   createBetterAuthOrganizationInvitationMock,
   createBetterAuthOrganizationMock,
+  deleteBetterAuthOrganizationScimProviderMock,
   deleteBetterAuthOrganizationMock,
+  generateBetterAuthOrganizationScimTokenMock,
   getBetterAuthRequestMock,
+  runConvexAdminMutationMock,
   removeBetterAuthOrganizationMemberMock,
   requireAuthMock,
   resolveRequestAuditContextMock,
@@ -23,8 +26,11 @@ const {
   checkBetterAuthOrganizationSlugMock: vi.fn(),
   createBetterAuthOrganizationInvitationMock: vi.fn(),
   createBetterAuthOrganizationMock: vi.fn(),
+  deleteBetterAuthOrganizationScimProviderMock: vi.fn(),
   deleteBetterAuthOrganizationMock: vi.fn(),
+  generateBetterAuthOrganizationScimTokenMock: vi.fn(),
   getBetterAuthRequestMock: vi.fn(),
+  runConvexAdminMutationMock: vi.fn(),
   removeBetterAuthOrganizationMemberMock: vi.fn(),
   requireAuthMock: vi.fn(),
   resolveRequestAuditContextMock: vi.fn(),
@@ -58,7 +64,6 @@ vi.mock('@convex/_generated/api', () => ({
       exportOrganizationAuditCsv: 'exportOrganizationAuditCsv',
       exportOrganizationDirectoryCsv: 'exportOrganizationDirectoryCsv',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
-      recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
       prepareOrganizationCleanup: 'prepareOrganizationCleanup',
       releaseOrganizationLegalHold: 'releaseOrganizationLegalHold',
@@ -89,6 +94,10 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
   },
 }));
 
+vi.mock('~/lib/server/convex-admin.server', () => ({
+  runConvexAdminMutation: runConvexAdminMutationMock,
+}));
+
 vi.mock('~/lib/server/better-auth/http', () => ({
   getBetterAuthRequest: getBetterAuthRequestMock,
 }));
@@ -116,7 +125,9 @@ vi.mock('~/lib/server/better-auth/api', () => ({
   checkBetterAuthOrganizationSlug: checkBetterAuthOrganizationSlugMock,
   createBetterAuthOrganization: createBetterAuthOrganizationMock,
   createBetterAuthOrganizationInvitation: createBetterAuthOrganizationInvitationMock,
+  deleteBetterAuthOrganizationScimProvider: deleteBetterAuthOrganizationScimProviderMock,
   deleteBetterAuthOrganization: deleteBetterAuthOrganizationMock,
+  generateBetterAuthOrganizationScimToken: generateBetterAuthOrganizationScimTokenMock,
   removeBetterAuthOrganizationMember: removeBetterAuthOrganizationMemberMock,
   updateBetterAuthOrganization: updateBetterAuthOrganizationMock,
   updateBetterAuthOrganizationMemberRole: updateBetterAuthOrganizationMemberRoleMock,
@@ -132,8 +143,10 @@ import {
   createOrganizationServerFn,
   deactivateOrganizationMemberServerFn,
   deleteOrganizationServerFn,
+  deleteOrganizationScimProviderServerFn,
   exportOrganizationAuditCsvServerFn,
   exportOrganizationDirectoryCsvServerFn,
+  generateOrganizationScimTokenServerFn,
   reactivateOrganizationMemberServerFn,
   releaseOrganizationLegalHoldServerFn,
   removeOrganizationMemberServerFn,
@@ -177,11 +190,16 @@ describe('organization management server functions', () => {
       name: 'Acme',
       slug: 'acme',
     });
+    generateBetterAuthOrganizationScimTokenMock.mockResolvedValue({
+      scimToken: 'scim-secret-token',
+    });
+    deleteBetterAuthOrganizationScimProviderMock.mockResolvedValue({ success: true });
     removeBetterAuthOrganizationMemberMock.mockResolvedValue({ member: { id: 'member_1' } });
     deleteBetterAuthOrganizationMock.mockResolvedValue({ id: 'org_1' });
     cancelBetterAuthOrganizationInvitationMock.mockResolvedValue({
       invitation: { id: 'invite_1' },
     });
+    runConvexAdminMutationMock.mockResolvedValue({ success: true });
     getBetterAuthRequestMock.mockReturnValue(new Request('https://app.example.com/app'));
     resolveRequestAuditContextMock.mockReturnValue({
       requestId: 'req-123',
@@ -337,6 +355,45 @@ describe('organization management server functions', () => {
         userAgent: 'Vitest',
       },
     });
+  });
+
+  it('routes SCIM management through the dedicated manage-scim permission path', async () => {
+    await generateOrganizationScimTokenServerFn({
+      data: {
+        organizationId: 'org_1',
+        providerKey: 'google-workspace',
+      },
+    });
+
+    await deleteOrganizationScimProviderServerFn({
+      data: {
+        organizationId: 'org_1',
+        providerKey: 'google-workspace',
+      },
+    });
+
+    expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(1, 'getOrganizationWriteAccess', {
+      action: 'manage-scim',
+      organizationId: 'org_1',
+    });
+    expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(2, 'getOrganizationWriteAccess', {
+      action: 'manage-scim',
+      organizationId: 'org_1',
+    });
+    expect(generateBetterAuthOrganizationScimTokenMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        providerKey: 'google-workspace',
+      },
+      expect.any(Function),
+    );
+    expect(deleteBetterAuthOrganizationScimProviderMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        providerKey: 'google-workspace',
+      },
+      expect.any(Function),
+    );
   });
 
   it('creates support access grants through Convex auth mutations', async () => {
@@ -740,7 +797,7 @@ describe('organization management server functions', () => {
     );
   });
 
-  it('runs bulk invitation revocation and records bulk audit events', async () => {
+  it('runs bulk invitation revocation and records internal bulk audit events', async () => {
     await bulkOrganizationDirectoryActionServerFn({
       data: {
         organizationId: 'org_1',
@@ -760,7 +817,21 @@ describe('organization management server functions', () => {
       'invite_1',
       expect.any(Function),
     );
-    expect(fetchAuthMutationMock).toHaveBeenCalledWith('recordOrganizationBulkAuditEvents', {
+    expect(runConvexAdminMutationMock).toHaveBeenCalledWith(
+      'organizationManagement:recordOrganizationBulkAuditEventsInternal',
+      {
+        organizationId: 'org_1',
+        eventType: 'bulk_invite_revoked',
+        entries: [
+          {
+            targetEmail: 'invitee@example.com',
+            targetId: 'invite_1',
+            targetRole: 'member',
+          },
+        ],
+      },
+    );
+    expect(fetchAuthMutationMock).not.toHaveBeenCalledWith('recordOrganizationBulkAuditEvents', {
       organizationId: 'org_1',
       eventType: 'bulk_invite_revoked',
       entries: [
@@ -771,6 +842,95 @@ describe('organization management server functions', () => {
         },
       ],
     });
+  });
+
+  it('records only the successful subset for bulk invitation revocation', async () => {
+    cancelBetterAuthOrganizationInvitationMock
+      .mockResolvedValueOnce({ invitation: { id: 'invite_1' } })
+      .mockRejectedValueOnce(new Error('Invitation not found'));
+
+    const result = await bulkOrganizationDirectoryActionServerFn({
+      data: {
+        organizationId: 'org_1',
+        action: 'revoke-invites',
+        invitations: [
+          {
+            invitationId: 'invite_1',
+            email: 'invitee@example.com',
+            role: 'member',
+          },
+          {
+            invitationId: 'invite_2',
+            email: 'second@example.com',
+            role: 'admin',
+          },
+        ],
+        members: [],
+      },
+    });
+
+    expect(result).toEqual({
+      results: [
+        { key: 'invite_1', success: true },
+        { key: 'invite_2', success: false, message: 'Invitation not found' },
+      ],
+      successCount: 1,
+      failureCount: 1,
+    });
+    expect(runConvexAdminMutationMock).toHaveBeenCalledWith(
+      'organizationManagement:recordOrganizationBulkAuditEventsInternal',
+      {
+        organizationId: 'org_1',
+        eventType: 'bulk_invite_revoked',
+        entries: [
+          {
+            targetEmail: 'invitee@example.com',
+            targetId: 'invite_1',
+            targetRole: 'member',
+          },
+        ],
+      },
+    );
+  });
+
+  it('records internal audit events for successful bulk member removals and refreshes context', async () => {
+    await bulkOrganizationDirectoryActionServerFn({
+      data: {
+        organizationId: 'org_1',
+        action: 'remove-members',
+        invitations: [],
+        members: [
+          {
+            membershipId: 'member_1',
+            email: 'member@example.com',
+            role: 'admin',
+          },
+        ],
+      },
+    });
+
+    expect(removeBetterAuthOrganizationMemberMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        memberIdOrEmail: 'member_1',
+      },
+      expect.any(Function),
+    );
+    expect(runConvexAdminMutationMock).toHaveBeenCalledWith(
+      'organizationManagement:recordOrganizationBulkAuditEventsInternal',
+      {
+        organizationId: 'org_1',
+        eventType: 'bulk_member_removed',
+        entries: [
+          {
+            targetEmail: 'member@example.com',
+            targetId: 'member_1',
+            targetRole: 'admin',
+          },
+        ],
+      },
+    );
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('ensureCurrentUserContext', {});
   });
 
   it('wraps Better Auth action failures with mapped org messages', async () => {
