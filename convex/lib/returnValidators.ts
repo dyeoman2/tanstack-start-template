@@ -953,6 +953,7 @@ export const stepUpRequirementValidator = v.union(
   v.literal('session_administration'),
   v.literal('support_access_approval'),
   v.literal('user_administration'),
+  v.literal('model_catalog_admin'),
 );
 
 export const authStepUpClaimsDocValidator = v.object({

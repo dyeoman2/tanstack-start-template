@@ -1073,7 +1073,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Organization policies constrain invitations and seat growth, while SCIM and member-state workflows support lifecycle changes.',
+          'Organization policies constrain invitations and seat growth, SCIM and member-state workflows support lifecycle changes, and progressive account lockout temporarily bans accounts after repeated failed sign-in attempts.',
           [
             seededEvidence(
               'Organization access policy controls',
@@ -1082,6 +1082,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'SCIM provisioning workflow',
               'src/features/organizations/components/OrganizationProvisioningManagement.tsx and src/features/organizations/server/organization-management.ts manage SCIM endpoint and bearer-token lifecycle for automated provisioning.',
+            ),
+            seededEvidence(
+              'Durable progressive account lockout',
+              'convex/authLockout.ts tracks consecutive failed sign-in attempts per email in the authLockoutAttempts table. After 5 failures within 15 minutes the account is temporarily banned for 30 minutes using Better Auth native banned and banExpires fields, and an auditable account_locked_out event is emitted. Lockout state survives server restarts and multi-instance deployments.',
             ),
           ],
         ),
@@ -1480,7 +1484,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Privileged admin routes, evidence-management actions, regulated step-up checks, and other sensitive credential changes require a recent authenticated session before they proceed.',
+          'Privileged admin routes, evidence-management actions, AI model catalog control-plane changes, regulated step-up checks, and other sensitive credential changes require a recent authenticated session before they proceed.',
           [
             seededEvidence(
               'Privileged admin step-up enforcement',
@@ -1493,6 +1497,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Sensitive credential-change step-up protection',
               'Authentication route protections require a recent step-up session before sign-in email or password changes are accepted.',
+            ),
+            seededEvidence(
+              'AI model catalog control-plane step-up protection',
+              'convex/admin.ts requires a recent model_catalog_admin step-up claim (5-minute TTL, single-use) before model create, update, or activate mutations proceed. Impersonated sessions are rejected. Audit events (ai_model_created, ai_model_updated, ai_model_active_state_changed) capture old/new state diffs.',
             ),
           ],
           'Authentication',
@@ -3199,7 +3207,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Attachment inspection, evidence handling, and vendor access paths emit audit records for review.',
+          'Attachment inspection, evidence handling, vendor access, and AI model catalog control-plane paths emit audit records for review.',
           [
             seededEvidence(
               'Attachment inspection audit events',
@@ -3208,6 +3216,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Evidence and vendor audit events',
               'convex/securityReports.ts emits evidence_report_generated, evidence_report_exported, and evidence_report_reviewed while convex/agentChatActions.ts emits outbound vendor access events.',
+            ),
+            seededEvidence(
+              'AI model catalog audit events',
+              'convex/admin.ts emits ai_model_created, ai_model_updated, and ai_model_active_state_changed audit events with old/new state diffs when model catalog entries are changed. convex/adminModelImports.ts emits ai_model_catalog_imported events after admin-initiated model imports.',
             ),
           ],
           'Audit and Logging',
@@ -3291,11 +3303,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy.',
+          'Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy. Environment resolution supports APP_DEPLOYMENT_ENV for finer-grained control over preview and staging deployments.',
           [
             seededEvidence(
               'Vendor boundary enforcement helper',
-              'src/lib/server/vendor-boundary.server.ts rejects outbound access when vendor approval, environment, or data-class policy is not satisfied.',
+              'src/lib/server/vendor-boundary.server.ts rejects outbound access when vendor approval, environment, or data-class policy is not satisfied. Environment is resolved using APP_DEPLOYMENT_ENV (when set) for finer-grained preview/staging separation from production.',
             ),
             seededEvidence(
               'OpenRouter privacy and vendor guardrails',
@@ -3303,7 +3315,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Outbound service call boundary checks',
-              'OpenRouter and email delivery paths invoke vendor-boundary enforcement before outbound vendor access proceeds.',
+              'All OpenRouter paths — chat runtime, embeddings, and admin model imports — invoke vendor-boundary enforcement via assertVendorBoundary before outbound vendor access proceeds.',
             ),
           ],
           'Vendor Risk Management',
@@ -3319,15 +3331,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Vendor use and denial conditions are recorded as audit events for later review.',
+          'Vendor use and denial conditions are recorded as audit events for later review, including admin-initiated model import operations.',
           [
             seededEvidence(
               'Vendor access audit event inventory',
-              'src/lib/shared/auth-audit.ts defines outbound_vendor_access_used and outbound_vendor_access_denied audit event types.',
+              'src/lib/shared/auth-audit.ts defines outbound_vendor_access_used, outbound_vendor_access_denied, and ai_model_catalog_imported audit event types.',
             ),
             seededEvidence(
               'Vendor use and denial event emission',
               'convex/agentChatActions.ts records outbound vendor access used and denied events during chat generation workflows.',
+            ),
+            seededEvidence(
+              'Admin model import audit events',
+              'convex/adminModelImports.ts emits ai_model_catalog_imported audit events with model count, catalog type, and source metadata after admin-initiated OpenRouter model imports.',
             ),
           ],
           'Vendor Risk Management',
@@ -3858,7 +3874,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Security-sensitive runtime configuration is validated for auth origins, session posture, and vendor privacy configuration before protected paths proceed.',
+          'Security-sensitive runtime configuration is validated for auth origins, session posture, vendor privacy, and deployment environment before protected paths proceed.',
           [
             seededEvidence(
               'Auth and site URL validation',
@@ -3867,6 +3883,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Vendor runtime validation',
               'OpenRouter runtime validation requires an API key and fails startup unless strict privacy mode is configured for PHI-sensitive outbound model use.',
+            ),
+            seededEvidence(
+              'Deployment environment separation for vendor boundaries',
+              'src/lib/shared/vendor-boundary.ts resolves vendor environment from APP_DEPLOYMENT_ENV when set, so preview and staging deployments running NODE_ENV=production can be separately controlled from true production vendor policies.',
             ),
           ],
           'Secure Configuration',

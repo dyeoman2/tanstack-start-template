@@ -7,6 +7,7 @@ const ecs = require('aws-cdk-lib/aws-ecs');
 const elbv2 = require('aws-cdk-lib/aws-elasticloadbalancingv2');
 const logs = require('aws-cdk-lib/aws-logs');
 const rds = require('aws-cdk-lib/aws-rds');
+const s3 = require('aws-cdk-lib/aws-s3');
 const secretsmanager = require('aws-cdk-lib/aws-secretsmanager');
 const wafv2 = require('aws-cdk-lib/aws-wafv2');
 
@@ -51,6 +52,12 @@ class DrEcsStack extends cdk.Stack {
     const siteFqdn = props.domain ? `${siteSubdomain}.${props.domain}` : '';
     const frontendFqdn = props.domain ? `${frontendSubdomain}.${props.domain}` : '';
     const convexImage = props.convexImage ?? 'ghcr.io/get-convex/convex-backend:latest';
+    if (convexImage.endsWith(':latest') || !convexImage.includes(':')) {
+      console.warn(
+        `WARNING: DR ECS stack is using an unpinned container image "${convexImage}". ` +
+          'For production DR, pin to a digest (image@sha256:...) or semver tag.',
+      );
+    }
     const instanceName = 'postgres';
     const enableExecuteCommand = props.enableExecuteCommand ?? false;
     const certificateArn = props.certificateArn;
@@ -60,14 +67,8 @@ class DrEcsStack extends cdk.Stack {
       throw new Error('DrEcsStack requires certificateArn for HTTPS listeners.');
     }
 
-    if (hostnameStrategy !== 'custom-domain') {
-      throw new Error(
-        'DrEcsStack requires hostnameStrategy="custom-domain" for hardened deployments.',
-      );
-    }
-
-    if (!props.domain) {
-      throw new Error('DrEcsStack requires domain for hardened custom-domain deployments.');
+    if (hostnameStrategy === 'custom-domain' && !props.domain) {
+      throw new Error('DrEcsStack requires domain for custom-domain deployments.');
     }
 
     const vpc = new ec2.Vpc(this, 'DrVpc', {
@@ -87,6 +88,20 @@ class DrEcsStack extends cdk.Stack {
           subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
         },
       ],
+    });
+
+    // -----------------------------------------------------------------------
+    // VPC Flow Logs: capture network traffic metadata for audit and threat
+    // detection. Retained in CloudWatch Logs for 30 days.
+    // -----------------------------------------------------------------------
+    const flowLogGroup = new logs.LogGroup(this, 'DrVpcFlowLogs', {
+      logGroupName: `/vpc/${id}/flow-logs`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    vpc.addFlowLog('DrFlowLog', {
+      destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup),
+      trafficType: ec2.FlowLogTrafficType.ALL,
     });
 
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSecurityGroup', {
@@ -152,8 +167,8 @@ class DrEcsStack extends cdk.Stack {
 
     const logGroup = new logs.LogGroup(this, 'ConvexLogs', {
       logGroupName: `/ecs/${id}/convex-backend`,
-      retention: logs.RetentionDays.TWO_WEEKS,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
     const caFilePath = rdsCaBundlePath;
@@ -195,11 +210,31 @@ class DrEcsStack extends cdk.Stack {
       { containerPort: 3211, protocol: ecs.Protocol.TCP },
     );
 
+    // -----------------------------------------------------------------------
+    // ALB Access Logging: HTTP request audit trail stored in S3.
+    // -----------------------------------------------------------------------
+    const albAccessLogsBucket = new s3.Bucket(this, 'DrAlbAccessLogs', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [
+        {
+          id: 'ExpireOldLogs',
+          expiration: cdk.Duration.days(90),
+        },
+      ],
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const alb = new elbv2.ApplicationLoadBalancer(this, 'DrAlb', {
       internetFacing: true,
       vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      dropInvalidHeaderFields: true,
+      deletionProtection: true,
     });
+    alb.logAccessLogs(albAccessLogsBucket, `${resourcePrefix}-alb`);
 
     const certificate = acm.Certificate.fromCertificateArn(
       this,
@@ -219,6 +254,7 @@ class DrEcsStack extends cdk.Stack {
       certificates: [certificate],
       port: 443,
       protocol: elbv2.ApplicationProtocol.HTTPS,
+      sslPolicy: elbv2.SslPolicy.TLS12,
     });
 
     const service = new ecs.FargateService(this, 'ConvexService', {
@@ -249,25 +285,30 @@ class DrEcsStack extends cdk.Stack {
       },
     });
 
-    httpsListener.addTargets('ConvexSite', {
-      port: 3211,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targets: [
-        service.loadBalancerTarget({
-          containerName: container.containerName,
-          containerPort: 3211,
-        }),
-      ],
-      conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
-      priority: 10,
-      healthCheck: {
-        path: '/',
-        interval: cdk.Duration.seconds(30),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 5,
-        healthyHttpCodes: '200-499',
-      },
-    });
+    // Only add the ConvexSite target group when a site hostname is available
+    // for host-header routing. With provider-hostnames, all traffic goes to the
+    // backend default target group.
+    if (siteFqdn) {
+      httpsListener.addTargets('ConvexSite', {
+        port: 3211,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targets: [
+          service.loadBalancerTarget({
+            containerName: container.containerName,
+            containerPort: 3211,
+          }),
+        ],
+        conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
+        priority: 10,
+        healthCheck: {
+          path: '/',
+          interval: cdk.Duration.seconds(30),
+          healthyThresholdCount: 2,
+          unhealthyThresholdCount: 5,
+          healthyHttpCodes: '200-499',
+        },
+      });
+    }
 
     // -----------------------------------------------------------------------
     // WAF: AWS Managed Rules + IP rate limiting for the DR ALB.
@@ -362,9 +403,10 @@ class DrEcsStack extends cdk.Stack {
       });
     }
 
-    const backendUrl = `https://${backendFqdn}`;
-    const siteUrl = `https://${siteFqdn}`;
-    const frontendUrl = `https://${frontendFqdn}`;
+    const albOrigin = `https://${alb.loadBalancerDnsName}`;
+    const backendUrl = backendFqdn ? `https://${backendFqdn}` : albOrigin;
+    const siteUrl = siteFqdn ? `https://${siteFqdn}` : albOrigin;
+    const frontendUrl = frontendFqdn ? `https://${frontendFqdn}` : albOrigin;
 
     new cdk.CfnOutput(this, 'AuroraEndpoint', {
       value: dbCluster.clusterEndpoint.hostname,

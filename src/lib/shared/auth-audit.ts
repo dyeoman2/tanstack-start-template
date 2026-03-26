@@ -100,6 +100,10 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'backup_restore_drill_failed',
   'security_review_run_finalized',
   'account_locked_out',
+  'ai_model_catalog_imported',
+  'ai_model_created',
+  'ai_model_updated',
+  'ai_model_active_state_changed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -255,6 +259,10 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   backup_restore_drill_failed: ['organization'],
   security_review_run_finalized: ['organization'],
   account_locked_out: ['user'],
+  ai_model_catalog_imported: ['organization'],
+  ai_model_created: ['organization'],
+  ai_model_updated: ['organization'],
+  ai_model_active_state_changed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

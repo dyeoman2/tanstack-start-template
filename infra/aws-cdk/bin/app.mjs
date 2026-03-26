@@ -100,7 +100,7 @@ if (storageStage === 'dev' || storageStage === 'prod') {
 
 new DrBackupStack(app, buildDrBackupStackName(drProjectSlug), {
   bucketName: readTrimmedEnv('AWS_DR_BACKUP_S3_BUCKET') || undefined,
-  ciUserName: readTrimmedEnv('AWS_DR_BACKUP_CI_USER_NAME') || undefined,
+  githubRepo: readTrimmedEnv('AWS_DR_GITHUB_REPO') || undefined,
   description: 'TanStack Start Template DR backup bucket for Convex exports',
   env: awsEnv,
   projectSlug: drProjectSlug,

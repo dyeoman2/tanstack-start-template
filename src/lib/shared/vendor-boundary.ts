@@ -58,7 +58,19 @@ function normalizeEnvironment(value: string | undefined): 'development' | 'produ
 
 export function resolveVendorEnvironment(
   nodeEnv: string | undefined,
+  appDeploymentEnv?: string | undefined,
 ): 'development' | 'production' | 'test' {
+  // APP_DEPLOYMENT_ENV takes precedence for finer-grained control,
+  // so preview/staging deployments running NODE_ENV=production can
+  // still resolve to 'development' instead of 'production'.
+  if (appDeploymentEnv) {
+    const normalized = appDeploymentEnv.trim().toLowerCase();
+    if (normalized === 'production') return 'production';
+    if (normalized === 'test') return 'test';
+    // preview, staging, development all map to development
+    return 'development';
+  }
+
   return normalizeEnvironment(nodeEnv);
 }
 

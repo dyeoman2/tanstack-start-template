@@ -2015,6 +2015,20 @@ export const createAuth = (
         userId,
       });
     },
+    recordFailedSignIn: async (email: string) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return { shouldLock: false };
+      }
+      return (await ctxWithRunMutation.runMutation(internal.authLockout.recordFailedAttempt, {
+        email,
+      })) as { shouldLock: boolean };
+    },
+    clearFailedSignIn: async (email: string) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return;
+      }
+      await ctxWithRunMutation.runMutation(internal.authLockout.clearFailedAttempts, { email });
+    },
     recordAdminStepUpChallenge: async ({
       ipAddress,
       path,

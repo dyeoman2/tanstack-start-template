@@ -7,8 +7,8 @@ const s3 = require('aws-cdk-lib/aws-s3');
 /**
  * @typedef {{
  *   bucketName?: string;
- *   ciUserName?: string;
  *   env?: import('aws-cdk-lib').Environment;
+ *   githubRepo?: string;
  *   iaTransitionDays?: number;
  *   projectSlug?: string;
  *   retentionDays?: number;
@@ -34,6 +34,23 @@ class DrBackupStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    // -----------------------------------------------------------------------
+    // S3 Access Logging: who accessed the DR backup bucket.
+    // -----------------------------------------------------------------------
+    const accessLogsBucket = new s3.Bucket(this, 'DrBackupAccessLogs', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [
+        {
+          id: 'ExpireOldAccessLogs',
+          expiration: cdk.Duration.days(90),
+        },
+      ],
+      objectOwnership: s3.ObjectOwnership.OBJECT_WRITER,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const backupBucket = new s3.Bucket(this, 'ConvexDrBackupBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       bucketName: props.bucketName,
@@ -56,29 +73,104 @@ class DrBackupStack extends cdk.Stack {
         },
       ],
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'dr-backup/',
       versioned: true,
     });
 
-    const ciUser = new iam.User(this, 'DrBackupCiUser', {
-      userName: props.ciUserName ?? `${projectSlug}-dr-backup-ci-user`,
-    });
+    // -----------------------------------------------------------------------
+    // GitHub OIDC: federated identity for GitHub Actions (no long-lived keys).
+    // -----------------------------------------------------------------------
+    const githubRepo = props.githubRepo;
+    if (githubRepo) {
+      const oidcProvider = new iam.OpenIdConnectProvider(this, 'GitHubOidcProvider', {
+        url: 'https://token.actions.githubusercontent.com',
+        clientIds: ['sts.amazonaws.com'],
+        thumbprints: [
+          '6938fd4d98bab03faadb97b34396831e3780aea1',
+          '1c58a3a8518e8759bf075b76b750d4f2df264fcd',
+        ],
+      });
 
-    ciUser.addToPolicy(
-      new iam.PolicyStatement({
-        actions: ['s3:PutObject', 's3:GetObject', 's3:ListBucket'],
-        resources: [backupBucket.bucketArn, backupBucket.arnForObjects('*')],
-      }),
-    );
-    backupBucketKey.grantEncryptDecrypt(ciUser);
+      const oidcTrustConditions = {
+        StringEquals: {
+          'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+        },
+        StringLike: {
+          'token.actions.githubusercontent.com:sub': `repo:${githubRepo}:*`,
+        },
+      };
+
+      const backupRole = new iam.Role(this, 'DrBackupOidcRole', {
+        assumedBy: new iam.WebIdentityPrincipal(
+          oidcProvider.openIdConnectProviderArn,
+          oidcTrustConditions,
+        ),
+        description: 'GitHub Actions role for DR backup workflows',
+      });
+
+      backupRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ['s3:PutObject', 's3:GetObject', 's3:ListBucket'],
+          resources: [backupBucket.bucketArn, backupBucket.arnForObjects('*')],
+        }),
+      );
+      backupBucketKey.grantEncryptDecrypt(backupRole);
+
+      const recoveryRole = new iam.Role(this, 'DrRecoveryOidcRole', {
+        assumedBy: new iam.WebIdentityPrincipal(
+          oidcProvider.openIdConnectProviderArn,
+          oidcTrustConditions,
+        ),
+        description: 'GitHub Actions role for DR recovery workflows',
+      });
+
+      recoveryRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ['s3:PutObject', 's3:GetObject', 's3:ListBucket'],
+          resources: [backupBucket.bucketArn, backupBucket.arnForObjects('*')],
+        }),
+      );
+      recoveryRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ['sts:AssumeRole'],
+          resources: ['*'],
+        }),
+      );
+      recoveryRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: ['cloudformation:*'],
+          resources: [`arn:aws:cloudformation:*:*:stack/${projectSlug}-dr-*/*`],
+        }),
+      );
+      recoveryRole.addToPolicy(
+        new iam.PolicyStatement({
+          actions: [
+            'ecs:*',
+            'ec2:Describe*',
+            'elasticloadbalancing:*',
+            'rds:*',
+            'secretsmanager:*',
+            'logs:*',
+          ],
+          resources: ['*'],
+        }),
+      );
+      backupBucketKey.grantEncryptDecrypt(recoveryRole);
+
+      new cdk.CfnOutput(this, 'DrBackupOidcRoleArn', {
+        value: backupRole.roleArn,
+      });
+      new cdk.CfnOutput(this, 'DrRecoveryOidcRoleArn', {
+        value: recoveryRole.roleArn,
+      });
+    }
 
     new cdk.CfnOutput(this, 'DrBackupBucketName', {
       value: backupBucket.bucketName,
     });
     new cdk.CfnOutput(this, 'DrBackupBucketKeyArn', {
       value: backupBucketKey.keyArn,
-    });
-    new cdk.CfnOutput(this, 'DrBackupCiUserName', {
-      value: ciUser.userName,
     });
   }
 }

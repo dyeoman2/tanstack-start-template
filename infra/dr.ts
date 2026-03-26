@@ -68,6 +68,24 @@ if (!deployAll && !stackName) {
   throw new Error('Pass --all or --stack <StackName>.');
 }
 
+// For deploy mode, run synth as a pre-flight check to catch errors before deploy.
+if (!isPreview) {
+  const synthArgs = ['exec', 'cdk', 'synth', '--quiet', '--app', appPath];
+  if (deployAll) synthArgs.push('--all');
+  else if (stackName) synthArgs.push(stackName);
+
+  const synthResult = spawnSync('pnpm', synthArgs, {
+    cwd: process.cwd(),
+    env: process.env,
+    shell: false,
+    stdio: 'inherit',
+  });
+  if (synthResult.status !== 0) {
+    console.error('CDK synth pre-flight failed. Aborting deploy.');
+    process.exit(1);
+  }
+}
+
 const cdkArgs = isPreview
   ? ['exec', 'cdk', 'synth', '--app', appPath]
   : ['exec', 'cdk', 'deploy', '--require-approval', 'never', '--app', appPath];

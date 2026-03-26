@@ -155,6 +155,8 @@ type SharedBetterAuthCallbacks = {
     reason: string;
     userId?: string;
   }) => Promise<void>;
+  recordFailedSignIn?: (email: string) => Promise<{ shouldLock: boolean }>;
+  clearFailedSignIn?: (email: string) => Promise<void>;
   consumeStepUpClaim?: (input: {
     requirement: StepUpRequirement;
     sessionId: string;
@@ -203,32 +205,12 @@ const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
 
 // ---------------------------------------------------------------------------
 // Account lockout: temporary ban after consecutive failed sign-in attempts.
-// Tracked per-email in memory. Better Auth's native ban/banExpires fields
-// handle the actual blocking once a lockout threshold is reached.
+// Tracked per-email in a durable Convex table (authLockoutAttempts) via
+// callbacks. Better Auth's native ban/banExpires fields handle the actual
+// blocking once a lockout threshold is reached.
 // ---------------------------------------------------------------------------
 
-const LOCKOUT_MAX_FAILURES = 5;
-const LOCKOUT_WINDOW_MS = 15 * 60 * 1_000; // 15 minutes
 const LOCKOUT_DURATION_MS = 30 * 60 * 1_000; // 30 minutes
-
-interface FailedAttemptRecord {
-  attempts: number[];
-}
-
-const failedSignInAttempts = new Map<string, FailedAttemptRecord>();
-
-function recordFailedSignIn(email: string): { shouldLock: boolean } {
-  const now = Date.now();
-  const record = failedSignInAttempts.get(email) ?? { attempts: [] };
-  record.attempts = record.attempts.filter((ts) => now - ts < LOCKOUT_WINDOW_MS);
-  record.attempts.push(now);
-  failedSignInAttempts.set(email, record);
-  return { shouldLock: record.attempts.length >= LOCKOUT_MAX_FAILURES };
-}
-
-function clearFailedSignIn(email: string): void {
-  failedSignInAttempts.delete(email);
-}
 
 /** Endpoints that accept a new password in the request body and must enforce complexity rules. */
 const PASSWORD_COMPLEXITY_PATHS: Record<string, string> = {
@@ -1020,8 +1002,8 @@ export function createSharedBetterAuthOptions(
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
         await handleStepUpAfterHook(callbacks, ctx);
 
-        // Account lockout: track failed sign-in attempts and temporarily ban
-        // the user after LOCKOUT_MAX_FAILURES consecutive failures within the
+        // Account lockout: track failed sign-in attempts in durable storage
+        // and temporarily ban the user after consecutive failures within the
         // lockout window. Better Auth's native ban/banExpires handle blocking.
         if (ctx.path === '/sign-in/email') {
           const email = getStringField(ctx.body, 'email')?.trim().toLowerCase();
@@ -1029,10 +1011,10 @@ export function createSharedBetterAuthOptions(
             const returned = ctx.context.returned as { status?: number } | undefined;
             const responseStatus = returned?.status;
             if (responseStatus && responseStatus >= 400) {
-              const { shouldLock } = recordFailedSignIn(email);
-              if (shouldLock) {
-                clearFailedSignIn(email);
-                try {
+              try {
+                const result = await callbacks.recordFailedSignIn?.(email);
+                if (result?.shouldLock) {
+                  await callbacks.clearFailedSignIn?.(email);
                   const user = await ctx.context.internalAdapter.findUserByEmail(email);
                   if (user?.user) {
                     await ctx.context.internalAdapter.updateUser(user.user.id, {
@@ -1046,12 +1028,14 @@ export function createSharedBetterAuthOptions(
                       userId: user.user.id,
                     });
                   }
-                } catch (err) {
-                  console.warn('[account-lockout] Failed to apply temporary ban:', err);
                 }
+              } catch (err) {
+                console.warn('[account-lockout] Failed to apply temporary ban:', err);
               }
             } else if (responseStatus === 200) {
-              clearFailedSignIn(email);
+              await callbacks.clearFailedSignIn?.(email).catch((err: unknown) => {
+                console.warn('[account-lockout] Failed to clear lockout attempts:', err);
+              });
             }
           }
         }

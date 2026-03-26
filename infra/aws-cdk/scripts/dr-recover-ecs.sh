@@ -267,10 +267,11 @@ docker_admin_key_error=""
 ecs_exec_admin_key_error=""
 
 if docker_ready; then
+  CONVEX_IMAGE="${AWS_DR_CONVEX_IMAGE:-ghcr.io/get-convex/convex-backend:latest}"
   docker_admin_key_output=$(docker run --rm --entrypoint bash \
     -e INSTANCE_NAME="postgres" \
     -e INSTANCE_SECRET="${INSTANCE_SECRET_VALUE}" \
-    ghcr.io/get-convex/convex-backend:latest \
+    "${CONVEX_IMAGE}" \
     -c 'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1' 2>&1) || docker_admin_key_error="${docker_admin_key_output:-docker command failed}"
   admin_key="$(extract_admin_key_from_output "${docker_admin_key_output:-}" || true)"
   if ! is_likely_convex_admin_auth_token "${admin_key}"; then

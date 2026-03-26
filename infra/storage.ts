@@ -91,10 +91,6 @@ const appPath = 'node ./bin/app.mjs';
 const infraRoot = path.join(process.cwd(), 'infra', 'aws-cdk');
 const documentResultCallbackSecretEnvName = 'AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET';
 
-const cdkArgs = isPreview
-  ? ['exec', 'cdk', 'synth', '--app', appPath, storageStackName]
-  : ['exec', 'cdk', 'deploy', '--require-approval', 'never', '--app', appPath, storageStackName];
-
 const storageDeployEnv: NodeJS.ProcessEnv = {
   ...process.env,
   AWS_REGION: awsRegion,
@@ -114,6 +110,25 @@ const storageDeployEnv: NodeJS.ProcessEnv = {
   STORAGE_STAGE: stage,
 };
 storageDeployEnv[documentResultCallbackSecretEnvName] = convexDocumentResultCallbackSharedSecret;
+
+// For deploy mode, run synth as a pre-flight check to catch errors before deploy.
+if (!isPreview) {
+  const synthArgs = ['exec', 'cdk', 'synth', '--quiet', '--app', appPath, storageStackName];
+  const synthResult = spawnSync('pnpm', synthArgs, {
+    cwd: infraRoot,
+    env: storageDeployEnv,
+    shell: false,
+    stdio: 'inherit',
+  });
+  if (synthResult.status !== 0) {
+    console.error('CDK synth pre-flight failed. Aborting deploy.');
+    process.exit(1);
+  }
+}
+
+const cdkArgs = isPreview
+  ? ['exec', 'cdk', 'synth', '--app', appPath, storageStackName]
+  : ['exec', 'cdk', 'deploy', '--require-approval', 'never', '--app', appPath, storageStackName];
 
 const result = spawnSync('pnpm', cdkArgs, {
   cwd: infraRoot,

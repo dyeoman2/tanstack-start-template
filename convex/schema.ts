@@ -793,6 +793,7 @@ export default defineSchema({
       v.literal('attachment_access'),
       v.literal('document_export'),
       v.literal('document_deletion'),
+      v.literal('model_catalog_admin'),
       v.literal('organization_admin'),
       v.literal('password_change'),
       v.literal('session_administration'),
@@ -828,6 +829,7 @@ export default defineSchema({
       v.literal('attachment_access'),
       v.literal('document_export'),
       v.literal('document_deletion'),
+      v.literal('model_catalog_admin'),
       v.literal('organization_admin'),
       v.literal('password_change'),
       v.literal('session_administration'),
@@ -839,6 +841,12 @@ export default defineSchema({
   })
     .index('by_challenge_id', ['challengeId'])
     .index('by_auth_user_id_and_session_id', ['authUserId', 'sessionId']),
+
+  authLockoutAttempts: defineTable({
+    email: v.string(),
+    attempts: v.array(v.number()),
+    updatedAt: v.number(),
+  }).index('by_email', ['email']),
 
   documentScanEvents: defineTable({
     attachmentId: v.optional(v.id('chatAttachments')),

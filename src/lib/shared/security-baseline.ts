@@ -63,6 +63,5 @@ export function applyAlwaysOnRegulatedBaseline<T extends RegulatedOrganizationPo
     mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
     auditExportRequiresStepUp: ALWAYS_ON_REGULATED_BASELINE.auditExportRequiresStepUp,
     allowBreakGlassPasswordLogin: ALWAYS_ON_REGULATED_BASELINE.allowBreakGlassPasswordLogin,
-    webSearchAllowed: ALWAYS_ON_REGULATED_BASELINE.webSearchAllowed,
   };
 }

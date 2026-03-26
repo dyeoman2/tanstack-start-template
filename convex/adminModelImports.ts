@@ -1,13 +1,12 @@
 'use node';
 
 import { OpenRouter } from '@openrouter/sdk';
-import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
+import { getOpenRouterConfig } from '../src/lib/server/openrouter';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
-import { action, internalAction } from './_generated/server';
-import { authComponent } from './auth';
-import { throwConvexError } from './auth/errors';
+import { internalAction } from './_generated/server';
+import { siteAdminAction } from './auth/authorized';
+import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
 import { importedModelsResultValidator } from './lib/returnValidators';
 
 const TOP_FREE_MODEL_IDS = [
@@ -26,34 +25,29 @@ const TOP_PAID_MODEL_NAME_RANKING = [
   'Claude Opus 4.6',
 ] as const;
 
-function getRequiredEnv(name: string) {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new Error(`${name} environment variable is required`);
-  }
+/**
+ * Creates an OpenRouter SDK client sourced through the shared vendor boundary.
+ * This ensures `assertVendorBoundary()` runs before any outbound OpenRouter request.
+ */
+function getOpenRouterSdkClient() {
+  const config = getOpenRouterConfig();
 
-  return value;
-}
-
-function getOpenRouterClient() {
   return new OpenRouter({
-    apiKey: getRequiredEnv('OPENROUTER_API_KEY'),
-    ...(process.env.BETTER_AUTH_URL?.trim()
-      ? { httpReferer: process.env.BETTER_AUTH_URL.trim() }
-      : {}),
-    ...(process.env.APP_NAME?.trim() ? { xTitle: process.env.APP_NAME.trim() } : {}),
+    apiKey: config.apiKey,
+    ...(config.headers?.['HTTP-Referer'] ? { httpReferer: config.headers['HTTP-Referer'] } : {}),
+    ...(config.headers?.['X-Title'] ? { xTitle: config.headers['X-Title'] } : {}),
   });
 }
 
 async function listZdrModelsForCurrentUser() {
-  const client = getOpenRouterClient();
-  const headers = getOpenRouterAttributionHeaders();
+  const config = getOpenRouterConfig();
+  const client = getOpenRouterSdkClient();
 
   return await client.models.listForUser(
-    { bearer: getRequiredEnv('OPENROUTER_API_KEY') },
+    { bearer: config.apiKey },
     {
-      ...(headers?.['HTTP-Referer'] ? { httpReferer: headers['HTTP-Referer'] } : {}),
-      ...(headers?.['X-Title'] ? { xTitle: headers['X-Title'] } : {}),
+      ...(config.headers?.['HTTP-Referer'] ? { httpReferer: config.headers['HTTP-Referer'] } : {}),
+      ...(config.headers?.['X-Title'] ? { xTitle: config.headers['X-Title'] } : {}),
     },
   );
 }
@@ -132,17 +126,6 @@ function formatPriceLabel(promptPrice: number | undefined, completionPrice: numb
   }
 
   return parts.join(' | ');
-}
-
-async function requireSiteAdmin(ctx: ActionCtx) {
-  const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) {
-    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
-  }
-
-  if (!deriveIsSiteAdmin(normalizeUserRole((authUser as { role?: string | string[] }).role))) {
-    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
-  }
 }
 
 async function importTopFreeModelsInternal(
@@ -285,12 +268,28 @@ async function importTopPaidModelsInternal(
   };
 }
 
-export const importTopFreeModels = action({
+export const importTopFreeModels = siteAdminAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    await requireSiteAdmin(ctx);
-    return await importTopFreeModelsInternal(ctx);
+    const result = await importTopFreeModelsInternal(ctx);
+
+    await recordSiteAdminAuditEvent(ctx, {
+      actorUserId: ctx.user.authUserId,
+      emitter: 'adminModelImports.importTopFreeModels',
+      eventType: 'ai_model_catalog_imported',
+      outcome: 'success',
+      severity: 'info',
+      sourceSurface: 'admin_model_imports',
+      resourceType: 'ai_model_catalog',
+      metadata: JSON.stringify({
+        catalogType: 'free',
+        modelCount: result.message.match(/\d+/)?.[0] ?? 'unknown',
+        source: 'openrouter',
+      }),
+    });
+
+    return result;
   },
 });
 
@@ -302,12 +301,28 @@ export const importTopFreeModelsForSetup = internalAction({
   },
 });
 
-export const importTopPaidModels = action({
+export const importTopPaidModels = siteAdminAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    await requireSiteAdmin(ctx);
-    return await importTopPaidModelsInternal(ctx);
+    const result = await importTopPaidModelsInternal(ctx);
+
+    await recordSiteAdminAuditEvent(ctx, {
+      actorUserId: ctx.user.authUserId,
+      emitter: 'adminModelImports.importTopPaidModels',
+      eventType: 'ai_model_catalog_imported',
+      outcome: 'success',
+      severity: 'info',
+      sourceSurface: 'admin_model_imports',
+      resourceType: 'ai_model_catalog',
+      metadata: JSON.stringify({
+        catalogType: 'paid',
+        modelCount: result.message.match(/\d+/)?.[0] ?? 'unknown',
+        source: 'openrouter',
+      }),
+    });
+
+    return result;
   },
 });
 

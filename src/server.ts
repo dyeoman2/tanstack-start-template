@@ -61,9 +61,18 @@ const handler = createStartHandler(async ({ request, router, responseHeaders }) 
       'max-age=31536000; includeSubDomains; preload',
     );
   }
-  responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
-  responseHeaders.set('Pragma', 'no-cache');
-  responseHeaders.set('Expires', '0');
+  // Apply strict no-cache headers only to authenticated/API routes;
+  // allow short-lived caching for public marketing pages
+  const url = new URL(request.url);
+  const isPrivateRoute = url.pathname.startsWith('/app') || url.pathname.startsWith('/api');
+
+  if (isPrivateRoute) {
+    responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
+    responseHeaders.set('Pragma', 'no-cache');
+    responseHeaders.set('Expires', '0');
+  } else {
+    responseHeaders.set('Cache-Control', 'public, max-age=0, must-revalidate');
+  }
 
   return defaultRenderHandler({ request, router, responseHeaders });
 });

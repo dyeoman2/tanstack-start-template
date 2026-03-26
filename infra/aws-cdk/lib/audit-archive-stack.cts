@@ -49,6 +49,23 @@ class AuditArchiveStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    // -----------------------------------------------------------------------
+    // S3 Access Logging: who accessed the immutable audit archive.
+    // -----------------------------------------------------------------------
+    const accessLogsBucket = new s3.Bucket(this, 'AuditArchiveAccessLogs', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [
+        {
+          id: 'ExpireOldAccessLogs',
+          expiration: cdk.Duration.days(365),
+        },
+      ],
+      objectOwnership: s3.ObjectOwnership.OBJECT_WRITER,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const archiveBucket = new s3.Bucket(this, 'AuditArchiveBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       bucketKeyEnabled: true,
@@ -62,8 +79,45 @@ class AuditArchiveStack extends cdk.Stack {
       objectLockEnabled: true,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      serverAccessLogsBucket: accessLogsBucket,
+      serverAccessLogsPrefix: 'audit-archive/',
       versioned: true,
     });
+
+    // -----------------------------------------------------------------------
+    // Encryption enforcement: deny puts without KMS encryption or with the
+    // wrong KMS key. Belt-and-suspenders on top of the bucket encryption
+    // default — ensures no misconfigured client can bypass KMS.
+    // -----------------------------------------------------------------------
+    archiveBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject'],
+        conditions: {
+          StringNotEquals: {
+            's3:x-amz-server-side-encryption': 'aws:kms',
+          },
+        },
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        resources: [archiveBucket.arnForObjects('*')],
+      }),
+    );
+    archiveBucket.addToResourcePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject'],
+        conditions: {
+          StringNotEquals: {
+            's3:x-amz-server-side-encryption-aws-kms-key-id': [
+              archiveKey.keyArn,
+              `arn:aws:kms:*:*:alias/${projectSlug}-audit-archive`,
+            ],
+          },
+        },
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        resources: [archiveBucket.arnForObjects('*')],
+      }),
+    );
 
     const archiveRole = new iam.Role(this, 'AuditArchiveRole', {
       assumedBy: new iam.ArnPrincipal(props.trustedPrincipalArn),

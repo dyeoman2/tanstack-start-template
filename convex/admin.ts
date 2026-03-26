@@ -38,6 +38,8 @@ import {
   requestAuditContextValidator,
   resolveAuditRequestContext,
 } from './lib/requestAuditContext';
+import { evaluateStepUpClaim, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
+import { getActiveStepUpClaim } from './stepUp';
 
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
@@ -998,6 +1000,44 @@ export const upsertImportedChatModels = internalMutation({
   },
 });
 
+async function requireModelCatalogStepUp(
+  ctx: Parameters<typeof getActiveStepUpClaim>[0],
+  user: { authUserId: string; authSession: { id?: string; impersonatedBy?: string | null } | null },
+) {
+  if (user.authSession?.impersonatedBy) {
+    throwConvexError('FORBIDDEN', 'Impersonated sessions cannot manage the model catalog.');
+  }
+
+  const sessionId = user.authSession?.id ?? null;
+  const claim =
+    sessionId === null
+      ? null
+      : await getActiveStepUpClaim(ctx, {
+          authUserId: user.authUserId,
+          requirement: STEP_UP_REQUIREMENTS.modelCatalogAdmin,
+          sessionId,
+        });
+
+  if (
+    !evaluateStepUpClaim({
+      claim: claim
+        ? {
+            consumedAt: claim.consumedAt,
+            expiresAt: claim.expiresAt,
+            method: claim.method,
+            requirement: claim.requirement,
+            sessionId: claim.sessionId,
+            verifiedAt: claim.verifiedAt,
+          }
+        : null,
+      requirement: STEP_UP_REQUIREMENTS.modelCatalogAdmin,
+      sessionId,
+    }).satisfied
+  ) {
+    throwConvexError('FORBIDDEN', 'Step-up authentication is required for model catalog changes.');
+  }
+}
+
 export const createChatModel = siteAdminMutation({
   args: {
     modelId: v.string(),
@@ -1014,6 +1054,8 @@ export const createChatModel = siteAdminMutation({
   },
   returns: createdChatModelResultValidator,
   handler: async (ctx, args) => {
+    await requireModelCatalogStepUp(ctx, ctx.user);
+
     const modelId = args.modelId.trim();
     if (!modelId) {
       throwConvexError('VALIDATION', 'Model ID is required.');
@@ -1038,6 +1080,25 @@ export const createChatModel = siteAdminMutation({
 
     const insertedId = await ctx.db.insert('aiModelCatalog', toStoredChatModelCatalogEntry(entry));
 
+    await recordSiteAdminAuditEvent(ctx, {
+      actorUserId: ctx.user.authUserId,
+      emitter: 'admin.model_catalog',
+      eventType: 'ai_model_created',
+      metadata: JSON.stringify({
+        modelId,
+        label: entry.label,
+        access: entry.access,
+        supportsWebSearch: entry.supportsWebSearch ?? false,
+        isActive: entry.isActive,
+      }),
+      outcome: 'success',
+      resourceId: modelId,
+      resourceType: 'ai_model_catalog',
+      severity: 'info',
+      sourceSurface: 'admin.model_catalog',
+      userId: ctx.user.authUserId,
+    });
+
     return {
       success: true,
       message: `Added ${entry.label} to the OpenRouter model catalog.`,
@@ -1053,6 +1114,8 @@ export const updateChatModel = siteAdminMutation({
   },
   returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
+    await requireModelCatalogStepUp(ctx, ctx.user);
+
     const modelId = args.model.modelId.trim();
     if (!modelId) {
       throwConvexError('VALIDATION', 'Model ID is required.');
@@ -1086,7 +1149,34 @@ export const updateChatModel = siteAdminMutation({
       Date.now(),
     );
 
+    const previousAccess = existingModel.access;
+    const previousWebSearch = existingModel.supportsWebSearch ?? false;
+    const previousIsActive = existingModel.isActive;
+
     await ctx.db.patch(existingModel._id, toStoredChatModelCatalogEntry(entry));
+
+    await recordSiteAdminAuditEvent(ctx, {
+      actorUserId: ctx.user.authUserId,
+      emitter: 'admin.model_catalog',
+      eventType: 'ai_model_updated',
+      metadata: JSON.stringify({
+        modelId,
+        previousModelId: args.existingModelId,
+        label: entry.label,
+        access: { previous: previousAccess, current: entry.access },
+        supportsWebSearch: {
+          previous: previousWebSearch,
+          current: entry.supportsWebSearch ?? false,
+        },
+        isActive: { previous: previousIsActive, current: entry.isActive },
+      }),
+      outcome: 'success',
+      resourceId: modelId,
+      resourceType: 'ai_model_catalog',
+      severity: 'info',
+      sourceSurface: 'admin.model_catalog',
+      userId: ctx.user.authUserId,
+    });
 
     return {
       success: true,
@@ -1102,6 +1192,8 @@ export const setChatModelActiveState = siteAdminMutation({
   },
   returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
+    await requireModelCatalogStepUp(ctx, ctx.user);
+
     const existingModel = await ctx.db
       .query('aiModelCatalog')
       .withIndex('by_modelId', (q) => q.eq('modelId', args.modelId))
@@ -1111,9 +1203,28 @@ export const setChatModelActiveState = siteAdminMutation({
       throwConvexError('NOT_FOUND', 'Chat model not found.');
     }
 
+    const previousIsActive = existingModel.isActive;
+
     await ctx.db.patch(existingModel._id, {
       isActive: args.isActive,
       refreshedAt: Date.now(),
+    });
+
+    await recordSiteAdminAuditEvent(ctx, {
+      actorUserId: ctx.user.authUserId,
+      emitter: 'admin.model_catalog',
+      eventType: 'ai_model_active_state_changed',
+      metadata: JSON.stringify({
+        modelId: args.modelId,
+        label: existingModel.label,
+        isActive: { previous: previousIsActive, current: args.isActive },
+      }),
+      outcome: 'success',
+      resourceId: args.modelId,
+      resourceType: 'ai_model_catalog',
+      severity: 'info',
+      sourceSurface: 'admin.model_catalog',
+      userId: ctx.user.authUserId,
     });
 
     return {

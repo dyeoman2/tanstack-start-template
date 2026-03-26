@@ -9,6 +9,7 @@ export const STEP_UP_REQUIREMENTS = {
   sessionAdministration: 'session_administration',
   supportAccessApproval: 'support_access_approval',
   userAdministration: 'user_administration',
+  modelCatalogAdmin: 'model_catalog_admin',
 } as const;
 
 export type StepUpRequirement = (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
@@ -142,6 +143,15 @@ export const STEP_UP_REQUIREMENT_POLICIES = {
     ttlMs: FIVE_MINUTES_MS,
   },
   [STEP_UP_REQUIREMENTS.userAdministration]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.modelCatalogAdmin]: {
     allowedMethods: [
       STEP_UP_METHODS.passkey,
       STEP_UP_METHODS.passwordPlusTotp,

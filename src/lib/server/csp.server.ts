@@ -59,7 +59,7 @@ export function getDocumentCspHeaderName(mode: DocumentCspMode) {
 
 export function buildDocumentContentSecurityPolicy({
   convexOrigin,
-  mode = 'enforce',
+  mode: _mode = 'enforce',
   nonce,
   sentryOrigin,
 }: BuildDocumentContentSecurityPolicyOptions) {
@@ -89,9 +89,7 @@ export function buildDocumentContentSecurityPolicy({
     'upgrade-insecure-requests',
   ];
 
-  if (mode === 'report-only') {
-    directives.push(`report-uri ${CSP_REPORT_URI}`);
-  }
+  directives.push(`report-uri ${CSP_REPORT_URI}`);
 
   return directives.join('; ');
 }

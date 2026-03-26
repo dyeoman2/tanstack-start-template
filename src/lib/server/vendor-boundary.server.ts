@@ -17,7 +17,10 @@ class VendorBoundaryError extends Error {
 }
 
 export function getVendorBoundarySnapshot() {
-  const environment = resolveVendorEnvironment(process.env.NODE_ENV);
+  const environment = resolveVendorEnvironment(
+    process.env.NODE_ENV,
+    process.env.APP_DEPLOYMENT_ENV,
+  );
 
   return Object.entries({
     openrouter: process.env.OPENROUTER_API_KEY,
@@ -44,7 +47,10 @@ export function getVendorBoundarySnapshot() {
 }
 
 export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; vendor: VendorKey }) {
-  const environment = resolveVendorEnvironment(process.env.NODE_ENV);
+  const environment = resolveVendorEnvironment(
+    process.env.NODE_ENV,
+    process.env.APP_DEPLOYMENT_ENV,
+  );
   const policy = getVendorBoundaryPolicy(args.vendor);
   const approved = isVendorApproved({
     vendor: args.vendor,

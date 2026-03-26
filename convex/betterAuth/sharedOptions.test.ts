@@ -472,8 +472,18 @@ describe('createSharedBetterAuthOptions', () => {
 
   it('records account lockout after the configured failed sign-in threshold', async () => {
     const recordAccountLockout = vi.fn(async () => {});
+    const recordFailedSignIn = vi
+      .fn<(_: string) => Promise<{ shouldLock: boolean }>>()
+      .mockResolvedValueOnce({ shouldLock: false })
+      .mockResolvedValueOnce({ shouldLock: false })
+      .mockResolvedValueOnce({ shouldLock: false })
+      .mockResolvedValueOnce({ shouldLock: false })
+      .mockResolvedValueOnce({ shouldLock: true });
+    const clearFailedSignIn = vi.fn(async () => {});
     const options = createSharedBetterAuthOptions({
+      clearFailedSignIn,
       recordAccountLockout,
+      recordFailedSignIn,
       sendInvitationEmail: async () => {},
       sendResetPassword: async () => {},
       sendVerificationEmail: async () => {},
@@ -500,7 +510,9 @@ describe('createSharedBetterAuthOptions', () => {
       } as never);
     }
 
+    expect(recordFailedSignIn).toHaveBeenCalledTimes(5);
     expect(findUserByEmail).toHaveBeenCalledTimes(1);
+    expect(clearFailedSignIn).toHaveBeenCalledTimes(1);
     expect(updateUser).toHaveBeenCalledWith('user_lockout_1', {
       banExpires: expect.any(Number),
       banReason: 'Too many failed sign-in attempts',

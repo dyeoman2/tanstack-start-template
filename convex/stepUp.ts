@@ -284,6 +284,10 @@ export const createCurrentSessionAdministrationChallenge = createCurrentChalleng
 export const createCurrentUserAdministrationChallenge = createCurrentChallengeMutation(
   STEP_UP_REQUIREMENTS.userAdministration,
 );
+export const createCurrentModelCatalogAdminChallenge = createCurrentChallengeMutation(
+  STEP_UP_REQUIREMENTS.modelCatalogAdmin,
+  '/app/admin',
+);
 
 export const prepareCurrentChallenge = mutation({
   args: {

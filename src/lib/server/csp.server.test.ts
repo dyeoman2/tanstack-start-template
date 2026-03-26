@@ -35,7 +35,7 @@ describe('csp.server', () => {
     expect(policy).not.toContain('https: wss:');
   });
 
-  it('adds report-uri only for report-only mode', () => {
+  it('includes report-uri in report-only mode', () => {
     const policy = buildDocumentContentSecurityPolicy({
       mode: 'report-only',
       nonce: 'nonce-value',
@@ -43,6 +43,15 @@ describe('csp.server', () => {
 
     expect(policy).toContain('report-uri /api/csp-report');
     expect(getDocumentCspHeaderName('report-only')).toBe('Content-Security-Policy-Report-Only');
+  });
+
+  it('includes report-uri in enforce mode', () => {
+    const policy = buildDocumentContentSecurityPolicy({
+      mode: 'enforce',
+      nonce: 'nonce-value',
+    });
+
+    expect(policy).toContain('report-uri /api/csp-report');
   });
 
   it('defaults invalid CSP_MODE values to enforce', () => {

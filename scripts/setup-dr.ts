@@ -66,10 +66,6 @@ type SetupContext = {
   backupBucketName: string;
   backendSubdomain: string;
   convexDeployKey?: string;
-  createdAwsAccessKey?: {
-    accessKeyId: string;
-    secretAccessKey: string;
-  };
   domain?: string;
   ecsCpu: string;
   ecsMemoryMiB: string;
@@ -534,6 +530,7 @@ function createDrCommandEnv(context: SetupContext, identity: AwsIdentity): NodeJ
     AWS_DR_PROJECT_SLUG: context.projectSlug,
     AWS_REGION: identity.region,
     CDK_DEFAULT_REGION: identity.region,
+    ...(context.githubRepo ? { AWS_DR_GITHUB_REPO: context.githubRepo } : {}),
     ...(context.domain ? { AWS_DR_DOMAIN: context.domain } : {}),
     ...(context.hostnameStrategy === 'custom-domain'
       ? {
@@ -563,6 +560,9 @@ function persistDrConfig(envPath: string, envContent: string, context: SetupCont
   nextEnvContent = upsertEnvValue(nextEnvContent, 'AWS_DR_STACK_NAME', ecsStackName);
   nextEnvContent = upsertEnvValue(nextEnvContent, 'AWS_DR_ECS_CPU', context.ecsCpu);
   nextEnvContent = upsertEnvValue(nextEnvContent, 'AWS_DR_ECS_MEMORY_MIB', context.ecsMemoryMiB);
+  if (context.githubRepo) {
+    nextEnvContent = upsertEnvValue(nextEnvContent, 'AWS_DR_GITHUB_REPO', context.githubRepo);
+  }
 
   if (context.hostnameStrategy === 'custom-domain' && context.domain) {
     nextEnvContent = upsertEnvValue(nextEnvContent, 'AWS_DR_DOMAIN', context.domain);
@@ -706,51 +706,6 @@ function getDefaultBranch(repo?: string) {
   }
 
   return 'main';
-}
-
-function createIamAccessKey(userName: string, region: string) {
-  const createdKey = parseJsonOutput<{
-    AccessKey?: { AccessKeyId?: string; SecretAccessKey?: string };
-  }>(
-    runCommand('aws', ['iam', 'create-access-key', '--user-name', userName, '--output', 'json'], {
-      env: { AWS_REGION: region },
-    }),
-  );
-
-  return {
-    accessKeyId: createdKey?.AccessKey?.AccessKeyId ?? '',
-    secretAccessKey: createdKey?.AccessKey?.SecretAccessKey ?? '',
-  };
-}
-
-function deleteIamAccessKey(userName: string, accessKeyId: string, region: string) {
-  ensureOk(
-    runCommand(
-      'aws',
-      ['iam', 'delete-access-key', '--user-name', userName, '--access-key-id', accessKeyId],
-      {
-        env: { AWS_REGION: region },
-      },
-    ),
-    `Failed to delete IAM access key ${accessKeyId}`,
-  );
-}
-
-function getStaticAwsCredentialsFromEnv() {
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim() ?? '';
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim() ?? '';
-  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() ?? '';
-  const region = process.env.AWS_REGION?.trim() ?? process.env.AWS_DEFAULT_REGION?.trim() ?? '';
-
-  if (!accessKeyId || !secretAccessKey || sessionToken) {
-    return null;
-  }
-
-  return {
-    accessKeyId,
-    region,
-    secretAccessKey,
-  };
 }
 
 function printSummary(summary: SetupSummary, json: boolean) {
@@ -1278,208 +1233,44 @@ async function main() {
   } else {
     const secretNamesInRepo = getGitHubSecretNames(githubRepo);
 
-    if (!freshBackupOutputs?.DrBackupCiUserName) {
+    // -----------------------------------------------------------------------
+    // Backup workflow: store the OIDC role ARN from the backup stack outputs.
+    // -----------------------------------------------------------------------
+    const backupRoleArn = freshBackupOutputs?.DrBackupOidcRoleArn;
+    if (!backupRoleArn) {
       summary.needsAttention.push(
-        'The DR backup stack did not expose the CI IAM user name needed for GitHub secrets.',
+        'The DR backup stack did not expose DrBackupOidcRoleArn. Ensure the stack was deployed with a githubRepo prop.',
       );
     } else if (awsAuth && identity.region) {
-      const userName = freshBackupOutputs.DrBackupCiUserName;
-      const listedKeys = runCommand(
-        'aws',
-        [
-          'iam',
-          'list-access-keys',
-          '--user-name',
-          userName,
-          '--query',
-          'AccessKeyMetadata[].AccessKeyId',
-          '--output',
-          'json',
-        ],
-        {
-          env: { AWS_REGION: identity.region },
-        },
+      setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_ROLE_ARN', backupRoleArn);
+      setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_REGION', identity.region);
+      setGitHubSecret(
+        githubRepo,
+        'AWS_DR_BACKUP_S3_BUCKET',
+        freshBackupOutputs?.DrBackupBucketName ?? backupBucketName,
       );
-      const existingKeys = parseJsonOutput<string[]>(listedKeys) ?? [];
-      let accessKeyId = '';
-      let secretAccessKey = '';
-
-      if (existingKeys.length === 0) {
-        const shouldCreateKey = flags.yes
-          ? true
-          : await askYesNo(`Create a GitHub Actions access key for IAM user ${userName}?`, true);
-        if (shouldCreateKey) {
-          const createdKey = createIamAccessKey(userName, identity.region);
-          accessKeyId = createdKey.accessKeyId;
-          secretAccessKey = createdKey.secretAccessKey;
-          if (accessKeyId && secretAccessKey) {
-            context.createdAwsAccessKey = { accessKeyId, secretAccessKey };
-            summary.completed.push(`Created a fresh IAM access key for ${userName}.`);
-          }
-        }
-      } else {
-        console.log(`- Existing IAM access keys found for ${userName}: ${existingKeys.join(', ')}`);
-        if (!flags.yes) {
-          const shouldRotateKey = await askYesNo(
-            `Create a fresh GitHub Actions key for ${userName} now?`,
-            true,
-          );
-          if (shouldRotateKey) {
-            if (existingKeys.length >= 2) {
-              const keyToDelete = await askWithDefault(
-                'AWS access key id to delete before creating a new one',
-                existingKeys[0] ?? '',
-              );
-              if (existingKeys.includes(keyToDelete)) {
-                const confirmDelete = await askYesNo(
-                  `Delete IAM access key ${keyToDelete} to free a slot?`,
-                  false,
-                );
-                if (confirmDelete) {
-                  deleteIamAccessKey(userName, keyToDelete, identity.region);
-                  summary.completed.push(`Deleted IAM access key ${keyToDelete} for ${userName}.`);
-                }
-              }
-            }
-
-            const refreshedKeys =
-              parseJsonOutput<string[]>(
-                runCommand(
-                  'aws',
-                  [
-                    'iam',
-                    'list-access-keys',
-                    '--user-name',
-                    userName,
-                    '--query',
-                    'AccessKeyMetadata[].AccessKeyId',
-                    '--output',
-                    'json',
-                  ],
-                  {
-                    env: { AWS_REGION: identity.region },
-                  },
-                ),
-              ) ?? [];
-
-            if (refreshedKeys.length < 2) {
-              const createdKey = createIamAccessKey(userName, identity.region);
-              accessKeyId = createdKey.accessKeyId;
-              secretAccessKey = createdKey.secretAccessKey;
-              if (accessKeyId && secretAccessKey) {
-                context.createdAwsAccessKey = { accessKeyId, secretAccessKey };
-                summary.completed.push(`Created a rotated IAM access key for ${userName}.`);
-              }
-            } else {
-              summary.needsAttention.push(
-                `IAM user ${userName} still has two access keys, so setup could not create a fresh GitHub Actions key automatically.`,
-              );
-            }
-          } else {
-            accessKeyId = await ask('AWS access key id for GitHub Actions (leave empty to skip): ');
-            if (accessKeyId) {
-              secretAccessKey = await ask('AWS secret access key for GitHub Actions: ');
-            }
-          }
-        }
-      }
-
-      if (accessKeyId && secretAccessKey) {
-        setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_ACCESS_KEY_ID', accessKeyId);
-        setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_SECRET_ACCESS_KEY', secretAccessKey);
-        setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_REGION', identity.region);
+      if (freshBackupOutputs?.DrBackupBucketKeyArn) {
         setGitHubSecret(
           githubRepo,
-          'AWS_DR_BACKUP_S3_BUCKET',
-          freshBackupOutputs?.DrBackupBucketName ?? backupBucketName,
-        );
-        if (freshBackupOutputs?.DrBackupBucketKeyArn) {
-          setGitHubSecret(
-            githubRepo,
-            'AWS_DR_BACKUP_KMS_KEY_ARN',
-            freshBackupOutputs.DrBackupBucketKeyArn,
-          );
-        }
-        summary.completed.push('Configured AWS DR backup secrets in GitHub Actions.');
-      } else if (
-        !secretNamesInRepo.has('AWS_DR_BACKUP_ACCESS_KEY_ID') ||
-        !secretNamesInRepo.has('AWS_DR_BACKUP_SECRET_ACCESS_KEY')
-      ) {
-        summary.needsAttention.push(
-          'GitHub Actions still needs AWS DR backup credentials. Rerun dr:setup and provide the key pair, or add the secrets manually.',
+          'AWS_DR_BACKUP_KMS_KEY_ARN',
+          freshBackupOutputs.DrBackupBucketKeyArn,
         );
       }
+      summary.completed.push('Configured AWS DR backup OIDC role ARN in GitHub Actions.');
     }
 
-    let recoveryAccessKeyId = '';
-    let recoverySecretAccessKey = '';
-    let recoveryRegion = identity.region ?? '';
-    const hasRecoverySecrets =
-      secretNamesInRepo.has('AWS_DR_RECOVERY_ACCESS_KEY_ID') &&
-      secretNamesInRepo.has('AWS_DR_RECOVERY_SECRET_ACCESS_KEY');
-
-    if (!hasRecoverySecrets) {
-      const envRecoveryCreds = getStaticAwsCredentialsFromEnv();
-      if (envRecoveryCreds) {
-        recoveryAccessKeyId = envRecoveryCreds.accessKeyId;
-        recoverySecretAccessKey = envRecoveryCreds.secretAccessKey;
-        recoveryRegion = envRecoveryCreds.region || recoveryRegion;
-        summary.completed.push(
-          'Detected static AWS credentials in the current shell that can be stored for the DR recovery workflow.',
-        );
-      } else if (context.createdAwsAccessKey) {
-        if (flags.yes) {
-          summary.warnings.push(
-            'Reusing the newly created DR backup IAM key for the DR recovery workflow because no dedicated recovery key was provided. This is functional but broader separation is recommended.',
-          );
-          recoveryAccessKeyId = context.createdAwsAccessKey.accessKeyId;
-          recoverySecretAccessKey = context.createdAwsAccessKey.secretAccessKey;
-        } else {
-          const reuseBackupForRecovery = await askYesNo(
-            'Reuse the newly created DR backup IAM key for the DR recovery workflow? This works, but separate recovery credentials are recommended.',
-            false,
-          );
-          if (reuseBackupForRecovery) {
-            recoveryAccessKeyId = context.createdAwsAccessKey.accessKeyId;
-            recoverySecretAccessKey = context.createdAwsAccessKey.secretAccessKey;
-            summary.warnings.push(
-              'Configured the DR recovery workflow to reuse the DR backup IAM key. Consider replacing it later with a dedicated recovery principal.',
-            );
-          }
-        }
-      }
-
-      if (!recoveryAccessKeyId && !flags.yes) {
-        console.log(
-          'The DR recovery GitHub Action needs broader AWS credentials than the backup-only workflow.',
-        );
-        console.log(
-          'Provide a long-lived access key pair for the AWS principal you want GitHub Actions to use during DR recovery.',
-        );
-        recoveryAccessKeyId = await ask(
-          'AWS access key id for the DR recovery workflow (leave empty to skip): ',
-        );
-        if (recoveryAccessKeyId) {
-          recoverySecretAccessKey = await ask(
-            'AWS secret access key for the DR recovery workflow: ',
-          );
-          recoveryRegion = await askWithDefault(
-            'AWS region for the DR recovery workflow',
-            recoveryRegion || 'us-west-1',
-          );
-        }
-      }
-
-      if (recoveryAccessKeyId && recoverySecretAccessKey) {
-        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_ACCESS_KEY_ID', recoveryAccessKeyId);
-        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_SECRET_ACCESS_KEY', recoverySecretAccessKey);
-        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_REGION', recoveryRegion || 'us-west-1');
-        summary.completed.push('Configured AWS DR recovery secrets in GitHub Actions.');
-      } else {
-        summary.needsAttention.push(
-          'GitHub Actions still needs AWS DR recovery credentials. Add AWS_DR_RECOVERY_ACCESS_KEY_ID, AWS_DR_RECOVERY_SECRET_ACCESS_KEY, and AWS_DR_RECOVERY_REGION manually or rerun dr:setup with static AWS credentials in the shell.',
-        );
-      }
+    // -----------------------------------------------------------------------
+    // Recovery workflow: store the OIDC role ARN from the backup stack outputs.
+    // -----------------------------------------------------------------------
+    const recoveryRoleArn = freshBackupOutputs?.DrRecoveryOidcRoleArn;
+    if (!recoveryRoleArn) {
+      summary.needsAttention.push(
+        'The DR backup stack did not expose DrRecoveryOidcRoleArn. Ensure the stack was deployed with a githubRepo prop.',
+      );
+    } else if (awsAuth && identity.region) {
+      setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_ROLE_ARN', recoveryRoleArn);
+      setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_REGION', identity.region);
+      summary.completed.push('Configured AWS DR recovery OIDC role ARN in GitHub Actions.');
     }
 
     if (!secretNamesInRepo.has('CONVEX_DEPLOY_KEY')) {

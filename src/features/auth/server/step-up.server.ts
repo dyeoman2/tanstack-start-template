@@ -87,6 +87,13 @@ async function createCurrentChallenge(
           redirectTo: normalizedRedirectTo,
         },
       );
+    case STEP_UP_REQUIREMENTS.modelCatalogAdmin:
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.stepUp.createCurrentModelCatalogAdminChallenge,
+        {
+          redirectTo: normalizedRedirectTo,
+        },
+      );
   }
 }
 
