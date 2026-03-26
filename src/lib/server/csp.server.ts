@@ -7,6 +7,11 @@ export type DocumentCspMode = 'enforce' | 'report-only';
 
 type BuildDocumentContentSecurityPolicyOptions = {
   convexOrigin?: string | null;
+  /**
+   * When true, allows `'unsafe-eval'` in `script-src`. Vite’s dev server relies on `eval()` for HMR
+   * and module transforms; production builds do not need this.
+   */
+  allowUnsafeEval?: boolean;
   mode?: DocumentCspMode;
   nonce: string;
   sentryOrigin?: string | null;
@@ -57,12 +62,25 @@ export function getDocumentCspHeaderName(mode: DocumentCspMode) {
   return mode === 'report-only' ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
 }
 
+function resolveAllowUnsafeEval(
+  explicit: boolean | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (explicit !== undefined) {
+    return explicit;
+  }
+
+  return env.NODE_ENV === 'development';
+}
+
 export function buildDocumentContentSecurityPolicy({
   convexOrigin,
+  allowUnsafeEval: allowUnsafeEvalOption,
   mode: _mode = 'enforce',
   nonce,
   sentryOrigin,
 }: BuildDocumentContentSecurityPolicyOptions) {
+  const allowUnsafeEval = resolveAllowUnsafeEval(allowUnsafeEvalOption);
   const connectSrc = unique([
     "'self'",
     convexOrigin,
@@ -72,13 +90,18 @@ export function buildDocumentContentSecurityPolicy({
 
   const imgSrc = unique(["'self'", 'data:', 'blob:', 'https://www.google.com']);
   const fontSrc = unique(["'self'", 'data:']);
+  const scriptSrcParts = ["'self'", `'nonce-${nonce}'`];
+  if (allowUnsafeEval) {
+    scriptSrcParts.push("'unsafe-eval'");
+  }
+
   const directives = [
     "default-src 'self'",
     "base-uri 'self'",
     "frame-ancestors 'none'",
     "form-action 'self'",
     "object-src 'none'",
-    `script-src 'self' 'nonce-${nonce}'`,
+    `script-src ${scriptSrcParts.join(' ')}`,
     "style-src 'self'",
     // Accepted residual risk: 'unsafe-inline' is required for style-src-attr because Tailwind CSS
     // and shadcn/ui apply inline style attributes (e.g., style="--radix-*") that cannot be nonce-gated.

@@ -450,7 +450,28 @@ async function main() {
       region: awsRegion,
     });
     if (!bootstrapCheck.ok) {
-      throw new Error(bootstrapCheck.detail);
+      const accountId = execSync(
+        `aws sts get-caller-identity --query Account --output text${awsProfile ? ` --profile ${awsProfile}` : ''}`,
+        {
+          env: { ...process.env, AWS_REGION: awsRegion },
+          encoding: 'utf8',
+        },
+      ).trim();
+      const bootstrapTarget = `aws://${accountId}/${awsRegion}`;
+      console.log(`CDK bootstrap is missing for ${bootstrapTarget}.`);
+      const shouldBootstrap = yes ? true : await askYesNo('Run CDK bootstrap now?', true);
+      if (shouldBootstrap) {
+        run('pnpm', ['exec', 'cdk', 'bootstrap', bootstrapTarget], {
+          cwd: infraRoot,
+          env: {
+            ...process.env,
+            AWS_REGION: awsRegion,
+            ...(awsProfile ? { AWS_PROFILE: awsProfile } : {}),
+          },
+        });
+      } else {
+        throw new Error(bootstrapCheck.detail);
+      }
     }
     run('pnpm', ['exec', 'cdk', 'synth', '--app', appPath, stackName], {
       cwd: infraRoot,
@@ -466,7 +487,28 @@ async function main() {
       region: awsRegion,
     });
     if (!bootstrapCheck.ok) {
-      throw new Error(bootstrapCheck.detail);
+      const accountId = execSync(
+        `aws sts get-caller-identity --query Account --output text${awsProfile ? ` --profile ${awsProfile}` : ''}`,
+        {
+          env: { ...process.env, AWS_REGION: awsRegion },
+          encoding: 'utf8',
+        },
+      ).trim();
+      const bootstrapTarget = `aws://${accountId}/${awsRegion}`;
+      console.log(`CDK bootstrap is missing for ${bootstrapTarget}.`);
+      const shouldBootstrap = yes ? true : await askYesNo('Run CDK bootstrap now?', true);
+      if (shouldBootstrap) {
+        run('pnpm', ['exec', 'cdk', 'bootstrap', bootstrapTarget], {
+          cwd: infraRoot,
+          env: {
+            ...process.env,
+            AWS_REGION: awsRegion,
+            ...(awsProfile ? { AWS_PROFILE: awsProfile } : {}),
+          },
+        });
+      } else {
+        throw new Error(bootstrapCheck.detail);
+      }
     }
     run(
       'pnpm',

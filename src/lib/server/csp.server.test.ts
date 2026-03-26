@@ -32,7 +32,17 @@ describe('csp.server', () => {
     expect(policy).toContain("style-src 'self'");
     expect(policy).toContain("style-src-attr 'unsafe-inline'");
     expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(policy).not.toContain("'unsafe-eval'");
     expect(policy).not.toContain('https: wss:');
+  });
+
+  it("adds 'unsafe-eval' for Vite dev when allowUnsafeEval is true", () => {
+    const policy = buildDocumentContentSecurityPolicy({
+      allowUnsafeEval: true,
+      nonce: 'nonce-value',
+    });
+
+    expect(policy).toContain("script-src 'self' 'nonce-nonce-value' 'unsafe-eval'");
   });
 
   it('includes report-uri in report-only mode', () => {

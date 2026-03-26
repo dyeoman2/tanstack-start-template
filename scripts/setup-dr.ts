@@ -1177,9 +1177,20 @@ async function main() {
   summary.completed.push(`Persisted DR defaults into ${DR_ENV_FILE_NAME} for later dr:* commands.`);
 
   if (awsAuth && identity.accountId && identity.region && !cdkBootstrap?.ok) {
-    throw new Error(
-      `CDK bootstrap is not healthy in ${identity.accountId}/${identity.region}. Expected bootstrap bucket ${cdkBootstrap?.bucketName ?? 'unknown'}.\nRun: AWS_PROFILE=${selectedAwsProfile ?? 'default'} AWS_REGION=${identity.region} pnpm exec cdk bootstrap aws://${identity.accountId}/${identity.region}`,
-    );
+    const bootstrapTarget = `aws://${identity.accountId}/${identity.region}`;
+    console.log(`CDK bootstrap is missing for ${bootstrapTarget}.`);
+    const shouldBootstrap = flags.yes ? true : await askYesNo('Run CDK bootstrap now?', true);
+    if (shouldBootstrap) {
+      runInteractive('pnpm', ['exec', 'cdk', 'bootstrap', bootstrapTarget], {
+        AWS_REGION: identity.region,
+        ...(selectedAwsProfile ? { AWS_PROFILE: selectedAwsProfile } : {}),
+      });
+      summary.completed.push(`Ran CDK bootstrap for ${bootstrapTarget}.`);
+    } else {
+      throw new Error(
+        `CDK bootstrap is required before DR infrastructure can be deployed.\nRun: AWS_REGION=${identity.region} pnpm exec cdk bootstrap ${bootstrapTarget}`,
+      );
+    }
   }
 
   printSection('Step 4: Confirm external changes');
