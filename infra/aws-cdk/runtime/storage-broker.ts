@@ -16,7 +16,6 @@ import {
 import { getStorageBrokerRuntimeConfig } from '../../../src/lib/server/storage-service-env';
 import type {
   DocumentParseQueueMessage,
-  StorageDecisionQueueMessage,
   StorageInspectionQueueMessage,
   StorageServiceDeleteObjectRequest,
   StorageServiceDownloadUrlRequest,
@@ -117,7 +116,7 @@ function getAwsConfig() {
 async function enqueueMessage(
   sqs: SQSClient,
   queueUrl: string,
-  payload: DocumentParseQueueMessage | StorageDecisionQueueMessage | StorageInspectionQueueMessage,
+  payload: DocumentParseQueueMessage | StorageInspectionQueueMessage,
 ) {
   await sqs.send(
     new SendMessageCommand({
@@ -240,11 +239,6 @@ export async function handler(event: ApiGatewayEvent) {
     if (path === '/internal/storage/enqueue-inspection') {
       const body = parseJsonBody<StorageInspectionQueueMessage>(event);
       return json(200, await enqueueMessage(sqs, brokerConfig.inspectionQueueUrl, body));
-    }
-
-    if (path === '/internal/storage/enqueue-decision') {
-      const body = parseJsonBody<StorageDecisionQueueMessage>(event);
-      return json(200, await enqueueMessage(sqs, brokerConfig.decisionQueueUrl, body));
     }
 
     if (path === '/internal/storage/enqueue-document-parse') {

@@ -76,6 +76,35 @@ function checkNetlifyHardening(
   return true;
 }
 
+function checkRequiredEnvPresence(
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+  input: {
+    detailLabel: string;
+    envVars: Record<string, string>;
+    key: string;
+    missingStatus: 'fail' | 'warn';
+  },
+) {
+  if ((input.envVars[input.key] ?? '').trim()) {
+    console.log(`✅ ${input.key} present (${input.detailLabel})`);
+    checks.push({
+      check: `${input.key} present (${input.detailLabel})`,
+      status: 'pass',
+    });
+    return true;
+  }
+
+  console.log(
+    `${input.missingStatus === 'fail' ? '❌' : '⚠️ '} ${input.key} missing (${input.detailLabel})`,
+  );
+  checks.push({
+    check: `${input.key} present (${input.detailLabel})`,
+    status: input.missingStatus,
+    detail: `${input.key} missing`,
+  });
+  return input.missingStatus !== 'fail';
+}
+
 function printUsage() {
   console.log('Usage: pnpm run deploy:doctor [-- --prod] [--json]');
   console.log('');
@@ -346,6 +375,13 @@ function main() {
   if (existsSync(envLocal)) {
     console.log('✅ .env.local present');
     checks.push({ check: '.env.local present', status: 'pass' });
+    const envLocalVars = loadEnvFileMap(envLocal);
+    checkRequiredEnvPresence(checks, {
+      detailLabel: '.env.local',
+      envVars: envLocalVars,
+      key: 'AUTH_PROXY_SHARED_SECRET',
+      missingStatus: 'warn',
+    });
   } else {
     console.log('⚠️  .env.local missing — run pnpm run setup:env');
     checks.push({ check: '.env.local present', status: 'warn', detail: '.env.local missing' });
@@ -363,6 +399,12 @@ function main() {
     const prodEnvVars = parseConvexEnvList(convexProdEnvOutput);
     ok =
       checkStorageRuntimeEnv('Convex production', prodEnvVars, checks) &&
+      checkRequiredEnvPresence(checks, {
+        detailLabel: 'Convex production',
+        envVars: prodEnvVars,
+        key: 'AUTH_PROXY_SHARED_SECRET',
+        missingStatus: 'fail',
+      }) &&
       checkAuditArchiveRuntimeEnv('Convex production', prodEnvVars, checks) &&
       ok;
   }

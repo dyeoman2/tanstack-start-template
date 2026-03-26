@@ -25,6 +25,8 @@ export const inspectionReasonValidator = v.union(
   v.literal('checksum_mismatch'),
   v.literal('file_signature_mismatch'),
   v.literal('inspection_error'),
+  v.literal('office_macro_enabled'),
+  v.literal('office_password_protected'),
   v.literal('pdf_active_content'),
   v.literal('pdf_embedded_files'),
   v.literal('pdf_encrypted'),
@@ -82,6 +84,8 @@ export type InspectionReason =
   | 'checksum_mismatch'
   | 'file_signature_mismatch'
   | 'inspection_error'
+  | 'office_macro_enabled'
+  | 'office_password_protected'
   | 'pdf_active_content'
   | 'pdf_embedded_files'
   | 'pdf_encrypted'

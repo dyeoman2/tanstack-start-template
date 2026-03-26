@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AUTH_PROXY_IP_HEADER } from '../../src/lib/server/better-auth/http';
 import {
   AUTH_SESSION_EXPIRES_IN_SECONDS,
   AUTH_SESSION_FRESH_AGE_SECONDS,
@@ -38,6 +39,7 @@ describe('createSharedBetterAuthOptions', () => {
     process.env = {
       ...ORIGINAL_ENV,
       NODE_ENV: 'development',
+      BETTER_AUTH_SECRET: 'test-secret-abcdefghijklmnopqrstuvwxyz',
       BETTER_AUTH_URL: 'http://127.0.0.1:3000',
     };
     delete process.env.VITEST;
@@ -149,6 +151,28 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.session?.cookieCache?.enabled).toBe(false);
   });
 
+  it('trusts only the canonical signed auth proxy ip header', () => {
+    const options = createOptions();
+
+    expect(options.advanced?.ipAddress?.ipAddressHeaders).toEqual([AUTH_PROXY_IP_HEADER]);
+  });
+
+  it('configures Better Auth with versioned secrets when present', () => {
+    process.env.BETTER_AUTH_SECRETS =
+      '2:new-secret-value-with-at-least-32-chars,1:old-secret-value-with-at-least-32-chars';
+
+    const options = createOptions() as {
+      secret?: string;
+      secrets?: Array<{ version: number; value: string }>;
+    };
+
+    expect(options.secret).toBe('new-secret-value-with-at-least-32-chars');
+    expect(options.secrets).toEqual([
+      { version: 2, value: 'new-secret-value-with-at-least-32-chars' },
+      { version: 1, value: 'old-secret-value-with-at-least-32-chars' },
+    ]);
+  });
+
   it('configures trusted origins through the Better Auth runtime callback', () => {
     const options = createOptions();
 
@@ -237,6 +261,59 @@ describe('createSharedBetterAuthOptions', () => {
       body: {
         message: 'Verify your account again before changing your sign-in email address.',
       },
+    });
+  });
+
+  it('passes request metadata into admin step-up challenge callbacks', async () => {
+    const recordAdminStepUpChallenge = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      recordAdminStepUpChallenge,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const beforeHook = options.hooks?.before;
+    if (!beforeHook) {
+      throw new Error('Expected Better Auth before hook to be configured');
+    }
+
+    await expect(
+      beforeHook({
+        body: { id: 'user_2' },
+        context: {
+          session: {
+            session: {
+              id: 'session_1',
+            },
+            user: {
+              id: 'user_1',
+            },
+          },
+        },
+        headers: new Headers({
+          [AUTH_PROXY_IP_HEADER]: '203.0.113.9',
+          'user-agent': 'Vitest',
+          'x-request-id': 'req-123',
+        }),
+        method: 'POST',
+        path: '/admin/get-user',
+      } as never),
+    ).rejects.toMatchObject({
+      body: {
+        message: 'Verify your account again before viewing another user record.',
+      },
+    });
+
+    expect(recordAdminStepUpChallenge).toHaveBeenCalledWith({
+      ipAddress: '203.0.113.9',
+      path: '/admin/get-user',
+      reason: 'Verify your account again before viewing another user record.',
+      requirement: 'user_administration',
+      requestId: 'req-123',
+      resourceId: 'user_2',
+      sessionId: 'session_1',
+      userAgent: 'Vitest',
+      userId: 'user_1',
     });
   });
 
@@ -422,6 +499,54 @@ describe('createSharedBetterAuthOptions', () => {
       enterpriseProtocol: 'oidc',
       enterpriseProviderKey: 'okta',
     });
+  });
+
+  it('finalizes OAuth account state before resolving enterprise session data', async () => {
+    const finalizeOAuthAccountState = vi.fn(async () => {});
+    const resolveEnterpriseAuthSession = vi.fn(async () => null);
+    const options = createSharedBetterAuthOptions({
+      finalizeOAuthAccountState,
+      resolveEnterpriseAuthSession,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      params: {
+        providerId: 'google',
+      },
+      path: '/callback/google',
+    } as never);
+
+    expect(finalizeOAuthAccountState).toHaveBeenCalledWith({
+      providerId: 'google',
+      userId: 'user_1',
+    });
+    expect(resolveEnterpriseAuthSession).toHaveBeenCalledWith({
+      providerId: 'google',
+      userEmail: 'user@example.com',
+      userId: 'user_1',
+    });
+    expect(finalizeOAuthAccountState.mock.invocationCallOrder[0]).toBeLessThan(
+      resolveEnterpriseAuthSession.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it('marks the session as MFA-verified after TOTP verification', async () => {

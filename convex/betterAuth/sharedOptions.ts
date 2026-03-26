@@ -8,7 +8,15 @@ import { admin } from 'better-auth/plugins/admin';
 import { organization } from 'better-auth/plugins/organization';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import {
+  AUTH_PROXY_IP_HEADER,
+  getTrustedClientIp,
+  getTrustedUserAgent,
+} from '../../src/lib/shared/better-auth-http';
+import {
   getBetterAuthTrustedOrigins,
+  getBetterAuthSecretForTooling,
+  getBetterAuthSecret,
+  getBetterAuthSecrets,
   getBetterAuthUrlForTooling,
   getGoogleOAuthCredentials,
   getRequiredBetterAuthUrl,
@@ -76,11 +84,14 @@ type SharedBetterAuthCallbacks = {
     providerKey: 'google-workspace' | 'entra' | 'okta';
   } | null>;
   recordAdminStepUpChallenge?: (input: {
+    ipAddress?: string;
     path: string;
     reason: string;
     requirement: StepUpRequirement;
     resourceId?: string;
+    requestId?: string;
     sessionId?: string;
+    userAgent?: string;
     userId?: string;
   }) => Promise<void>;
   recordStepUpCompletion?: (input: {
@@ -121,6 +132,7 @@ type SharedBetterAuthCallbacks = {
     sessionId: string;
     userId: string;
   }) => Promise<void>;
+  finalizeOAuthAccountState?: (input: { providerId: string; userId: string }) => Promise<void>;
   consumeStepUpClaim?: (input: {
     requirement: StepUpRequirement;
     sessionId: string;
@@ -429,6 +441,29 @@ async function assertStepUpClaimForChangeEmail(
   });
 }
 
+function getHeaderValue(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+  name: string,
+) {
+  return ctx.request?.headers.get(name) ?? ctx.headers?.get(name) ?? undefined;
+}
+
+function normalizeOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function getRequestId(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
+  return normalizeOptionalString(getHeaderValue(ctx, 'x-request-id'));
+}
+
+function getIpAddress(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
+  return getTrustedClientIp(ctx);
+}
+
+function getUserAgent(ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]) {
+  return getTrustedUserAgent(ctx);
+}
+
 async function assertProtectedAdminRouteSession(
   callbacks: Pick<
     SharedBetterAuthCallbacks,
@@ -444,17 +479,23 @@ async function assertProtectedAdminRouteSession(
 
   const currentSession = ctx.context.session?.session;
   const actorUserId = ctx.context.session?.user?.id;
+  const ipAddress = getIpAddress(ctx);
+  const requestId = getRequestId(ctx);
   const resourceId =
     getStringField(ctx.body, routeConfig.resourceField) ??
     getStringField(ctx.query, routeConfig.resourceField);
+  const userAgent = getUserAgent(ctx);
 
   if (currentSession?.impersonatedBy) {
     await callbacks.recordAdminStepUpChallenge?.({
+      ...(ipAddress ? { ipAddress } : {}),
       path: ctx.path,
       reason: 'Impersonated sessions cannot perform privileged admin actions.',
       requirement: routeConfig.requirement,
       resourceId,
+      ...(requestId ? { requestId } : {}),
       sessionId: currentSession.id,
+      ...(userAgent ? { userAgent } : {}),
       userId: actorUserId,
     });
     throw new APIError('FORBIDDEN', {
@@ -475,11 +516,14 @@ async function assertProtectedAdminRouteSession(
   }
 
   await callbacks.recordAdminStepUpChallenge?.({
+    ...(ipAddress ? { ipAddress } : {}),
     path: ctx.path,
     reason: routeConfig.message,
     requirement: routeConfig.requirement,
     resourceId,
+    ...(requestId ? { requestId } : {}),
     sessionId: currentSession?.id,
+    ...(userAgent ? { userAgent } : {}),
     userId: actorUserId,
   });
   throw new APIError('FORBIDDEN', {
@@ -549,6 +593,17 @@ async function handleSessionEnrichmentAfterHook(
     enterpriseProviderKey: null,
     enterpriseProtocol: null,
   };
+
+  if (
+    resolution.authMethod === 'social' &&
+    resolution.providerId &&
+    callbacks.finalizeOAuthAccountState
+  ) {
+    await callbacks.finalizeOAuthAccountState({
+      providerId: resolution.providerId,
+      userId: newSession.user.id,
+    });
+  }
 
   if (
     resolution.authMethod === 'social' &&
@@ -729,10 +784,13 @@ export function createSharedBetterAuthOptions(
   const disableRateLimit = shouldDisableAuthRateLimit();
   const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies(betterAuthUrl) : false;
   const googleOAuthCredentials = includeRuntimeEnvConfig ? getGoogleOAuthCredentials() : null;
+  const betterAuthSecrets = getBetterAuthSecrets();
 
   return {
     appName: process.env.APP_NAME?.trim() || 'TanStack Start Template',
     database: convexAdapter({} as never, {} as never),
+    secret: includeRuntimeEnvConfig ? getBetterAuthSecretForTooling() : getBetterAuthSecret(),
+    ...(betterAuthSecrets ? { secrets: betterAuthSecrets } : {}),
     ...(includeRuntimeEnvConfig
       ? {
           trustedOrigins: (request?: Request) =>
@@ -750,8 +808,9 @@ export function createSharedBetterAuthOptions(
     advanced: {
       useSecureCookies: secureCookies,
       ipAddress: {
-        // Trust only the proxy headers we expect our app platform to normalize.
-        ipAddressHeaders: ['x-forwarded-for'],
+        // Only trust the canonical app-to-Convex proxy header after the auth route
+        // has verified the signed provenance metadata.
+        ipAddressHeaders: [AUTH_PROXY_IP_HEADER],
         ipv6Subnet: 64,
       },
       defaultCookieAttributes: {
@@ -766,6 +825,7 @@ export function createSharedBetterAuthOptions(
         allowDifferentEmails: false,
         enabled: false,
       },
+      // Keep provider tokens encrypted at rest, then prune the unused ones after social sign-in.
       encryptOAuthTokens: true,
       updateAccountOnSignIn: true,
     },
@@ -848,6 +908,8 @@ export function createSharedBetterAuthOptions(
       expiresIn: AUTH_SESSION_EXPIRES_IN_SECONDS,
       updateAge: AUTH_SESSION_UPDATE_AGE_SECONDS,
       freshAge: AUTH_SESSION_FRESH_AGE_SECONDS,
+      // We intentionally keep DB-backed sessions so revocation and admin session tooling reflect
+      // server state immediately, even though that makes active session tokens sensitive DB records.
       storeSessionInDatabase: true,
       disableSessionRefresh: false,
       deferSessionRefresh: false,

@@ -1,8 +1,11 @@
 import { httpRouter } from 'convex/server';
+import { internal } from './_generated/api';
 import { httpAction } from './_generated/server';
-import { authComponent, createAuth } from './auth';
+import { buildTrustedConvexAuthRequest } from '../src/lib/shared/better-auth-http';
+import { createAuth } from './auth';
 import { resend } from './emails';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { parseDocumentResultWebhookPayload } from '../src/lib/shared/storage-webhook-payload';
 import { verifyStorageWebhookSignatureWithSecrets } from '../src/lib/server/storage-webhook-signature';
 import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
@@ -11,8 +14,6 @@ import {
   applyStorageInspectionResult,
   parseStorageInspectionWebhookPayload,
 } from './storageDecision';
-import { applyChatDocumentParseResult } from './agentChatActions';
-import { applyPdfParseDocumentResult } from './pdfParseActions';
 import {
   applyGuardDutyPromotionResult,
   applyGuardDutyFinding,
@@ -31,10 +32,35 @@ type BetterAuthHttpSession = {
   } | null;
 } | null;
 
-authComponent.registerRoutes(
-  http,
-  createAuth as Parameters<typeof authComponent.registerRoutes>[1],
-);
+http.route({
+  path: '/.well-known/openid-configuration',
+  method: 'GET',
+  handler: httpAction(async () => {
+    return Response.redirect(
+      `${process.env.CONVEX_SITE_URL}/api/auth/convex/.well-known/openid-configuration`,
+    );
+  }),
+});
+
+http.route({
+  pathPrefix: '/api/auth/',
+  method: 'GET',
+  handler: httpAction(async (ctx, request) => {
+    const auth = createAuth(ctx);
+    const trustedRequest = await buildTrustedConvexAuthRequest(request);
+    return await auth.handler(trustedRequest);
+  }),
+});
+
+http.route({
+  pathPrefix: '/api/auth/',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    const auth = createAuth(ctx);
+    const trustedRequest = await buildTrustedConvexAuthRequest(request);
+    return await auth.handler(trustedRequest);
+  }),
+});
 
 // Health check endpoint
 http.route({
@@ -153,21 +179,25 @@ http.route({
       );
     }
 
-    const parsedPayload = JSON.parse(payload) as {
-      errorMessage?: string;
-      imageCount?: number;
-      pageCount?: number;
-      parseKind: 'chat_document_extract' | 'pdf_parse';
-      parserVersion?: string;
-      resultContentType?: string;
-      resultKey?: string;
-      status: 'FAILED' | 'SUCCEEDED';
-      storageId: string;
-    };
+    let parsedPayload: ReturnType<typeof parseDocumentResultWebhookPayload>;
+    try {
+      parsedPayload = parseDocumentResultWebhookPayload(payload);
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : 'Document parse callback payload is malformed.',
+        { status: 400 },
+      );
+    }
     const result =
       parsedPayload.parseKind === 'pdf_parse'
-        ? await applyPdfParseDocumentResult(ctx, parsedPayload)
-        : await applyChatDocumentParseResult(ctx, parsedPayload);
+        ? await ctx.runAction(
+            internal.pdfParseActions.applyPdfParseDocumentResultInternal,
+            parsedPayload,
+          )
+        : await ctx.runAction(
+            internal.agentChatActions.applyChatDocumentParseResultInternal,
+            parsedPayload,
+          );
 
     return Response.json(result, { status: 200 });
   }),
@@ -181,7 +211,6 @@ http.route({
     const ticketId = url.searchParams.get('ticket');
     const expiresAtParam = url.searchParams.get('exp');
     const signature = url.searchParams.get('sig');
-    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
     const userAgent = request.headers.get('user-agent');
 
     if (!expiresAtParam || !signature || !ticketId) {
@@ -211,7 +240,7 @@ http.route({
         authenticatedUserId,
         errorMessage: 'Authentication required to redeem a file access ticket.',
         expiresAt,
-        requestIpAddress: ipAddress,
+        requestIpAddress: null,
         requestUserAgent: userAgent,
         ticketId,
       }).catch(() => undefined);
@@ -226,7 +255,7 @@ http.route({
         authenticatedSessionId,
         authenticatedUserId,
         expiresAt,
-        requestIpAddress: ipAddress,
+        requestIpAddress: null,
         requestUserAgent: userAgent,
         signature,
         ticketId,
@@ -239,7 +268,7 @@ http.route({
         errorMessage:
           error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
         expiresAt,
-        requestIpAddress: ipAddress,
+        requestIpAddress: null,
         requestUserAgent: userAgent,
         ticketId,
       }).catch(() => undefined);

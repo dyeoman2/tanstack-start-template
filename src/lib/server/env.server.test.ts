@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   getAppDeploymentEnv,
+  getAuthProxySharedSecret,
   getAuditArchiveRuntimeConfig,
   getBetterAuthAllowedHosts,
   getBetterAuthSecret,
+  getBetterAuthSecrets,
   getBetterAuthTrustedOrigins,
   getBetterAuthUrlForTooling,
   getStorageRuntimeConfig,
@@ -144,17 +146,54 @@ describe('Better Auth env helpers', () => {
     process.env.BETTER_AUTH_SECRET = 'short-secret';
 
     expect(() => getBetterAuthSecret()).toThrow(
-      'BETTER_AUTH_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
+      'BETTER_AUTH_SECRET must use secret values at least 32 characters long. Generate one with: openssl rand -base64 32',
+    );
+  });
+
+  it('requires a strong auth proxy shared secret outside development and test', () => {
+    process.env.APP_DEPLOYMENT_ENV = 'production';
+    process.env.AUTH_PROXY_SHARED_SECRET = 'short-secret';
+
+    expect(() => getAuthProxySharedSecret()).toThrow(
+      'AUTH_PROXY_SHARED_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
+    );
+
+    delete process.env.AUTH_PROXY_SHARED_SECRET;
+
+    expect(() => getAuthProxySharedSecret()).toThrow(
+      'AUTH_PROXY_SHARED_SECRET environment variable is required for trusted auth proxy signing.',
     );
   });
 
   it('uses deterministic Better Auth test fallbacks when env is unset in tests', () => {
     process.env.NODE_ENV = 'test';
     delete process.env.BETTER_AUTH_SECRET;
+    delete process.env.AUTH_PROXY_SHARED_SECRET;
     delete process.env.BETTER_AUTH_URL;
 
     expect(getBetterAuthSecret()).toContain('test-better-auth-secret');
+    expect(getAuthProxySharedSecret()).toContain('test-auth-proxy-shared-secret');
     expect(getRequiredBetterAuthUrl()).toBe('http://127.0.0.1:3000');
+  });
+
+  it('prefers the current versioned Better Auth secret when BETTER_AUTH_SECRETS is set', () => {
+    process.env.BETTER_AUTH_SECRETS =
+      '2:new-secret-value-with-at-least-32-chars,1:old-secret-value-with-at-least-32-chars';
+    process.env.BETTER_AUTH_SECRET = 'legacy-secret-value-with-at-least-32-chars';
+
+    expect(getBetterAuthSecret()).toBe('new-secret-value-with-at-least-32-chars');
+    expect(getBetterAuthSecrets()).toEqual([
+      { version: 2, value: 'new-secret-value-with-at-least-32-chars' },
+      { version: 1, value: 'old-secret-value-with-at-least-32-chars' },
+    ]);
+  });
+
+  it('rejects malformed BETTER_AUTH_SECRETS entries', () => {
+    process.env.BETTER_AUTH_SECRETS = 'not-versioned';
+
+    expect(() => getBetterAuthSecrets()).toThrow(
+      'BETTER_AUTH_SECRETS must use version:value entries, for example "2:new-secret,1:old-secret".',
+    );
   });
 
   it('uses secure cookies only for https site urls', () => {

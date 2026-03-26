@@ -3,7 +3,13 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
+import { resolveRequestAuditContext } from '~/lib/server/request-audit-context';
 import { normalizeOrganizationSlug } from '~/features/organizations/lib/organization-slug';
+import {
+  organizationAuditSearchSchema,
+  organizationDirectorySearchSchema,
+} from '~/features/organizations/lib/organization-management';
 import {
   cancelBetterAuthOrganizationInvitation,
   checkBetterAuthOrganizationSlug,
@@ -107,6 +113,44 @@ const organizationSupportAccessGrantRevocationSchema = z.object({
   grantId: z.string().min(1),
   reason: z.string().trim().max(500).nullable().optional(),
 });
+
+const organizationLegalHoldApplySchema = z.object({
+  organizationId: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+});
+
+const organizationLegalHoldReleaseSchema = z.object({
+  organizationId: z.string().min(1),
+});
+
+const organizationAuditExportSchema = organizationAuditSearchSchema
+  .pick({
+    sortBy: true,
+    sortOrder: true,
+    preset: true,
+    eventType: true,
+    search: true,
+    startDate: true,
+    endDate: true,
+    failuresOnly: true,
+  })
+  .extend({
+    slug: z.string().min(1),
+  });
+
+const organizationDirectoryExportSchema = organizationDirectorySearchSchema
+  .pick({
+    sortBy: true,
+    sortOrder: true,
+    secondarySortBy: true,
+    secondarySortOrder: true,
+    search: true,
+    kind: true,
+  })
+  .extend({
+    asOf: z.number().int().positive(),
+    slug: z.string().min(1),
+  });
 
 const organizationBulkActionSchema = z.object({
   organizationId: z.string().min(1),
@@ -360,10 +404,14 @@ export const updateOrganizationPoliciesServerFn = createServerFn({ method: 'POST
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       return await convexAuthReactStart.fetchAuthMutation(
         api.organizationManagement.updateOrganizationPolicies,
-        data,
+        {
+          ...data,
+          requestContext,
+        },
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization policies');
@@ -375,10 +423,14 @@ export const createOrganizationSupportAccessGrantServerFn = createServerFn({ met
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       return await convexAuthReactStart.fetchAuthMutation(
         api.organizationManagement.createOrganizationSupportAccessGrant,
-        data,
+        {
+          ...data,
+          requestContext,
+        },
       );
     } catch (error) {
       throw handleServerError(error, 'Create support access grant');
@@ -390,13 +442,47 @@ export const revokeOrganizationSupportAccessGrantServerFn = createServerFn({ met
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       return await convexAuthReactStart.fetchAuthMutation(
         api.organizationManagement.revokeOrganizationSupportAccessGrant,
-        data,
+        {
+          ...data,
+          requestContext,
+        },
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke support access grant');
+    }
+  });
+
+export const applyOrganizationLegalHoldServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationLegalHoldApplySchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.applyOrganizationLegalHold,
+        data,
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Apply organization legal hold');
+    }
+  });
+
+export const releaseOrganizationLegalHoldServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationLegalHoldReleaseSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.releaseOrganizationLegalHold,
+        data,
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Release organization legal hold');
     }
   });
 
@@ -433,6 +519,45 @@ export const deleteOrganizationScimProviderServerFn = createServerFn({ method: '
       );
     } catch (error) {
       throw handleServerError(error, 'Delete organization SCIM provider');
+    }
+  });
+
+export const exportOrganizationAuditCsvServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationAuditExportSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+
+      return await convexAuthReactStart.fetchAuthAction(
+        api.organizationManagement.exportOrganizationAuditCsv,
+        {
+          ...data,
+          eventType: data.eventType as never,
+          requestContext,
+        },
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Export organization audit log');
+    }
+  });
+
+export const exportOrganizationDirectoryCsvServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationDirectoryExportSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+
+      return await convexAuthReactStart.fetchAuthAction(
+        api.organizationManagement.exportOrganizationDirectoryCsv,
+        {
+          ...data,
+          requestContext,
+        },
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Export organization directory');
     }
   });
 

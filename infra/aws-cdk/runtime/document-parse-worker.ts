@@ -1,11 +1,16 @@
 'use node';
 
+import { createHash } from 'node:crypto';
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import type { ParseResult } from 'papaparse';
 import { getDocumentParserWorkerRuntimeConfig } from '../../../src/lib/server/storage-service-env';
 import { parsePdfBlob } from '../../../src/lib/server/pdf-parse.server';
 import { createStorageWebhookSignature } from '../../../src/lib/server/storage-webhook-signature';
-import type { DocumentParseQueueMessage } from '../../../src/lib/shared/storage-service-contract';
+import {
+  buildDocumentParseResultStagingKey,
+  getDocumentParseResultContentType,
+  type DocumentParseQueueMessage,
+} from '../../../src/lib/shared/storage-service-contract';
 
 type SqsEvent = {
   Records?: Array<{
@@ -63,7 +68,7 @@ async function readObjectBlob(client: S3Client, bucket: string, key: string, mim
 }
 
 async function parseChatDocument(blob: Blob, fileName: string, mimeType: string) {
-  const normalizedMimeType = mimeType.toLowerCase();
+  const normalizedMimeType = mimeType.toLowerCase().split(';', 1)[0] ?? '';
   const normalizedFileName = fileName.toLowerCase();
 
   if (normalizedMimeType === 'application/pdf' || normalizedFileName.endsWith('.pdf')) {
@@ -90,7 +95,11 @@ async function parseChatDocument(blob: Blob, fileName: string, mimeType: string)
     });
   }
 
-  return await blob.text();
+  if (normalizedMimeType === 'text/plain' || normalizedFileName.endsWith('.txt')) {
+    return await blob.text();
+  }
+
+  throw new Error('Unsupported document type for chat extraction.');
 }
 
 async function postSignedCallback(args: {
@@ -116,6 +125,10 @@ async function postSignedCallback(args: {
   }
 }
 
+function sha256Hex(value: string) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 export async function handler(event: SqsEvent) {
   const config = getDocumentParserWorkerRuntimeConfig();
   const client = new S3Client({ region: config.awsRegion });
@@ -137,15 +150,24 @@ export async function handler(event: SqsEvent) {
 
       if (payload.parseKind === 'pdf_parse') {
         const parsed = await parsePdfBlob(blob);
-        const resultKey = `${config.stagingPrefix.replace(/\/?$/, '/')}${payload.storageId}.json`;
         const body = JSON.stringify(parsed);
+        const resultKey = buildDocumentParseResultStagingKey(
+          config.stagingPrefix,
+          payload.parseKind,
+          payload.storageId,
+        );
+        const resultContentType = getDocumentParseResultContentType(payload.parseKind);
+        const resultSizeBytes = Buffer.byteLength(body);
+        if (resultSizeBytes > config.documentParseJsonResultMaxBytes) {
+          throw new Error('Parsed PDF result exceeded the maximum allowed size.');
+        }
         await client.send(
           new PutObjectCommand({
             Body: body,
-            Bucket: config.storageBuckets.clean.bucket,
-            ContentType: 'application/json',
+            Bucket: config.storageBuckets.quarantine.bucket,
+            ContentType: resultContentType,
             Key: resultKey,
-            SSEKMSKeyId: config.storageBuckets.clean.kmsKeyArn,
+            SSEKMSKeyId: config.storageBuckets.quarantine.kmsKeyArn,
             ServerSideEncryption: 'aws:kms',
           }),
         );
@@ -159,8 +181,10 @@ export async function handler(event: SqsEvent) {
             imageCount: parsed.images.length,
             pageCount: parsed.pages,
             parserVersion: 'document-parse-worker-v1',
-            resultContentType: 'application/json',
+            resultChecksumSha256: sha256Hex(body),
+            resultContentType,
             resultKey,
+            resultSizeBytes,
             status: 'SUCCEEDED',
           },
           secret: config.callbackSecret,
@@ -169,14 +193,23 @@ export async function handler(event: SqsEvent) {
       }
 
       const extractedText = await parseChatDocument(blob, payload.fileName, payload.mimeType);
-      const resultKey = `${config.stagingPrefix.replace(/\/?$/, '/')}${payload.storageId}.txt`;
+      const resultKey = buildDocumentParseResultStagingKey(
+        config.stagingPrefix,
+        payload.parseKind,
+        payload.storageId,
+      );
+      const resultContentType = getDocumentParseResultContentType(payload.parseKind);
+      const resultSizeBytes = Buffer.byteLength(extractedText);
+      if (resultSizeBytes > config.documentParseTextResultMaxBytes) {
+        throw new Error('Extracted document text exceeded the maximum allowed size.');
+      }
       await client.send(
         new PutObjectCommand({
           Body: extractedText,
-          Bucket: config.storageBuckets.clean.bucket,
-          ContentType: 'text/plain',
+          Bucket: config.storageBuckets.quarantine.bucket,
+          ContentType: resultContentType,
           Key: resultKey,
-          SSEKMSKeyId: config.storageBuckets.clean.kmsKeyArn,
+          SSEKMSKeyId: config.storageBuckets.quarantine.kmsKeyArn,
           ServerSideEncryption: 'aws:kms',
         }),
       );
@@ -188,8 +221,10 @@ export async function handler(event: SqsEvent) {
           parseKind: payload.parseKind,
           storageId: payload.storageId,
           parserVersion: 'document-parse-worker-v1',
-          resultContentType: 'text/plain',
+          resultChecksumSha256: sha256Hex(extractedText),
+          resultContentType,
           resultKey,
+          resultSizeBytes,
           status: 'SUCCEEDED',
         },
         secret: config.callbackSecret,

@@ -19,6 +19,14 @@ startxref
 %%EOF`);
 }
 
+function makeOoxmlPackage(entries: string[]) {
+  return new Uint8Array([0x50, 0x4b, 0x03, 0x04, ...makeBytes(entries.join('\n'))]);
+}
+
+function makeOleCompoundDocument(extra = '') {
+  return new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, ...makeBytes(extra)]);
+}
+
 describe('inspectStorageUploadBytes', () => {
   it('passes a benign PDF', async () => {
     const result = await inspectStorageUploadBytes({
@@ -110,14 +118,78 @@ describe('inspectStorageUploadBytes', () => {
   it('rejects xlsx documents as unsupported', async () => {
     const result = await inspectStorageUploadBytes({
       allowedKinds: ['document'],
-      bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+      bytes: makeOoxmlPackage(['[Content_Types].xml', 'xl/workbook.xml']),
       fileName: 'report.xlsx',
       maxBytes: 1024,
       mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
 
+    expect(result.status).toBe('PASSED');
+  });
+
+  it('rejects macro-enabled OOXML documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeOoxmlPackage(['[Content_Types].xml', 'word/document.xml', 'word/vbaProject.bin']),
+      fileName: 'report.docm',
+      maxBytes: 1024,
+      mimeType: 'application/vnd.ms-word.document.macroEnabled.12',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('office_macro_enabled');
+  });
+
+  it('rejects password-protected OOXML documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeOoxmlPackage(['[Content_Types].xml', 'word/document.xml', 'EncryptionInfo']),
+      fileName: 'report.docx',
+      maxBytes: 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('office_password_protected');
+  });
+
+  it('rejects legacy OLE Office documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeOleCompoundDocument('WordDocument'),
+      fileName: 'report.doc',
+      maxBytes: 1024,
+      mimeType: 'application/msword',
+    });
+
     expect(result.status).toBe('REJECTED');
     expect(result.reason).toBe('unsupported_type');
+  });
+
+  it('rejects macro-enabled OLE Office documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeOleCompoundDocument('Macros VBA _VBA_PROJECT'),
+      fileName: 'report.xls',
+      maxBytes: 1024,
+      mimeType: 'application/vnd.ms-excel',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('office_macro_enabled');
+  });
+
+  it('rejects password-protected OLE Office documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeOleCompoundDocument('EncryptedPackage EncryptionInfo'),
+      fileName: 'report.doc',
+      maxBytes: 1024,
+      mimeType: 'application/msword',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('office_password_protected');
   });
 
   it.each([

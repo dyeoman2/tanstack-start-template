@@ -30,7 +30,8 @@ import {
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
-import { deleteStorageObject, enqueueDocumentParseTask, getCleanObject } from './lib/storageS3';
+import { enqueueDocumentParseTask, getCleanObject } from './lib/storageS3';
+import { chooseEarlierPurgeEligibleAt, getTemporaryArtifactPurgeEligibleAt } from './lib/retention';
 import {
   deleteStoredFileWithMode,
   finalizeUploadWithMode,
@@ -38,6 +39,10 @@ import {
   storeDerivedFileWithMode,
 } from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
+import {
+  deleteStagedDocumentParseResult,
+  validateDocumentParseResult,
+} from './documentParseResults';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -790,6 +795,16 @@ export const createChatAttachmentFromUpload = action({
     });
     const kind = validatedAttachment.kind;
     const now = Date.now();
+    const organizationPolicies = (await ctx.runQuery(
+      internal.organizationManagement.getOrganizationPoliciesInternal,
+      {
+        organizationId,
+      },
+    )) as { dataRetentionDays: number };
+    const temporaryArtifactPurgeEligibleAt = getTemporaryArtifactPurgeEligibleAt({
+      createdAt: now,
+      dataRetentionDays: organizationPolicies.dataRetentionDays,
+    });
     const initialSummary = buildAttachmentPromptSummary({
       kind,
       name: validatedAttachment.normalizedName,
@@ -871,7 +886,10 @@ export const createChatAttachmentFromUpload = action({
         patch: {
           errorMessage:
             inspectionResult.details ?? 'Attachment quarantined during file inspection.',
-          purgeEligibleAt: quarantineUntil,
+          purgeEligibleAt: chooseEarlierPurgeEligibleAt(
+            temporaryArtifactPurgeEligibleAt,
+            quarantineUntil,
+          ),
           status: 'quarantined',
           updatedAt: Date.now(),
         },
@@ -951,6 +969,14 @@ export const createChatAttachmentFromUpload = action({
         severity: 'info',
         sourceSurface: 'chat.attachment_inspection',
         userId,
+      });
+
+      await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+        attachmentId,
+        patch: {
+          purgeEligibleAt: temporaryArtifactPurgeEligibleAt,
+          updatedAt: Date.now(),
+        },
       });
 
       await finalizeUploadWithMode(ctx, {
@@ -1111,6 +1137,7 @@ export const processPendingChatAttachmentInternal = internalAction({
           extractedTextStorageId: null,
           agentFileId: stored.file.fileId,
           errorMessage: null,
+          purgeEligibleAt: attachment.purgeEligibleAt ?? null,
           promptSummary: buildAttachmentPromptSummary({
             kind: attachment.kind,
             name: attachment.name,
@@ -1139,7 +1166,11 @@ export async function applyChatDocumentParseResult(
   ctx: ActionCtx,
   args: {
     errorMessage?: string;
+    parserVersion: string;
+    resultChecksumSha256?: string;
+    resultContentType?: string;
     resultKey?: string;
+    resultSizeBytes?: number;
     status: 'FAILED' | 'SUCCEEDED';
     storageId: string;
   },
@@ -1166,48 +1197,128 @@ export async function applyChatDocumentParseResult(
   if (!args.resultKey) {
     throw new ConvexError('Document parse callback is missing the staged result key.');
   }
-
-  const stagedResult = await getCleanObject({ key: args.resultKey });
-  const extractedText = await stagedResult.Body.text();
-  const derivedTextFile = await storeDerivedFileWithMode(ctx, {
-    blob: stagedResult.Body,
-    fileName: `${attachment.name}.extracted.txt`,
-    mimeType: 'text/plain',
-    organizationId: attachment.organizationId,
-    parentStorageId: attachment.storageId,
-    sourceId: attachment._id,
-    sourceType: 'chat_attachment_extracted_text',
-  });
-
-  await deleteStorageObject({
-    bucketKind: 'clean',
-    key: args.resultKey,
-  });
-
-  if (attachment.extractedTextStorageId) {
-    await deleteStoredFileWithMode(ctx, {
-      storageId: attachment.extractedTextStorageId,
-    });
+  if (!args.resultContentType || !args.resultChecksumSha256 || args.resultSizeBytes === undefined) {
+    throw new ConvexError('Document parse callback is missing required staged result metadata.');
   }
 
-  await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
-    attachmentId: attachment._id,
-    patch: {
-      extractedTextStorageId: derivedTextFile.storageId,
-      agentFileId: null,
-      errorMessage: null,
-      promptSummary: buildAttachmentPromptSummary({
-        kind: attachment.kind,
-        name: attachment.name,
-        text: clipDocumentPromptText(extractedText),
-      }),
-      status: 'ready',
-      updatedAt: Date.now(),
+  const organizationPolicies = (await ctx.runQuery(
+    internal.organizationManagement.getOrganizationPoliciesInternal,
+    {
+      organizationId: attachment.organizationId,
     },
-  });
+  )) as { dataRetentionDays: number };
+  const extractedTextPurgeEligibleAt = chooseEarlierPurgeEligibleAt(
+    attachment.purgeEligibleAt,
+    getTemporaryArtifactPurgeEligibleAt({
+      createdAt: Date.now(),
+      dataRetentionDays: organizationPolicies.dataRetentionDays,
+    }),
+  );
+  try {
+    const validatedResult = await validateDocumentParseResult({
+      parseKind: 'chat_document_extract',
+      resultChecksumSha256: args.resultChecksumSha256,
+      resultContentType: args.resultContentType,
+      resultKey: args.resultKey,
+      resultSizeBytes: args.resultSizeBytes,
+      storageId: args.storageId,
+    });
+    if (validatedResult.parseKind !== 'chat_document_extract') {
+      throw new Error('Document parse result kind did not match the chat attachment workflow.');
+    }
+    const derivedTextFile = await storeDerivedFileWithMode(ctx, {
+      blob: validatedResult.blob,
+      fileName: `${attachment.name}.extracted.txt`,
+      mimeType: args.resultContentType,
+      organizationId: attachment.organizationId,
+      parentStorageId: attachment.storageId,
+      sourceId: attachment._id,
+      sourceType: 'chat_attachment_extracted_text',
+      stagedQuarantineKey: validatedResult.resultKey,
+      trustLevel: 'validated_clean',
+    });
 
-  return { applied: true, reason: 'ok' as const };
+    if (attachment.extractedTextStorageId) {
+      await deleteStoredFileWithMode(ctx, {
+        storageId: attachment.extractedTextStorageId,
+      });
+    }
+
+    await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+      attachmentId: attachment._id,
+      patch: {
+        extractedTextStorageId: derivedTextFile.storageId,
+        agentFileId: null,
+        errorMessage: null,
+        purgeEligibleAt: extractedTextPurgeEligibleAt ?? attachment.purgeEligibleAt,
+        promptSummary: buildAttachmentPromptSummary({
+          kind: attachment.kind,
+          name: attachment.name,
+          text: clipDocumentPromptText(validatedResult.text),
+        }),
+        status: 'ready',
+        updatedAt: Date.now(),
+      },
+    });
+
+    return { applied: true, reason: 'ok' as const };
+  } catch (error) {
+    await deleteStagedDocumentParseResult({
+      parseKind: 'chat_document_extract',
+      storageId: args.storageId,
+    });
+    await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+      attachmentId: attachment._id,
+      patch: {
+        errorMessage:
+          error instanceof Error ? error.message : 'Failed to validate extracted attachment text.',
+        status: 'error',
+        updatedAt: Date.now(),
+      },
+    });
+    await recordSystemAuditEvent(ctx, {
+      emitter: 'chat.attachment.worker',
+      eventType: 'chat_attachment_scan_failed',
+      initiatedByUserId: attachment.userId,
+      metadata: JSON.stringify({
+        error:
+          error instanceof Error ? error.message : 'Failed to validate extracted attachment text.',
+        parserVersion: args.parserVersion,
+        storageId: args.storageId,
+      }),
+      organizationId: attachment.organizationId,
+      outcome: 'failure',
+      resourceId: attachment.storageId,
+      resourceLabel: attachment.name,
+      resourceType: 'chat_attachment',
+      severity: 'warning',
+      sourceSurface: 'chat.attachment_parse',
+      userId: attachment.userId,
+    });
+
+    return { applied: true, reason: 'failed' as const };
+  }
 }
+
+export const applyChatDocumentParseResultInternal = internalAction({
+  args: {
+    errorMessage: v.optional(v.string()),
+    parserVersion: v.string(),
+    resultChecksumSha256: v.optional(v.string()),
+    resultContentType: v.optional(v.string()),
+    resultKey: v.optional(v.string()),
+    resultSizeBytes: v.optional(v.number()),
+    status: v.union(v.literal('FAILED'), v.literal('SUCCEEDED')),
+    storageId: v.string(),
+  },
+  returns: v.object({
+    applied: v.boolean(),
+    reason: v.union(v.literal('failed'), v.literal('missing_attachment'), v.literal('ok')),
+  }),
+  handler: async (ctx, args) => {
+    return await applyChatDocumentParseResult(ctx, args);
+  },
+});
 
 export const runChatGenerationInternal = internalAction({
   args: {

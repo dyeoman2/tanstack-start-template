@@ -42,7 +42,8 @@ export function OrganizationPoliciesCard({
         <CardTitle>Access policies</CardTitle>
         <CardDescription>
           Control who can invite, whether invites must use verified domains, and member caps.
-          Regulated security controls are enforced globally.
+          Regulated security controls are enforced globally. Temporary artifact retention is
+          enforced separately and does not auto-delete primary chats or messages in v1.
         </CardDescription>
       </CardHeader>
       <div className="space-y-4 px-6 pb-6">

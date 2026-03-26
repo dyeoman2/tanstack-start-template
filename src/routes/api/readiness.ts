@@ -1,14 +1,23 @@
 import { createFileRoute } from '@tanstack/react-router';
+import {
+  createHiddenObservabilityResponse,
+  isPrivateObservabilityRequestAuthorized,
+} from '~/lib/server/private-observability.server';
 
 export const Route = createFileRoute('/api/readiness')({
   server: {
     handlers: {
-      GET: async () =>
-        Response.json({
+      GET: async ({ request }) => {
+        if (!isPrivateObservabilityRequestAuthorized(request)) {
+          return createHiddenObservabilityResponse();
+        }
+
+        return Response.json({
           ready: true,
           service: 'tanstack-start-template',
           timestamp: new Date().toISOString(),
-        }),
+        });
+      },
     },
   },
 });

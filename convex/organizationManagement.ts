@@ -85,6 +85,7 @@ import {
   organizationEnterpriseAuthResolutionResultValidator,
   organizationEnterpriseProviderKeyValidator,
   organizationInvitePolicyValidator,
+  organizationLegalHoldSummaryValidator,
   organizationMemberStatusValidator,
   organizationPermissionValidator,
   organizationSettingsValidator,
@@ -96,6 +97,11 @@ import {
   resolveOrganizationEnterpriseAccess,
   type OrganizationSupportAccessScope,
 } from './lib/enterpriseAccess';
+import { ORGANIZATION_LEGAL_HOLD_STATUS_VALUES, RETENTION_EVENT_TYPES } from './lib/retention';
+import {
+  requestAuditContextValidator,
+  resolveAuditRequestContext,
+} from './lib/requestAuditContext';
 import { recordUserAuditEvent } from './lib/auditEmitters';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
@@ -206,6 +212,17 @@ type OrganizationSupportAccessGrantRow = {
   siteAdminUserId: string;
   ticketId: string;
 };
+type OrganizationLegalHoldStatus = (typeof ORGANIZATION_LEGAL_HOLD_STATUS_VALUES)[number];
+type OrganizationLegalHoldRow = {
+  id: Id<'organizationLegalHolds'>;
+  openedAt: number;
+  openedByUserId: string;
+  organizationId: string;
+  reason: string;
+  releasedAt: number | null;
+  releasedByUserId: string | null;
+  status: OrganizationLegalHoldStatus;
+};
 type OrganizationSupportAccessSiteAdminOption = {
   authUserId: string;
   email: string;
@@ -229,6 +246,10 @@ const organizationPoliciesValidator = v.object({
   webSearchAllowed: v.boolean(),
 });
 const ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_TTL_MS = 8 * 60 * 60 * 1000;
+const organizationLegalHoldMutationResultValidator = v.object({
+  success: v.literal(true),
+  hold: organizationLegalHoldSummaryValidator,
+});
 const organizationCleanupRequestValidator = v.object({
   organizationId: v.string(),
   requestedByUserId: v.string(),
@@ -282,6 +303,11 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'admin_user_sessions_viewed',
   'directory_exported',
   'audit_log_exported',
+  'retention_hold_applied',
+  'retention_hold_released',
+  'retention_purge_completed',
+  'retention_purge_failed',
+  'retention_purge_skipped_on_hold',
   'chat_thread_created',
   'chat_thread_deleted',
   'chat_attachment_uploaded',
@@ -321,6 +347,7 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
 const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'domain_verification_failed',
   'scim_member_deprovision_failed',
+  'retention_purge_failed',
 ]);
 const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'support_access_granted',
@@ -330,6 +357,11 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'admin_user_sessions_viewed',
   'directory_exported',
   'audit_log_exported',
+  'retention_hold_applied',
+  'retention_hold_released',
+  'retention_purge_completed',
+  'retention_purge_failed',
+  'retention_purge_skipped_on_hold',
   'enterprise_break_glass_used',
   'organization_policy_updated',
   'enterprise_auth_mode_updated',
@@ -543,6 +575,42 @@ export const getOrganizationPoliciesInternal = internalQuery({
   returns: organizationPoliciesValidator,
   handler: async (ctx, args) => {
     return await getOrganizationPolicies(ctx, args.organizationId);
+  },
+});
+
+function toOrganizationLegalHoldRow(hold: Doc<'organizationLegalHolds'>): OrganizationLegalHoldRow {
+  return {
+    id: hold._id,
+    openedAt: hold.openedAt,
+    openedByUserId: hold.openedByUserId,
+    organizationId: hold.organizationId,
+    reason: hold.reason,
+    releasedAt: hold.releasedAt ?? null,
+    releasedByUserId: hold.releasedByUserId ?? null,
+    status: hold.status,
+  };
+}
+
+async function getActiveOrganizationLegalHoldDoc(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  return await ctx.db
+    .query('organizationLegalHolds')
+    .withIndex('by_organization_id_and_status', (query) =>
+      query.eq('organizationId', organizationId).eq('status', 'active'),
+    )
+    .unique();
+}
+
+export const getOrganizationLegalHoldInternal = internalQuery({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: v.union(organizationLegalHoldSummaryValidator, v.null()),
+  handler: async (ctx, args) => {
+    const hold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
+    return hold ? toOrganizationLegalHoldRow(hold) : null;
   },
 });
 
@@ -1733,6 +1801,27 @@ export const getOrganizationSupportAccessSettings = query({
   },
 });
 
+export const getOrganizationLegalHold = query({
+  args: {
+    slug: v.string(),
+  },
+  returns: v.union(organizationLegalHoldSummaryValidator, v.null()),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+    if (!context || !context.access.view || !canManageOrganizationPolicies(context.viewerRole)) {
+      return null;
+    }
+
+    const organizationId = context.organization._id ?? context.organization.id;
+    if (!organizationId) {
+      throw new Error('Organization is missing an id');
+    }
+
+    const hold = await getActiveOrganizationLegalHoldDoc(ctx, organizationId);
+    return hold ? toOrganizationLegalHoldRow(hold) : null;
+  },
+});
+
 export const resolveOrganizationEnterpriseAuthByEmail = query({
   args: {
     email: v.string(),
@@ -1810,6 +1899,7 @@ export const updateOrganizationPolicies = mutation({
     allowBreakGlassPasswordLogin: v.boolean(),
     temporaryLinkTtlMinutes: v.number(),
     webSearchAllowed: v.boolean(),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
     success: v.literal(true),
@@ -1905,6 +1995,10 @@ export const updateOrganizationPolicies = mutation({
     }
 
     const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: context.user.authSession,
+    });
     const now = Date.now();
     const nextPolicies = applyAlwaysOnRegulatedBaseline({
       invitePolicy: args.invitePolicy,
@@ -1968,6 +2062,7 @@ export const updateOrganizationPolicies = mutation({
       sessionId: context.user.authSession?.id ?? undefined,
       sourceSurface: 'organization.policy_update',
       userId: context.user.authUserId,
+      ...auditRequestContext,
     });
 
     if (currentPolicies.enterpriseAuthMode !== nextPolicies.enterpriseAuthMode) {
@@ -1990,12 +2085,152 @@ export const updateOrganizationPolicies = mutation({
         sessionId: context.user.authSession?.id ?? undefined,
         sourceSurface: 'organization.policy_update',
         userId: context.user.authUserId,
+        ...auditRequestContext,
       });
     }
 
     return {
       success: true as const,
       policies: nextPolicies,
+    };
+  },
+});
+
+export const applyOrganizationLegalHold = mutation({
+  args: {
+    organizationId: v.string(),
+    reason: v.string(),
+  },
+  returns: organizationLegalHoldMutationResultValidator,
+  handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.retention_hold.apply',
+    });
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageOrganizationPolicies(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const reason = args.reason.trim();
+    if (!reason) {
+      throwConvexError('VALIDATION', 'Provide a reason for this legal hold');
+    }
+
+    const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
+    if (activeHold) {
+      throwConvexError('VALIDATION', 'A legal hold is already active for this organization');
+    }
+
+    const now = Date.now();
+    const holdId = await ctx.db.insert('organizationLegalHolds', {
+      organizationId: args.organizationId,
+      status: 'active',
+      reason,
+      openedAt: now,
+      openedByUserId: context.user.authUserId,
+      releasedAt: undefined,
+      releasedByUserId: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const hold = await ctx.db.get(holdId);
+    if (!hold) {
+      throw new Error('Failed to create organization legal hold');
+    }
+
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
+      actorUserId: context.user.authUserId,
+      emitter: 'organization.retention_hold',
+      eventType: RETENTION_EVENT_TYPES.holdApplied,
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        reason,
+      }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: String(hold._id),
+      resourceLabel: 'Organization legal hold',
+      resourceType: 'organization_legal_hold',
+      severity: 'warning',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.retention_hold.apply',
+      userId: context.user.authUserId,
+    });
+
+    return {
+      success: true as const,
+      hold: toOrganizationLegalHoldRow(hold),
+    };
+  },
+});
+
+export const releaseOrganizationLegalHold = mutation({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: organizationLegalHoldMutationResultValidator,
+  handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.retention_hold.release',
+    });
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageOrganizationPolicies(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const activeHold = await getActiveOrganizationLegalHoldDoc(ctx, args.organizationId);
+    if (!activeHold) {
+      throwConvexError('VALIDATION', 'No active legal hold exists for this organization');
+    }
+
+    const now = Date.now();
+    await ctx.db.patch(activeHold._id, {
+      releasedAt: now,
+      releasedByUserId: context.user.authUserId,
+      status: 'released',
+      updatedAt: now,
+    });
+    const releasedHold = await ctx.db.get(activeHold._id);
+    if (!releasedHold) {
+      throw new Error('Failed to load released organization legal hold');
+    }
+
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
+      actorUserId: context.user.authUserId,
+      emitter: 'organization.retention_hold',
+      eventType: RETENTION_EVENT_TYPES.holdReleased,
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        reason: activeHold.reason,
+      }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: String(activeHold._id),
+      resourceLabel: 'Organization legal hold',
+      resourceType: 'organization_legal_hold',
+      severity: 'info',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.retention_hold.release',
+      userId: context.user.authUserId,
+    });
+
+    return {
+      success: true as const,
+      hold: toOrganizationLegalHoldRow(releasedHold),
     };
   },
 });
@@ -2008,6 +2243,7 @@ export const createOrganizationSupportAccessGrant = mutation({
     ticketId: v.string(),
     reason: v.string(),
     expiresAt: v.number(),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
     success: v.literal(true),
@@ -2045,6 +2281,10 @@ export const createOrganizationSupportAccessGrant = mutation({
 
     const reason = args.reason.trim();
     const ticketId = args.ticketId.trim();
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: context.user.authSession,
+    });
     if (!reason) {
       throwConvexError('VALIDATION', 'Provide a reason for this support access grant');
     }
@@ -2114,6 +2354,7 @@ export const createOrganizationSupportAccessGrant = mutation({
       sessionId: context.user.authSession?.id ?? undefined,
       sourceSurface: 'organization.support_access_grant.create',
       userId: context.user.authUserId,
+      ...auditRequestContext,
     });
 
     return {
@@ -2128,6 +2369,7 @@ export const revokeOrganizationSupportAccessGrant = mutation({
     organizationId: v.string(),
     grantId: v.string(),
     reason: v.optional(v.union(v.string(), v.null())),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
     success: v.literal(true),
@@ -2179,6 +2421,10 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       .withIndex('by_auth_user_id', (query) => query.eq('authUserId', grant.siteAdminUserId))
       .unique();
     const reason = args.reason?.trim() ? args.reason.trim() : null;
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: context.user.authSession,
+    });
 
     await recordUserAuditEvent(ctx, {
       actorIdentifier: context.user.authUser.email?.toLowerCase(),
@@ -2203,6 +2449,7 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       sessionId: context.user.authSession?.id ?? undefined,
       sourceSurface: 'organization.support_access_grant.revoke',
       userId: context.user.authUserId,
+      ...auditRequestContext,
     });
 
     return {
@@ -3297,6 +3544,11 @@ const listOrganizationAuditEventsArgs = {
     v.literal('admin_user_sessions_viewed'),
     v.literal('directory_exported'),
     v.literal('audit_log_exported'),
+    v.literal('retention_hold_applied'),
+    v.literal('retention_hold_released'),
+    v.literal('retention_purge_completed'),
+    v.literal('retention_purge_failed'),
+    v.literal('retention_purge_skipped_on_hold'),
     v.literal('chat_thread_created'),
     v.literal('chat_thread_deleted'),
     v.literal('chat_attachment_uploaded'),
@@ -3314,6 +3566,8 @@ const listOrganizationAuditEventsArgs = {
     v.literal('chat_run_completed'),
     v.literal('chat_run_failed'),
     v.literal('chat_web_search_used'),
+    v.literal('backup_restore_drill_completed'),
+    v.literal('backup_restore_drill_failed'),
     v.literal('admin_step_up_challenged'),
     v.literal('step_up_challenge_required'),
     v.literal('step_up_challenge_completed'),
@@ -3571,6 +3825,11 @@ export const exportOrganizationAuditCsv = action({
       v.literal('admin_user_sessions_viewed'),
       v.literal('directory_exported'),
       v.literal('audit_log_exported'),
+      v.literal('retention_hold_applied'),
+      v.literal('retention_hold_released'),
+      v.literal('retention_purge_completed'),
+      v.literal('retention_purge_failed'),
+      v.literal('retention_purge_skipped_on_hold'),
       v.literal('chat_thread_created'),
       v.literal('chat_thread_deleted'),
       v.literal('chat_attachment_uploaded'),
@@ -3588,6 +3847,8 @@ export const exportOrganizationAuditCsv = action({
       v.literal('chat_run_completed'),
       v.literal('chat_run_failed'),
       v.literal('chat_web_search_used'),
+      v.literal('backup_restore_drill_completed'),
+      v.literal('backup_restore_drill_failed'),
       v.literal('admin_step_up_challenged'),
       v.literal('step_up_challenge_required'),
       v.literal('step_up_challenge_completed'),
@@ -3598,6 +3859,7 @@ export const exportOrganizationAuditCsv = action({
     startDate: v.optional(v.string()),
     endDate: v.optional(v.string()),
     failuresOnly: v.optional(v.boolean()),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
     filename: v.string(),
@@ -3610,6 +3872,10 @@ export const exportOrganizationAuditCsv = action({
       sourceSurface: 'organization.audit_export',
     });
     const currentUser = authorization.user;
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: currentUser.authSession,
+    });
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
@@ -3752,6 +4018,7 @@ export const exportOrganizationAuditCsv = action({
       sessionId: currentUser.authSession?.id ?? undefined,
       sourceSurface: 'organization.audit_export',
       userId: currentUser.authUserId,
+      ...auditRequestContext,
     });
 
     return {
@@ -3785,6 +4052,7 @@ export const exportOrganizationDirectoryCsv = action({
     secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
     search: v.string(),
     kind: v.union(v.literal('all'), v.literal('member'), v.literal('invite')),
+    requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
     filename: v.string(),
@@ -3797,6 +4065,10 @@ export const exportOrganizationDirectoryCsv = action({
       sourceSurface: 'organization.directory_export',
     });
     const currentUser = authorization.user;
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: currentUser.authSession,
+    });
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
@@ -3927,6 +4199,7 @@ export const exportOrganizationDirectoryCsv = action({
       sessionId: currentUser.authSession?.id ?? undefined,
       sourceSurface: 'organization.directory_export',
       userId: currentUser.authUserId,
+      ...auditRequestContext,
     });
 
     return {

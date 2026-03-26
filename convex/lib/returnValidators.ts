@@ -1047,6 +1047,37 @@ export const organizationSupportAccessSettingsValidator = v.object({
   organization: organizationSummaryValidator,
 });
 
+export const organizationLegalHoldStatusValidator = v.union(
+  v.literal('active'),
+  v.literal('released'),
+);
+
+export const organizationLegalHoldSummaryValidator = v.object({
+  id: v.id('organizationLegalHolds'),
+  openedAt: v.number(),
+  openedByUserId: v.string(),
+  organizationId: v.string(),
+  reason: v.string(),
+  releasedAt: v.union(v.number(), v.null()),
+  releasedByUserId: v.union(v.string(), v.null()),
+  status: organizationLegalHoldStatusValidator,
+});
+
+export const retentionDeletionBatchValidator = v.object({
+  id: v.id('retentionDeletionBatches'),
+  organizationId: v.string(),
+  jobKind: v.literal('temporary_artifact_purge'),
+  policySnapshotJson: v.string(),
+  startedAt: v.number(),
+  completedAt: v.number(),
+  status: v.union(v.literal('success'), v.literal('failure')),
+  deletedCount: v.number(),
+  skippedOnHoldCount: v.number(),
+  failedCount: v.number(),
+  detailsJson: v.string(),
+  createdAt: v.number(),
+});
+
 export const currentUserSessionValidator = v.object({
   id: v.string(),
   isCurrent: v.boolean(),

@@ -11,9 +11,9 @@ crons.interval(
 );
 
 crons.interval(
-  'cleanup expired regulated attachments',
+  'purge expired temporary artifacts',
   { hours: 6 },
-  internal.securityOps.cleanupExpiredAttachments,
+  internal.retention.purgeExpiredTemporaryArtifacts,
   {},
 );
 

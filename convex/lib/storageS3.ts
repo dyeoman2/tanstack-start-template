@@ -5,7 +5,6 @@ import { getStorageRuntimeConfig } from '../../src/lib/server/env.server';
 import type {
   DocumentParseQueueMessage,
   StorageBucketKind,
-  StorageDecisionQueueMessage,
   StorageInspectionQueueMessage,
   StorageServiceDeleteObjectRequest,
   StorageServiceDownloadUrlRequest,
@@ -268,13 +267,6 @@ export async function enqueueStorageInspectionTask(args: StorageInspectionQueueM
   return await requestJson<StorageServiceEnqueueResponse>({
     body: args,
     path: '/internal/storage/enqueue-inspection',
-  });
-}
-
-export async function enqueueStorageDecisionTask(args: StorageDecisionQueueMessage) {
-  return await requestJson<StorageServiceEnqueueResponse>({
-    body: args,
-    path: '/internal/storage/enqueue-decision',
   });
 }
 

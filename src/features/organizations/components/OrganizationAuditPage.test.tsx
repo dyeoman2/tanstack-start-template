@@ -53,6 +53,10 @@ vi.mock('~/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('~/features/organizations/server/organization-management', () => ({
+  exportOrganizationAuditCsvServerFn: (...args: unknown[]) => exportAuditCsvMock(...args),
+}));
+
 vi.mock('~/features/organizations/components/OrganizationWorkspaceTabs', () => ({
   OrganizationWorkspaceTabs: () => <div>Organization tabs</div>,
 }));
@@ -295,15 +299,17 @@ describe('OrganizationAuditPage', () => {
 
     await waitFor(() => {
       expect(exportAuditCsvMock).toHaveBeenCalledWith({
-        slug: 'cottage-hospital',
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
-        preset: 'all',
-        eventType: 'member_invited',
-        search: 'invitee',
-        startDate: '',
-        endDate: '',
-        failuresOnly: false,
+        data: {
+          slug: 'cottage-hospital',
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          preset: 'all',
+          eventType: 'member_invited',
+          search: 'invitee',
+          startDate: '',
+          endDate: '',
+          failuresOnly: false,
+        },
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Audit log exported.', 'success');

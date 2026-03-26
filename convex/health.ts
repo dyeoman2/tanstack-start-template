@@ -13,59 +13,35 @@ export const probeHealth = internalQuery({
 
 /**
  * Health check HTTP endpoint
- * Returns database connectivity status and service metadata
+ * Returns a minimal public liveness probe.
  */
 export const healthCheck = httpAction(async (ctx, _request) => {
-  const startTime = Date.now();
-
   try {
     await ctx.runQuery(internal.health.probeHealth, {});
-
-    const responseTime = Date.now() - startTime;
 
     return new Response(
       JSON.stringify({
         status: 'healthy',
-        timestamp: new Date().toISOString(),
-        responseTime: `${responseTime}ms`,
-        database: {
-          connected: true,
-          provider: 'convex',
-        },
-        service: {
-          name: 'TanStack Start Template',
-          version: '1.0.0',
-        },
       }),
       {
         status: 200,
         headers: {
+          'Cache-Control': 'no-store',
           'Content-Type': 'application/json',
         },
       },
     );
   } catch (error) {
     console.error('Health check failed', error);
-    const responseTime = Date.now() - startTime;
 
     return new Response(
       JSON.stringify({
         status: 'unhealthy',
-        timestamp: new Date().toISOString(),
-        responseTime: `${responseTime}ms`,
-        error: 'Service unavailable',
-        database: {
-          connected: false,
-          provider: 'convex',
-        },
-        service: {
-          name: 'TanStack Start Template',
-          version: '1.0.0',
-        },
       }),
       {
         status: 503,
         headers: {
+          'Cache-Control': 'no-store',
           'Content-Type': 'application/json',
         },
       },

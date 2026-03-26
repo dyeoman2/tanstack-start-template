@@ -31,6 +31,8 @@ import {
 } from '~/lib/server/better-auth/api';
 import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
+import { resolveRequestAuditContext } from '~/lib/server/request-audit-context';
+import type { RequestAuditContext } from '~/lib/shared/request-audit-context';
 import type { OnboardingStatus } from '~/lib/shared/onboarding';
 
 const userSearchSchema = z.object({
@@ -192,7 +194,7 @@ function normalizeAuthErrorMessage(
   return message || 'Admin action failed';
 }
 
-async function listAllAdminUsers(): Promise<AdminUser[]> {
+async function listAllAdminUsers(requestContext?: RequestAuditContext): Promise<AdminUser[]> {
   const limit = 100;
   let offset = 0;
   let total = Number.POSITIVE_INFINITY;
@@ -205,6 +207,7 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
         offset,
       },
       ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      requestContext,
     );
 
     const page = response.users.map(normalizeAdminUser);
@@ -220,10 +223,15 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
   return users;
 }
 
-async function getAdminUserById(userId: string): Promise<AdminUser | null> {
+async function getAdminUserById(
+  userId: string,
+  requestContext?: RequestAuditContext,
+): Promise<AdminUser | null> {
   try {
-    const response = await getBetterAuthUser(userId, ({ code, message, status }) =>
-      normalizeAuthErrorMessage(code ?? undefined, message, status),
+    const response = await getBetterAuthUser(
+      userId,
+      ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      requestContext,
     );
 
     return normalizeAdminUser(response);
@@ -329,6 +337,7 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }): Promise<CreateAdminUserResult> => {
     try {
       await requireAdmin();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
 
       const emailServiceStatus = await convexAuthReactStart.fetchAuthQuery(
         api.emails.checkEmailServiceConfigured,
@@ -353,6 +362,7 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
         },
         ({ code, message, status }) =>
           normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
 
       const createdUserId = created.user.id;
@@ -420,7 +430,8 @@ export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'PO
   .handler(async ({ data }): Promise<SendAdminOnboardingEmailResult> => {
     try {
       await requireAdmin();
-      const user = await getAdminUserById(data.userId);
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      const user = await getAdminUserById(data.userId, requestContext);
       if (!user) {
         throw new ServerError('User not found', 404);
       }
@@ -437,7 +448,8 @@ export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'PO
       return { success: true, onboardingStatus: 'email_sent' };
     } catch (error) {
       try {
-        const user = await getAdminUserById(data.userId);
+        const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+        const user = await getAdminUserById(data.userId, requestContext);
         if (user && user.onboardingStatus !== 'completed') {
           await updateAdminUserOnboardingState(data.userId, {
             onboardingStatus: user.onboardingStatus,
@@ -460,6 +472,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       const { user: currentUser } = await requireAdmin();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
       const updateData: Record<string, unknown> = {};
 
       if (data.name !== undefined) {
@@ -475,7 +488,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
       }
 
       if (data.role !== undefined) {
-        const users = await listAllAdminUsers();
+        const users = await listAllAdminUsers(requestContext);
         assertCanSetRole(users, currentUser.id, data.userId, data.role);
       }
 
@@ -490,6 +503,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
             },
             ({ code, message, status }) =>
               normalizeAuthErrorMessage(code ?? undefined, message, status),
+            requestContext,
           ),
         );
       }
@@ -503,6 +517,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
             },
             ({ code, message, status }) =>
               normalizeAuthErrorMessage(code ?? undefined, message, status),
+            requestContext,
           ),
         );
       }
@@ -512,7 +527,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
         userId: data.userId,
       });
 
-      return await getAdminUserById(data.userId);
+      return await getAdminUserById(data.userId, requestContext);
     } catch (error) {
       throw handleServerError(error, 'Update admin user');
     }
@@ -523,8 +538,12 @@ export const banAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await banBetterAuthUser(data, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      const response = await banBetterAuthUser(
+        data,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -541,8 +560,12 @@ export const unbanAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await unbanBetterAuthUser(data.userId, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      const response = await unbanBetterAuthUser(
+        data.userId,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -559,8 +582,12 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await listBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      const response = await listBetterAuthUserSessions(
+        data.userId,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
       await convexAuthReactStart.fetchAuthAction(api.admin.recordAdminUserSessionsViewed, {
         sessionCount: response.sessions.length,
@@ -578,8 +605,12 @@ export const revokeAdminUserSessionServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await revokeBetterAuthUserSession(data.sessionId, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      return await revokeBetterAuthUserSession(
+        data.sessionId,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user session');
@@ -591,8 +622,12 @@ export const revokeAdminUserSessionsServerFn = createServerFn({ method: 'POST' }
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await revokeBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      return await revokeBetterAuthUserSessions(
+        data.userId,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user sessions');
@@ -604,8 +639,12 @@ export const setAdminUserPasswordServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await setBetterAuthUserPassword(data, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      return await setBetterAuthUserPassword(
+        data,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
     } catch (error) {
       throw handleServerError(error, 'Set admin user password');
@@ -617,11 +656,15 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       const { user: currentUser } = await requireAdmin();
-      const users = await listAllAdminUsers();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+      const users = await listAllAdminUsers(requestContext);
       const target = assertCanDeleteUser(users, currentUser.id, data.userId);
 
-      const result = await removeBetterAuthUser(data.userId, ({ code, message, status }) =>
-        normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const result = await removeBetterAuthUser(
+        data.userId,
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
+        requestContext,
       );
 
       try {

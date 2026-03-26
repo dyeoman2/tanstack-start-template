@@ -1,6 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import { ServerError } from '~/lib/server/error-utils.server';
+import type { RequestAuditContext } from '~/lib/shared/request-audit-context';
 
 type BetterAuthActionError = {
   code: string | null;
@@ -114,15 +115,26 @@ function unwrapResult<TData>(
   return result.data;
 }
 
+function withRequestAuditContext<TInput extends Record<string, unknown>>(
+  input: TInput,
+  requestContext?: RequestAuditContext,
+) {
+  return requestContext ? { ...input, requestContext } : input;
+}
+
 export async function listBetterAuthUsers(
   query: {
     limit?: number;
     offset?: number;
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<BetterAuthAdminListUsersResult> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminListUsers, query),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminListUsers,
+      withRequestAuditContext(query, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -130,9 +142,13 @@ export async function listBetterAuthUsers(
 export async function getBetterAuthUser(
   id: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<BetterAuthAdminUser> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminGetUser, { id }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminGetUser,
+      withRequestAuditContext({ id }, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -145,9 +161,13 @@ export async function createBetterAuthUser(
     role?: 'admin' | 'user';
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ user: BetterAuthAdminUser }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminCreateUser, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminCreateUser,
+      withRequestAuditContext(input, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -162,9 +182,13 @@ export async function updateBetterAuthUser(
     userId: string;
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<BetterAuthAdminUser> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminUpdateUser, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminUpdateUser,
+      withRequestAuditContext(input, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -175,9 +199,13 @@ export async function setBetterAuthUserRole(
     userId: string;
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ user: BetterAuthAdminUser }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminSetRole, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminSetRole,
+      withRequestAuditContext(input, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -189,9 +217,13 @@ export async function banBetterAuthUser(
     userId: string;
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ user: BetterAuthAdminUser }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminBanUser, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminBanUser,
+      withRequestAuditContext(input, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -199,9 +231,13 @@ export async function banBetterAuthUser(
 export async function unbanBetterAuthUser(
   userId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ user: BetterAuthAdminUser }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminUnbanUser, { userId }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminUnbanUser,
+      withRequestAuditContext({ userId }, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -209,9 +245,13 @@ export async function unbanBetterAuthUser(
 export async function listBetterAuthUserSessions(
   userId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ sessions: BetterAuthAdminUserSession[] }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminListUserSessions, { userId }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminListUserSessions,
+      withRequestAuditContext({ userId }, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -219,9 +259,13 @@ export async function listBetterAuthUserSessions(
 export async function revokeBetterAuthUserSession(
   sessionId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ success: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminRevokeUserSession, { sessionId }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminRevokeUserSession,
+      withRequestAuditContext({ sessionId }, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -229,9 +273,13 @@ export async function revokeBetterAuthUserSession(
 export async function revokeBetterAuthUserSessions(
   userId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ success: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminRevokeUserSessions, { userId }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminRevokeUserSessions,
+      withRequestAuditContext({ userId }, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -242,9 +290,13 @@ export async function setBetterAuthUserPassword(
     userId: string;
   },
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ status: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminSetUserPassword, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminSetUserPassword,
+      withRequestAuditContext(input, requestContext),
+    ),
     mapErrorMessage,
   );
 }
@@ -252,9 +304,13 @@ export async function setBetterAuthUserPassword(
 export async function removeBetterAuthUser(
   userId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
+  requestContext?: RequestAuditContext,
 ): Promise<{ success: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminRemoveUser, { userId }),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.adminRemoveUser,
+      withRequestAuditContext({ userId }, requestContext),
+    ),
     mapErrorMessage,
   );
 }

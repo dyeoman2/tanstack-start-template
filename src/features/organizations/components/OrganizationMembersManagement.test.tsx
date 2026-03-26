@@ -75,6 +75,7 @@ vi.mock('~/features/organizations/server/organization-management', () => ({
   suspendOrganizationMemberServerFn: (...args: unknown[]) => suspendMemberMock(...args),
   cancelOrganizationInvitationServerFn: (...args: unknown[]) => cancelInvitationMock(...args),
   bulkOrganizationDirectoryActionServerFn: (...args: unknown[]) => bulkActionMock(...args),
+  exportOrganizationDirectoryCsvServerFn: (...args: unknown[]) => exportDirectoryCsvMock(...args),
 }));
 
 vi.mock('~/components/ui/toast', () => ({

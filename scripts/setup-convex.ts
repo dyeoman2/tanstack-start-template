@@ -2,7 +2,8 @@
 
 /**
  * Set up Convex URLs after Convex project initialization.
- * Syncs from `.env.local` into Convex (dev): BETTER_AUTH_SECRET, optional BETTER_AUTH_URL,
+ * Syncs from `.env.local` into Convex (dev): Better Auth secrets, AUTH_PROXY_SHARED_SECRET,
+ * optional BETTER_AUTH_URL,
  * APP_NAME, optional Resend / OpenRouter / Google OAuth / RESEND_API_KEY.
  * Run: pnpm run setup:convex
  */
@@ -207,7 +208,9 @@ async function main() {
     siteUrl = deriveConvexSiteUrl(convexUrl);
   }
 
+  const betterAuthSecrets = readOptionalEnvValue(envContent, 'BETTER_AUTH_SECRETS');
   const betterAuthSecret = readOptionalEnvValue(envContent, 'BETTER_AUTH_SECRET');
+  const authProxySharedSecret = readOptionalEnvValue(envContent, 'AUTH_PROXY_SHARED_SECRET');
   const betterAuthUrl = readOptionalEnvValue(envContent, 'BETTER_AUTH_URL');
   const appName = readOptionalEnvValue(envContent, 'APP_NAME') ?? DEFAULT_APP_NAME;
   const resendApiKey = readOptionalEnvValue(envContent, 'RESEND_API_KEY');
@@ -220,8 +223,8 @@ async function main() {
     readOptionalEnvValue(envContent, 'GOOGLE_CLIENT_SECRET') ??
     readOptionalEnvValue(envContent, 'BETTER_AUTH_GOOGLE_CLIENT_SECRET');
 
-  if (!betterAuthSecret) {
-    console.log('❌ Could not find BETTER_AUTH_SECRET in .env.local');
+  if (!betterAuthSecrets && !betterAuthSecret) {
+    console.log('❌ Could not find BETTER_AUTH_SECRETS or BETTER_AUTH_SECRET in .env.local');
     console.log('   Please ensure pnpm run setup:env was run first.');
     process.exit(1);
   }
@@ -236,7 +239,11 @@ async function main() {
   }
 
   const envVars = [
-    { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
+    ...(betterAuthSecrets ? [{ name: 'BETTER_AUTH_SECRETS', value: betterAuthSecrets }] : []),
+    ...(betterAuthSecret ? [{ name: 'BETTER_AUTH_SECRET', value: betterAuthSecret }] : []),
+    ...(authProxySharedSecret
+      ? [{ name: 'AUTH_PROXY_SHARED_SECRET', value: authProxySharedSecret }]
+      : []),
     ...(betterAuthUrl ? [{ name: 'BETTER_AUTH_URL', value: betterAuthUrl }] : []),
     { name: 'APP_NAME', value: appName },
     ...(resendApiKey ? [{ name: 'RESEND_API_KEY', value: resendApiKey }] : []),

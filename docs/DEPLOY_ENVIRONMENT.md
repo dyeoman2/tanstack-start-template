@@ -30,11 +30,11 @@ The allowlist lives in `scripts/lib/convex-unused-env.ts`. Update it if you add 
 
 ## JWKS on Convex
 
-Better Auth’s Convex plugin stores signing keys in the component database. For **static JWKS** (fewer HTTP round-trips when Convex validates JWTs), the same material must also live in the Convex deployment env var **`JWKS`**, which is read from `convex/auth.config.ts` and `convex/betterAuth/sharedOptions.ts`.
+Better Auth’s Convex plugin stores signing keys in the component database. For **static JWKS** (fewer HTTP round-trips when Convex validates JWTs), Convex deployment env var **`JWKS`** should contain the **public-only JWKS document** derived from that keyset, which is read from `convex/auth.config.ts` and `convex/betterAuth/sharedOptions.ts`.
 
 ### Where the value comes from
 
-It is **not** invented by hand: you copy the canonical JWKS payload from Better Auth via the Convex action **`auth:getLatestJwks`** (see [Convex + Better Auth — Static JWKS](https://labs.convex.dev/better-auth/experimental)).
+It is **not** invented by hand: the repo fetches the canonical Better Auth key docs via **`auth:getLatestJwks`**, then converts them to a public-only JWKS before writing the env var. Private signing keys stay in the Better Auth component database.
 
 ### Programmatic sync (recommended)
 
@@ -52,17 +52,11 @@ pnpm run convex:jwks:sync -- --prod
 
 `pnpm run setup:convex` and `pnpm run setup:prod` **try this automatically** when `JWKS` is missing after deploy.
 
-Manual equivalent (pipe form from the docs):
-
-```bash
-pnpm exec convex run auth:getLatestJwks | pnpm exec convex env set JWKS
-```
-
-Add `--prod` on both commands for production.
+Do **not** pipe raw `auth:getLatestJwks` output directly into `convex env set JWKS`; that would duplicate private signing material into deploy env.
 
 ### Key rotation
 
-`auth:rotateKeys` exists for rotation; prefer **`getLatestJwks` / `convex:jwks:sync`** for initial setup and after rotation so the `JWKS` env var stays aligned with the component.
+`auth:rotateKeys` exists for rotation; prefer **`getLatestJwks` / `convex:jwks:sync`** for initial setup and after rotation so the public-only `JWKS` env var stays aligned with the component.
 
 **After rotating keys**, run:
 
@@ -72,13 +66,41 @@ pnpm run convex:jwks:sync
 
 For production Convex, add `-- --prod` to that command.
 
+### Migration note
+
+After shipping the public-only sync flow:
+
+1. Re-run `pnpm run convex:jwks:sync` for each deployment so `JWKS` no longer contains private Better Auth key docs.
+2. Rotate Better Auth signing keys once with `auth:rotateKeys`.
+3. Re-run `pnpm run convex:jwks:sync` again so the env var contains the new public keys only.
+
+## Better Auth secret rotation
+
+Prefer versioned Better Auth secrets through `BETTER_AUTH_SECRETS`, while keeping `BETTER_AUTH_SECRET` as the fallback for pre-rotation data.
+
+Example:
+
+```dotenv
+BETTER_AUTH_SECRETS=2:new-secret-base64,1:old-secret-base64
+BETTER_AUTH_SECRET=old-secret-base64
+```
+
+Rotation sequence:
+
+1. Add the new secret to the front of `BETTER_AUTH_SECRETS`.
+2. Keep the prior secret in `BETTER_AUTH_SECRETS` and in `BETTER_AUTH_SECRET` during migration.
+3. Deploy the app and Convex env changes together.
+4. Rotate Better Auth signing keys and resync public JWKS.
+5. Remove the legacy fallback only after old encrypted data is no longer needed.
+
 ## Netlify (or other host)
 
 Production builds and SSR need:
 
+- `AUTH_PROXY_SHARED_SECRET`
 - `VITE_CONVEX_URL`
 
-`pnpm run setup:prod` can push this to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
+`pnpm run setup:prod` can push these to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
 `setup:prod` also orchestrates the guided production storage flow, the optional immutable audit archive flow, and the optional DR flow, and now reports their child-script readiness back in the final summary instead of treating “the child exited” as success.
 At the end of the flow, `setup:prod` runs `pnpm run deploy:doctor -- --prod --json` and fails hard if required production checks still fail.
 
@@ -90,7 +112,10 @@ You can also set them in the Netlify UI or with:
 
 ```bash
 npx netlify env:set VITE_CONVEX_URL 'https://<deployment>.convex.cloud' --context production
+npx netlify env:set AUTH_PROXY_SHARED_SECRET '<shared-secret>' --context production --secret
 ```
+
+`AUTH_PROXY_SHARED_SECRET` must also exist on the matching Convex deployment so the app can sign the canonical Better Auth proxy headers that Convex verifies.
 
 ## Resend (email)
 
@@ -155,10 +180,11 @@ For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is mi
 - `AWS_S3_MIRROR_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 - `STORAGE_BROKER_URL`
-- `STORAGE_BROKER_SHARED_SECRET`
-- `STORAGE_WORKER_URL`
-- `STORAGE_WORKER_SHARED_SECRET`
-- `CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
+- `STORAGE_BROKER_ACCESS_KEY_ID`
+- `STORAGE_BROKER_SECRET_ACCESS_KEY`
+- `CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET`
+- `CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET`
+- `CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET`
 
 It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
 
@@ -173,15 +199,13 @@ For S3-backed storage, immutable audit archiving is required and `deploy:doctor`
 For AWS storage infrastructure preview/deploy, the operator environment also needs:
 
 - `AWS_FILE_SERVE_SIGNING_SECRET`
-- `AWS_STORAGE_BROKER_SHARED_SECRET`
-- `AWS_STORAGE_WORKER_SHARED_SECRET`
-- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
-- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
 - `AWS_CONVEX_STORAGE_CALLBACK_BASE_URL`
-- `AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
+- `AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET`
+- `AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET`
+- `AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET`
 - optional `AWS_STORAGE_ALERT_EMAIL`
 
-For S3-backed storage setup, `pnpm run storage:setup:prod` now tries to auto-discover `StorageBrokerRuntimeUrl` and `StorageWorkerRuntimeUrl` from the deployed CloudFormation stack before prompting, persists them to `.env.prod` once available, and reports `needs attention` when those runtime URLs are still missing.
+For S3-backed storage setup, `pnpm run storage:setup:prod` now tries to auto-discover `StorageBrokerRuntimeUrl`, `StorageBrokerAccessKeyId`, and `StorageBrokerSecretAccessKey` from the deployed CloudFormation stack before prompting, persists them to `.env.prod` once available, and reports `needs attention` when those broker outputs are still missing.
 
 For immutable audit archiving, use the dedicated guided flow:
 

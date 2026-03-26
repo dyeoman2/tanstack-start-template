@@ -50,6 +50,7 @@ vi.mock('jose', () => ({
 import {
   assertScimManagementAccess,
   canUserSelfServeCreateOrganization,
+  deriveGoogleHostedDomainFromIdToken,
   getPasswordAuthBlockMessage,
   resolveEnterpriseSessionContext,
   resolveInitialActiveOrganizationId,
@@ -215,13 +216,7 @@ describe('resolveInitialActiveOrganizationId', () => {
 describe('resolveEnterpriseSessionContext', () => {
   it('returns an enterprise session for a valid Google Workspace hosted-domain match', async () => {
     mockFindBetterAuthAccountByUserIdAndProviderId.mockResolvedValue({
-      idToken: 'google-id-token',
-    });
-    mockJwtVerify.mockResolvedValue({
-      payload: {
-        email_verified: true,
-        hd: 'acmehealth.org',
-      },
+      googleHostedDomain: 'acmehealth.org',
     });
     mockFindBetterAuthMember.mockResolvedValue({
       organizationId: 'org_1',
@@ -254,13 +249,7 @@ describe('resolveEnterpriseSessionContext', () => {
 
   it('returns null when the enterprise provider is inactive', async () => {
     mockFindBetterAuthAccountByUserIdAndProviderId.mockResolvedValue({
-      idToken: 'google-id-token',
-    });
-    mockJwtVerify.mockResolvedValue({
-      payload: {
-        email_verified: true,
-        hd: 'acmehealth.org',
-      },
+      googleHostedDomain: 'acmehealth.org',
     });
 
     const ctx = createCtx({
@@ -284,13 +273,7 @@ describe('resolveEnterpriseSessionContext', () => {
 
   it('returns null when the hosted domain does not match the managed domain', async () => {
     mockFindBetterAuthAccountByUserIdAndProviderId.mockResolvedValue({
-      idToken: 'google-id-token',
-    });
-    mockJwtVerify.mockResolvedValue({
-      payload: {
-        email_verified: true,
-        hd: 'example.org',
-      },
+      googleHostedDomain: 'example.org',
     });
 
     const ctx = createCtx({
@@ -314,13 +297,7 @@ describe('resolveEnterpriseSessionContext', () => {
 
   it('returns null when JIT membership creation cannot complete', async () => {
     mockFindBetterAuthAccountByUserIdAndProviderId.mockResolvedValue({
-      idToken: 'google-id-token',
-    });
-    mockJwtVerify.mockResolvedValue({
-      payload: {
-        email_verified: true,
-        hd: 'acmehealth.org',
-      },
+      googleHostedDomain: 'acmehealth.org',
     });
     mockFindBetterAuthMember.mockResolvedValue(null);
     mockGetOrganizationMembershipStateByOrganizationUser.mockResolvedValue(null);
@@ -342,5 +319,18 @@ describe('resolveEnterpriseSessionContext', () => {
         userId: 'user_1',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('derives a hosted domain only from verified Google id tokens', async () => {
+    mockJwtVerify.mockResolvedValue({
+      payload: {
+        email_verified: true,
+        hd: 'acmehealth.org',
+      },
+    });
+
+    await expect(deriveGoogleHostedDomainFromIdToken('google-id-token')).resolves.toBe(
+      'acmehealth.org',
+    );
   });
 });

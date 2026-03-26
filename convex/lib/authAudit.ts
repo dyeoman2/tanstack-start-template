@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from 'better-auth';
 import { createAuthMiddleware } from 'better-auth/api';
+import { getTrustedClientIp, getTrustedUserAgent } from '../../src/lib/shared/better-auth-http';
 import {
   type AuthAuditEventType,
   type AuthAuditHandlerOwner,
@@ -127,28 +128,16 @@ function getSessionSnapshot(ctx: AuthAuditEndpointContext) {
   return (ctx.context.newSession ?? ctx.context.session ?? null) as AuthSession | null;
 }
 
-function getHeaderValue(ctx: { headers?: Headers; request?: Request }, name: string) {
-  return ctx.request?.headers.get(name) ?? ctx.headers?.get(name) ?? undefined;
-}
-
 function getRequestMethod(ctx: { request?: Request }) {
   return normalizeOptionalString(ctx.request?.method);
 }
 
 function getIpAddress(ctx: { headers?: Headers; request?: Request }) {
-  const forwardedFor = getHeaderValue(ctx, 'x-forwarded-for');
-  if (forwardedFor) {
-    return normalizeOptionalString(forwardedFor.split(',')[0]);
-  }
-
-  return (
-    normalizeOptionalString(getHeaderValue(ctx, 'cf-connecting-ip')) ??
-    normalizeOptionalString(getHeaderValue(ctx, 'x-real-ip'))
-  );
+  return getTrustedClientIp(ctx);
 }
 
 function getUserAgent(ctx: { headers?: Headers; request?: Request }) {
-  return normalizeOptionalString(getHeaderValue(ctx, 'user-agent'));
+  return getTrustedUserAgent(ctx);
 }
 
 async function readEndpointResponse(

@@ -1,4 +1,5 @@
 export type StorageBucketKind = 'clean' | 'mirror' | 'quarantine' | 'rejected';
+export type DocumentParseKind = 'chat_document_extract' | 'pdf_parse';
 
 export type StorageServiceConfig = {
   baseUrl: string | null;
@@ -101,22 +102,9 @@ export type StorageInspectionQueueMessage = {
   sourceType: string;
 };
 
-export type StorageDecisionQueueMessage = {
-  kind: 'storage_decision';
-  action: 'promote' | 'reject';
-  storageId: string;
-  contentType?: string;
-  destinationKey: string;
-  organizationId?: string | null;
-  quarantineKey: string;
-  quarantineVersionId?: string | null;
-  rejectedBucket?: string;
-  sourceType: string;
-};
-
 export type DocumentParseQueueMessage = {
   kind: 'document_parse';
-  parseKind: 'chat_document_extract' | 'pdf_parse';
+  parseKind: DocumentParseKind;
   storageId: string;
   fileName: string;
   mimeType: string;
@@ -125,25 +113,7 @@ export type DocumentParseQueueMessage = {
   sourceType: string;
 };
 
-export type StorageCleanupQueueMessage =
-  | ({
-      kind: 'storage_cleanup';
-      operation: 'deleteObject';
-    } & StorageServiceDeleteObjectRequest)
-  | ({
-      kind: 'storage_cleanup';
-      operation: 'listObjects';
-    } & StorageServiceListObjectsRequest)
-  | ({
-      kind: 'storage_cleanup';
-      operation: 'listObjectVersions';
-    } & StorageServiceListObjectVersionsRequest);
-
-export type StorageQueueMessage =
-  | DocumentParseQueueMessage
-  | StorageCleanupQueueMessage
-  | StorageDecisionQueueMessage
-  | StorageInspectionQueueMessage;
+export type StorageQueueMessage = DocumentParseQueueMessage | StorageInspectionQueueMessage;
 
 export type StorageServiceEnqueueResponse = {
   accepted: true;
@@ -158,6 +128,8 @@ export type StorageInspectionResultCallbackRequest = {
     | 'checksum_mismatch'
     | 'file_signature_mismatch'
     | 'inspection_error'
+    | 'office_macro_enabled'
+    | 'office_password_protected'
     | 'pdf_active_content'
     | 'pdf_embedded_files'
     | 'pdf_encrypted'
@@ -189,14 +161,16 @@ export type StorageDecisionResultCallbackRequest = {
 
 export type DocumentParseResultCallbackRequest = {
   type: 'document_result';
-  parseKind: 'chat_document_extract' | 'pdf_parse';
+  parseKind: DocumentParseKind;
   storageId: string;
   errorMessage?: string;
   pageCount?: number;
   imageCount?: number;
   parserVersion: string;
+  resultChecksumSha256?: string;
   resultContentType?: string;
   resultKey?: string;
+  resultSizeBytes?: number;
   status: 'FAILED' | 'SUCCEEDED';
 };
 
@@ -227,3 +201,34 @@ export type StorageServiceInspectionCallbackRequest = {
   bucket: string;
   key: string;
 };
+
+const DOCUMENT_PARSE_RESULT_EXTENSION_BY_KIND = {
+  chat_document_extract: 'txt',
+  pdf_parse: 'json',
+} as const satisfies Record<DocumentParseKind, string>;
+
+const DOCUMENT_PARSE_RESULT_CONTENT_TYPE_BY_KIND = {
+  chat_document_extract: 'text/plain',
+  pdf_parse: 'application/json',
+} as const satisfies Record<DocumentParseKind, string>;
+
+function normalizeStorageKeyPrefix(prefix: string) {
+  const trimmed = prefix.trim().replace(/^\/+/, '').replace(/\/+$/, '');
+  return trimmed.length > 0 ? `${trimmed}/` : '';
+}
+
+export function getDocumentParseResultExtension(parseKind: DocumentParseKind) {
+  return DOCUMENT_PARSE_RESULT_EXTENSION_BY_KIND[parseKind];
+}
+
+export function getDocumentParseResultContentType(parseKind: DocumentParseKind) {
+  return DOCUMENT_PARSE_RESULT_CONTENT_TYPE_BY_KIND[parseKind];
+}
+
+export function buildDocumentParseResultStagingKey(
+  prefix: string,
+  parseKind: DocumentParseKind,
+  storageId: string,
+) {
+  return `${normalizeStorageKeyPrefix(prefix)}${parseKind}/${storageId}.${getDocumentParseResultExtension(parseKind)}`;
+}

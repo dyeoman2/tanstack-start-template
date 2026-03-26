@@ -24,6 +24,7 @@ import type * as chatModels from "../chatModels.js";
 import type * as crons from "../crons.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
+import type * as documentParseResults from "../documentParseResults.js";
 import type * as e2e from "../e2e.js";
 import type * as emailTemplates from "../emailTemplates.js";
 import type * as emails from "../emails.js";
@@ -47,6 +48,8 @@ import type * as lib_organizationAuditProjection from "../lib/organizationAuditP
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
 import type * as lib_organizationMembershipState from "../lib/organizationMembershipState.js";
 import type * as lib_organizationPermissions from "../lib/organizationPermissions.js";
+import type * as lib_requestAuditContext from "../lib/requestAuditContext.js";
+import type * as lib_retention from "../lib/retention.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as lib_security_control_workspace_core from "../lib/security/control_workspace_core.js";
 import type * as lib_security_core from "../lib/security/core.js";
@@ -72,6 +75,7 @@ import type * as pdfParse from "../pdfParse.js";
 import type * as pdfParseActions from "../pdfParseActions.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
+import type * as retention from "../retention.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
 import type * as securityOps from "../securityOps.js";
 import type * as securityPolicies from "../securityPolicies.js";
@@ -117,6 +121,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;
+  documentParseResults: typeof documentParseResults;
   e2e: typeof e2e;
   emailTemplates: typeof emailTemplates;
   emails: typeof emails;
@@ -140,6 +145,8 @@ declare const fullApi: ApiFromModules<{
   "lib/organizationCleanup": typeof lib_organizationCleanup;
   "lib/organizationMembershipState": typeof lib_organizationMembershipState;
   "lib/organizationPermissions": typeof lib_organizationPermissions;
+  "lib/requestAuditContext": typeof lib_requestAuditContext;
+  "lib/retention": typeof lib_retention;
   "lib/returnValidators": typeof lib_returnValidators;
   "lib/security/control_workspace_core": typeof lib_security_control_workspace_core;
   "lib/security/core": typeof lib_security_core;
@@ -165,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   pdfParseActions: typeof pdfParseActions;
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;
+  retention: typeof retention;
   scimLifecycle: typeof scimLifecycle;
   securityOps: typeof securityOps;
   securityPolicies: typeof securityPolicies;
@@ -268,6 +276,7 @@ export declare const components: {
                   accessTokenExpiresAt?: null | number;
                   accountId: string;
                   createdAt: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId: string;
@@ -510,6 +519,7 @@ export declare const components: {
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -1032,6 +1042,7 @@ export declare const components: {
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -1683,6 +1694,7 @@ export declare const components: {
                   accessTokenExpiresAt?: null | number;
                   accountId?: string;
                   createdAt?: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId?: string;
@@ -1701,6 +1713,7 @@ export declare const components: {
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -2347,6 +2360,7 @@ export declare const components: {
                   accessTokenExpiresAt?: null | number;
                   accountId?: string;
                   createdAt?: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId?: string;
@@ -2365,6 +2379,7 @@ export declare const components: {
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"

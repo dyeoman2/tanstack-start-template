@@ -3,7 +3,8 @@
 /**
  * Set up local development environment with dependencies and configuration.
  * - Installs project dependencies with pnpm
- * - BETTER_AUTH_SECRET: 32 bytes for session signing (also needed in Convex Dashboard)
+ * - Better Auth secrets for session signing and encrypted auth records
+ * - Trusted auth proxy signing secret for app-to-Convex client-ip forwarding
  * Run: pnpm run setup:env
  */
 
@@ -20,7 +21,7 @@ function printUsage() {
   console.log('What this does:');
   console.log('- Installs pnpm dependencies');
   console.log('- Creates .env.local when missing');
-  console.log('- Generates a BETTER_AUTH_SECRET for local development');
+  console.log('- Generates Better Auth secrets for local development');
   console.log('');
   console.log('Safe to rerun: yes');
   console.log(
@@ -51,7 +52,9 @@ async function main() {
     process.exit(1);
   }
 
-  const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing and rate limiting
+  const authSecret = await generateSecret(32);
+  const authProxySharedSecret = await generateSecret(32);
+  const versionedAuthSecrets = `1:${authSecret}`;
 
   const envPath = join(process.cwd(), '.env.local');
 
@@ -60,7 +63,9 @@ async function main() {
     console.log('⚠️  .env.local already exists!');
     console.log('   To avoid overwriting existing configuration, here are your generated secrets:');
     console.log('────────────────────────────────────────────────');
+    console.log(`BETTER_AUTH_SECRETS=${versionedAuthSecrets}`);
     console.log(`BETTER_AUTH_SECRET=${authSecret}`);
+    console.log(`AUTH_PROXY_SHARED_SECRET=${authProxySharedSecret}`);
     console.log('────────────────────────────────────────────────\n');
     console.log('📝 Add these to your existing .env.local file.');
     return;
@@ -75,8 +80,14 @@ async function main() {
 # REQUIRED SECRETS (Generated Securely)
 # ==========================================
 
-# Signs JWTs for authentication and protects internal rate limiting operations
+# Versioned Better Auth secrets. The first entry is current; keep older entries during rotations.
+BETTER_AUTH_SECRETS=${versionedAuthSecrets}
+
+# Legacy Better Auth fallback for data created before versioned-secret rotation.
 BETTER_AUTH_SECRET=${authSecret}
+
+# Signs trusted app-to-Convex client-ip forwarding headers for Better Auth.
+AUTH_PROXY_SHARED_SECRET=${authProxySharedSecret}
 
 # ==========================================
 # REQUIRED DEFAULTS
@@ -128,14 +139,14 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # AWS_S3_CLEAN_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-clean
 # AWS_S3_REJECTED_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-rejected
 # AWS_S3_MIRROR_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-mirror
-# AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=<generated-secret>
-# AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=<generated-secret>
 # AWS_FILE_SERVE_SIGNING_SECRET=<generated-secret>
-# STORAGE_BROKER_URL=https://your-broker-runtime.lambda-url.us-west-1.on.aws
-# AWS_STORAGE_BROKER_SHARED_SECRET=<generated-secret>
-# STORAGE_WORKER_URL=https://your-worker-runtime.lambda-url.us-west-1.on.aws
-# AWS_STORAGE_WORKER_SHARED_SECRET=<generated-secret>
-# AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET=<generated-secret>
+# STORAGE_BROKER_URL=https://your-storage-broker-api.execute-api.us-west-1.amazonaws.com/prod
+# STORAGE_BROKER_ACCESS_KEY_ID=<cloudformation-output>
+# STORAGE_BROKER_SECRET_ACCESS_KEY=<cloudformation-output>
+# STORAGE_BROKER_SESSION_TOKEN=<optional>
+# CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET=<generated-secret>
+# CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET=<generated-secret>
+# CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET=<generated-secret>
 # AWS_STORAGE_ALERT_EMAIL=alerts@example.com
 # CONVEX_SITE_URL=https://your-project.convex.site
 
@@ -183,7 +194,9 @@ APP_NAME="${DEFAULT_APP_NAME}"
   console.log(`   📁 Created: ${envPath}`);
   console.log('────────────────────────────────────────────────');
   console.log('🔑 Generated Secrets:');
+  console.log(`   BETTER_AUTH_SECRETS: ${versionedAuthSecrets.substring(0, 12)}...`);
   console.log(`   BETTER_AUTH_SECRET: ${authSecret.substring(0, 10)}...`);
+  console.log(`   AUTH_PROXY_SHARED_SECRET: ${authProxySharedSecret.substring(0, 10)}...`);
   console.log('────────────────────────────────────────────────\n');
   console.log('🚀 Next steps:');
   console.log('   1. 📋 Review the generated .env.local file');

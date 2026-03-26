@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AUTH_PROXY_IP_HEADER } from '../../src/lib/server/better-auth/http';
 import { AUTH_AUDIT_EVENT_TYPES } from '../../src/lib/shared/auth-audit';
 import {
   AUTH_AUDIT_ALL_HANDLER_REGISTRY,
@@ -27,7 +28,7 @@ function createTestContext(options: {
   const method = options.method ?? 'POST';
   const headers = new Headers({
     'user-agent': 'vitest',
-    'x-forwarded-for': '203.0.113.10',
+    [AUTH_PROXY_IP_HEADER]: '203.0.113.10',
   });
 
   return {
@@ -121,6 +122,11 @@ describe('auth audit coverage', () => {
       'pdf_parse_requested',
       'pdf_parse_succeeded',
       'pdf_parse_failed',
+      'retention_hold_applied',
+      'retention_hold_released',
+      'retention_purge_completed',
+      'retention_purge_failed',
+      'retention_purge_skipped_on_hold',
       'chat_run_completed',
       'chat_run_failed',
       'chat_web_search_used',

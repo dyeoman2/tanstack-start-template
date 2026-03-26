@@ -60,6 +60,7 @@ export const tables = {
     accessToken: v.optional(v.union(v.null(), v.string())),
     refreshToken: v.optional(v.union(v.null(), v.string())),
     idToken: v.optional(v.union(v.null(), v.string())),
+    googleHostedDomain: v.optional(v.union(v.null(), v.string())),
     accessTokenExpiresAt: v.optional(v.union(v.null(), v.number())),
     refreshTokenExpiresAt: v.optional(v.union(v.null(), v.number())),
     scope: v.optional(v.union(v.null(), v.string())),

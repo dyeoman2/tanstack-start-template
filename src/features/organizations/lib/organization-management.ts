@@ -51,6 +51,11 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'admin_user_sessions_viewed',
   'directory_exported',
   'audit_log_exported',
+  'retention_hold_applied',
+  'retention_hold_released',
+  'retention_purge_completed',
+  'retention_purge_failed',
+  'retention_purge_skipped_on_hold',
   'chat_thread_created',
   'chat_thread_deleted',
   'chat_attachment_uploaded',
@@ -163,6 +168,8 @@ export type OrganizationEnterpriseProviderKey =
 export type OrganizationEnterpriseProviderStatus =
   (typeof ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES)[number];
 export type OrganizationSupportAccessScope = 'read_only' | 'read_write';
+export type OrganizationLegalHoldStatus = 'active' | 'released';
+export type RetentionDeletionJobKind = 'temporary_artifact_purge';
 
 export type OrganizationEnterpriseProviderOption = {
   key: OrganizationEnterpriseProviderKey;
@@ -263,6 +270,32 @@ export type OrganizationSupportAccessGrantRow = {
   siteAdminName: string | null;
   siteAdminUserId: string;
   ticketId: string;
+};
+
+export type OrganizationLegalHoldSummary = {
+  id: Id<'organizationLegalHolds'>;
+  openedAt: number;
+  openedByUserId: string;
+  organizationId: string;
+  reason: string;
+  releasedAt: number | null;
+  releasedByUserId: string | null;
+  status: OrganizationLegalHoldStatus;
+};
+
+export type RetentionDeletionBatch = {
+  id: Id<'retentionDeletionBatches'>;
+  organizationId: string;
+  jobKind: RetentionDeletionJobKind;
+  policySnapshotJson: string;
+  startedAt: number;
+  completedAt: number;
+  status: 'failure' | 'success';
+  deletedCount: number;
+  skippedOnHoldCount: number;
+  failedCount: number;
+  detailsJson: string;
+  createdAt: number;
 };
 
 export type OrganizationSupportAccessSiteAdminOption = {

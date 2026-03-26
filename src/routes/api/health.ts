@@ -15,6 +15,16 @@ function resolveConvexHttpOrigin(): string | undefined {
   return cloudUrl.includes('://') ? deriveConvexSiteUrl(cloudUrl) : normalizeUrlOrigin(cloudUrl);
 }
 
+function createLivenessResponse(status: 'healthy' | 'unhealthy', responseStatus: 200 | 503) {
+  return new Response(JSON.stringify({ status }), {
+    status: responseStatus,
+    headers: {
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/json',
+    },
+  });
+}
+
 /**
  * Health check endpoint - proxies to Convex HTTP endpoint
  * The actual health check logic is now in Convex (convex/health.ts)
@@ -26,22 +36,10 @@ export const Route = createFileRoute('/api/health')({
       GET: async () => {
         const convexHttpOrigin = resolveConvexHttpOrigin();
         if (!convexHttpOrigin) {
-          return new Response(
-            JSON.stringify({
-              status: 'unhealthy',
-              error: 'Convex HTTP origin not configured (set VITE_CONVEX_URL)',
-            }),
-            {
-              status: 503,
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            },
-          );
+          return createLivenessResponse('unhealthy', 503);
         }
 
         try {
-          // Call Convex HTTP endpoint
           const response = await fetch(`${convexHttpOrigin}/health`, {
             method: 'GET',
             headers: {
@@ -49,60 +47,21 @@ export const Route = createFileRoute('/api/health')({
             },
           });
 
-          const rawBody = await response.text();
-          const trimmedBody = rawBody.trim();
-
-          if (trimmedBody.length === 0) {
-            return new Response(
-              JSON.stringify({
-                status: response.ok ? 'healthy' : 'unhealthy',
-                upstreamStatus: response.status,
-              }),
-              {
-                status: response.ok ? 200 : 503,
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-              },
-            );
+          if (!response.ok) {
+            return createLivenessResponse('unhealthy', 503);
           }
 
           try {
-            const data = JSON.parse(trimmedBody);
-            return new Response(JSON.stringify(data), {
-              status: response.status,
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            });
+            const payload = (await response.json()) as { status?: string };
+            return payload.status === 'healthy'
+              ? createLivenessResponse('healthy', 200)
+              : createLivenessResponse('unhealthy', 503);
           } catch {
-            return new Response(
-              JSON.stringify({
-                status: response.ok ? 'healthy' : 'unhealthy',
-                raw: trimmedBody.slice(0, 500),
-                upstreamStatus: response.status,
-              }),
-              {
-                status: response.ok ? 200 : 503,
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-              },
-            );
+            return createLivenessResponse('unhealthy', 503);
           }
         } catch (error) {
-          return new Response(
-            JSON.stringify({
-              status: 'unhealthy',
-              error: error instanceof Error ? error.message : 'Unknown error',
-            }),
-            {
-              status: 503,
-              headers: {
-                'Content-Type': 'application/json',
-              },
-            },
-          );
+          console.error('Health check proxy failed', error);
+          return createLivenessResponse('unhealthy', 503);
         }
       },
     },

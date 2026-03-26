@@ -199,6 +199,7 @@ async function setupConvexProduction(options?: {
   openRouterApiKey?: string;
   resendApiKey?: string;
 }): Promise<{
+  authProxySharedSecret: string;
   betterAuthSecret: string;
   convexSiteUrl: string;
   convexUrl: string;
@@ -208,10 +209,14 @@ async function setupConvexProduction(options?: {
   console.log('\n🚀 Setting up Convex production...');
 
   const betterAuthSecret = execSync('openssl rand -base64 32', { encoding: 'utf8' }).trim();
+  const authProxySharedSecret = execSync('openssl rand -base64 32', { encoding: 'utf8' }).trim();
+  const betterAuthSecrets = `1:${betterAuthSecret}`;
 
   console.log('\n⚙️  Setting production environment variables...');
 
   const prodEnvVars: { name: string; value: string }[] = [
+    { name: 'AUTH_PROXY_SHARED_SECRET', value: authProxySharedSecret },
+    { name: 'BETTER_AUTH_SECRETS', value: betterAuthSecrets },
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
     { name: 'APP_NAME', value: DEFAULT_APP_NAME },
     { name: 'RESEND_EMAIL_SENDER', value: DEFAULT_PROD_RESEND_SENDER },
@@ -266,6 +271,7 @@ async function setupConvexProduction(options?: {
   if (deploymentName) {
     const convexUrl = `https://${deploymentName}.convex.cloud`;
     return {
+      authProxySharedSecret,
       betterAuthSecret,
       convexSiteUrl: `${convexUrl.replace('.convex.cloud', '.convex.site')}`,
       convexUrl,
@@ -554,9 +560,9 @@ async function main() {
         mode: 'plan',
         changedLocally: [],
         changedRemotely: [
-          'Convex production env: BETTER_AUTH_SECRET, APP_NAME, RESEND_EMAIL_SENDER, optional RESEND_API_KEY',
+          'Convex production env: AUTH_PROXY_SHARED_SECRET, BETTER_AUTH_SECRETS, BETTER_AUTH_SECRET, APP_NAME, RESEND_EMAIL_SENDER, optional RESEND_API_KEY',
           'Convex production deploy',
-          'Optional Netlify production env: VITE_CONVEX_URL',
+          'Optional Netlify production env: VITE_CONVEX_URL, AUTH_PROXY_SHARED_SECRET',
           'Optional Convex production env: BETTER_AUTH_URL',
           opts.skipGithubDeploy
             ? 'GitHub deploy environments skipped'
@@ -747,12 +753,17 @@ async function main() {
     console.log(
       `   VITE_CONVEX_URL = ${convexInfo?.convexUrl ?? 'https://your-deployment.convex.cloud'}`,
     );
+    console.log('   AUTH_PROXY_SHARED_SECRET = <shared-secret>');
     console.log('   Convex site origin is derived automatically from VITE_CONVEX_URL.');
     console.log('');
 
     if (
       convexInfo &&
-      (opts.yes || (await askYesNo('Set VITE_CONVEX_URL on Netlify production now?', true)))
+      (opts.yes ||
+        (await askYesNo(
+          'Set VITE_CONVEX_URL and AUTH_PROXY_SHARED_SECRET on Netlify production now?',
+          true,
+        )))
     ) {
       const netlifyPreflight = checkNetlifyMutationReadiness({
         requireLinkedSite: !selectedProductionSite?.id,
@@ -776,18 +787,24 @@ async function main() {
       );
       try {
         syncNetlifyProductionRuntimeAndBuildVars({
+          authProxySharedSecret: convexInfo.authProxySharedSecret,
           authToken: netlifyToken,
           siteId: netlifySiteId.trim(),
           viteConvexUrl: convexInfo.convexUrl,
         });
         console.log('✅ Netlify production environment variables updated.');
-        changedRemotely.push('Updated Netlify production env: VITE_CONVEX_URL');
+        changedRemotely.push(
+          'Updated Netlify production env: VITE_CONVEX_URL, AUTH_PROXY_SHARED_SECRET',
+        );
         readiness.netlify = 'ready';
       } catch {
         console.log(
           '⚠️  Netlify env sync failed. Set the variable manually in Netlify UI, or run:',
         );
         console.log('   pnpm exec netlify env:set VITE_CONVEX_URL <url> --context production');
+        console.log(
+          '   pnpm exec netlify env:set AUTH_PROXY_SHARED_SECRET <secret> --context production --secret',
+        );
         readiness.netlify = 'needs attention';
         warnings.push('Netlify production env vars still need to be set manually.');
       }

@@ -18,7 +18,6 @@ export type StorageRoleConfig = Record<StorageCapability, string>;
 
 export type StorageBrokerRuntimeConfig = {
   awsRegion: string;
-  decisionQueueUrl: string;
   documentParseQueueUrl: string;
   fileServeSigningSecret: string;
   inspectionQueueUrl: string;
@@ -54,6 +53,8 @@ export type DocumentParserWorkerRuntimeConfig = {
   awsRegion: string;
   callbackBaseUrl: string;
   callbackSecret: string;
+  documentParseJsonResultMaxBytes: number;
+  documentParseTextResultMaxBytes: number;
   stagingPrefix: string;
   storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
 };
@@ -112,7 +113,6 @@ export function getStorageBrokerRuntimeConfig(): StorageBrokerRuntimeConfig {
   assertNoLegacyWebhookSecret();
   return {
     awsRegion: readRequiredEnv('AWS_REGION'),
-    decisionQueueUrl: readRequiredEnv('AWS_STORAGE_DECISION_QUEUE_URL'),
     documentParseQueueUrl: readRequiredEnv('AWS_DOCUMENT_PARSE_QUEUE_URL'),
     fileServeSigningSecret: readRequiredEnv('AWS_FILE_SERVE_SIGNING_SECRET'),
     inspectionQueueUrl: readRequiredEnv('AWS_STORAGE_INSPECTION_QUEUE_URL'),
@@ -156,7 +156,16 @@ export function getDocumentParserWorkerRuntimeConfig(): DocumentParserWorkerRunt
     awsRegion: readRequiredEnv('AWS_REGION'),
     callbackBaseUrl: readRequiredEnv('CONVEX_STORAGE_CALLBACK_BASE_URL'),
     callbackSecret: readRequiredEnv('CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET'),
-    stagingPrefix: readRequiredEnv('AWS_DOCUMENT_RESULT_STAGING_PREFIX'),
+    documentParseJsonResultMaxBytes: readPositiveIntegerEnv(
+      'AWS_DOCUMENT_PARSE_JSON_RESULT_MAX_BYTES',
+      25 * 1024 * 1024,
+    ),
+    documentParseTextResultMaxBytes: readPositiveIntegerEnv(
+      'AWS_DOCUMENT_PARSE_TEXT_RESULT_MAX_BYTES',
+      10 * 1024 * 1024,
+    ),
+    stagingPrefix:
+      process.env.AWS_DOCUMENT_RESULT_STAGING_PREFIX?.trim() || 'quarantine/parser-results/',
     storageBuckets: readStorageBuckets(),
   };
 }

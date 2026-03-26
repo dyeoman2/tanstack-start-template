@@ -75,7 +75,7 @@ async function ensureEnterpriseOrganizationMembership(
   return true;
 }
 
-async function verifyGoogleHostedDomain(idToken: string): Promise<string | null> {
+export async function deriveGoogleHostedDomainFromIdToken(idToken: string): Promise<string | null> {
   const credentials = getGoogleOAuthCredentials();
   if (!credentials) {
     return null;
@@ -214,15 +214,8 @@ export async function resolveEnterpriseSessionContext(
     input.userId,
     'google',
   );
-  if (!googleAccount?.idToken) {
-    return null;
-  }
-
-  let hostedDomain: string | null = null;
-  try {
-    hostedDomain = await verifyGoogleHostedDomain(googleAccount.idToken);
-  } catch (error) {
-    console.error('[auth] Failed to verify Google Workspace hosted domain claim', error);
+  const hostedDomain = googleAccount?.googleHostedDomain ?? null;
+  if (!hostedDomain) {
     return null;
   }
 
@@ -239,7 +232,6 @@ export async function resolveEnterpriseSessionContext(
   }
 
   if (
-    !hostedDomain ||
     hostedDomain !== resolution.managedDomain ||
     !resolution.verifiedDomains.includes(hostedDomain)
   ) {

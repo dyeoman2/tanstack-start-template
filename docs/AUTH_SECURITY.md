@@ -4,9 +4,10 @@ This project enforces the regulated baseline we ship, distinguishing the control
 
 ### Why This Is Strict by Default
 
-- The template now fails closed in production for Better Auth configuration. `BETTER_AUTH_SECRET` is required outside tests, must be at least 32 characters, and `BETTER_AUTH_URL` must be an absolute HTTPS origin unless it points to loopback development.
+- The template now fails closed in production for Better Auth configuration. `BETTER_AUTH_URL` must be an absolute HTTPS origin unless it points to loopback development, and Better Auth secret material must be at least 32 characters long whether it arrives through `BETTER_AUTH_SECRET` or `BETTER_AUTH_SECRETS`.
 - Preview hosts and extra trusted origins are opt-in only. Invalid `BETTER_AUTH_PREVIEW_HOSTS` or `BETTER_AUTH_TRUSTED_ORIGINS` values fail startup instead of being ignored.
 - Site-admin and other privileged flows are expected to satisfy MFA or passkey requirements before access is granted.
+- Better Auth runs with versioned-secret support when `BETTER_AUTH_SECRETS` is present, while `BETTER_AUTH_SECRET` remains the legacy fallback for older encrypted data.
 
 ### Email Verification
 
@@ -27,7 +28,9 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - `BETTER_AUTH_TRUSTED_ORIGINS` must contain absolute origins such as `https://admin.example.com`; hostnames without a scheme are rejected at startup.
 - Deployment hardening baseline is pinned in this repo through `src/server.ts`, `netlify.toml`, and `pnpm run deploy:doctor`; deployers still own TLS certificate lifecycle, WAF policy, and monitoring for origin spoofing.
 - Production edges should send `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` or an equivalent HSTS policy.
-- Any deployment that relies on forwarded client IP metadata must use a trusted edge or load balancer that strips and rewrites forwarding headers such as `x-forwarded-for`; this app assumes those headers are canonicalized before requests reach Better Auth and rate-limit logic.
+- This repo no longer trusts raw forwarded client IP headers such as `x-forwarded-for`.
+- Netlify-hosted app traffic signs a canonical `x-app-client-ip` header before proxying auth requests to Convex, and Convex Better Auth trusts only that verified header.
+- Direct `.convex.site` requests that do not carry verified proxy metadata are treated as having no trusted client IP; security controls prefer unknown IP over spoofable IP.
 
 ### Cookies and Sessions
 
@@ -35,5 +38,7 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Session expiry, refresh cadence, and freshness windows are set via the shared Better Auth configuration to enforce short-lived credentials in regulated deployments.
 - Session policy is explicit: 24-hour expiry, 4-hour refresh cadence, and 15-minute freshness windows for step-up protected actions.
 - Better Auth session metadata is normalized after sign-in so downstream policy code can distinguish password, passkey, social, and enterprise authentication paths consistently.
+- This repo intentionally keeps Better Auth sessions database-backed so revocation and admin session workflows reflect server state immediately. Treat active session rows as bearer-equivalent credentials and restrict operational access accordingly.
+- A database compromise still implies session compromise for active sessions. That tradeoff is accepted in this incremental hardening baseline and should be countered with platform access controls, monitoring, and rapid revocation procedures.
 - Break-glass password fallback is disabled by default for organization policies.
 - Infrastructure-level controls beyond the shipped baseline (for example network isolation, secret rotation cadence, and hardware-backed secret custody) remain deployer responsibilities.

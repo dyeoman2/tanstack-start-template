@@ -43,6 +43,7 @@ const DEFAULT_CONTEXTS: Array<'production'> = ['production'];
 
 export function syncNetlifyProductionRuntimeAndBuildVars(
   input: NetlifyEnvSyncInput & {
+    authProxySharedSecret: string;
     includeDeployPreview?: boolean;
     viteConvexUrl: string;
   },
@@ -54,6 +55,7 @@ export function syncNetlifyProductionRuntimeAndBuildVars(
 
   for (const context of contexts) {
     const values = {
+      AUTH_PROXY_SHARED_SECRET: input.authProxySharedSecret,
       VITE_CONVEX_URL: input.viteConvexUrl,
     } satisfies Record<(typeof NETLIFY_RUNTIME_ENV_NAMES)[number], string>;
 
@@ -62,6 +64,7 @@ export function syncNetlifyProductionRuntimeAndBuildVars(
         ...input,
         context,
         key,
+        ...(key === 'AUTH_PROXY_SHARED_SECRET' ? { secret: true } : {}),
         value: values[key],
       });
     }

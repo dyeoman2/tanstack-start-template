@@ -4,6 +4,7 @@
  */
 
 const TEST_BETTER_AUTH_SECRET = 'test-better-auth-secret-abcdefghijklmnopqrstuvwxyz';
+const TEST_AUTH_PROXY_SHARED_SECRET = 'test-auth-proxy-shared-secret-abcdefghijklmnopqrstuvwxyz';
 const TEST_BETTER_AUTH_URL = 'http://127.0.0.1:3000';
 
 type BetterAuthRuntimeConfig = {
@@ -12,6 +13,11 @@ type BetterAuthRuntimeConfig = {
   isLoopback: boolean;
   protocol: 'http' | 'https';
   siteUrl: string;
+};
+
+type BetterAuthVersionedSecret = {
+  value: string;
+  version: number;
 };
 
 function isTestRuntime() {
@@ -194,6 +200,60 @@ export function shouldUseSecureAuthCookies(siteUrl = getRequiredBetterAuthUrl())
   }
 }
 
+function validateBetterAuthSecretValue(secret: string, label: string): string {
+  if (secret.length < 32) {
+    throw new Error(
+      `${label} must use secret values at least 32 characters long. Generate one with: openssl rand -base64 32`,
+    );
+  }
+
+  return secret;
+}
+
+function parseBetterAuthSecretsEnv(raw: string): BetterAuthVersionedSecret[] {
+  const seenVersions = new Set<number>();
+  const secrets = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => {
+      const separatorIndex = entry.indexOf(':');
+      if (separatorIndex <= 0 || separatorIndex === entry.length - 1) {
+        throw new Error(
+          'BETTER_AUTH_SECRETS must use version:value entries, for example "2:new-secret,1:old-secret".',
+        );
+      }
+
+      const rawVersion = entry.slice(0, separatorIndex).trim();
+      const rawValue = entry.slice(separatorIndex + 1).trim();
+      const version = Number.parseInt(rawVersion, 10);
+
+      if (!Number.isInteger(version) || version < 1) {
+        throw new Error(
+          'BETTER_AUTH_SECRETS versions must be positive integers, for example "2:new-secret,1:old-secret".',
+        );
+      }
+
+      if (seenVersions.has(version)) {
+        throw new Error(`BETTER_AUTH_SECRETS must not repeat version ${version}.`);
+      }
+      seenVersions.add(version);
+
+      return {
+        value: validateBetterAuthSecretValue(rawValue, `BETTER_AUTH_SECRETS version ${version}`),
+        version,
+      } satisfies BetterAuthVersionedSecret;
+    });
+
+  if (secrets.length === 0) {
+    throw new Error(
+      'BETTER_AUTH_SECRETS must contain at least one version:value entry when it is set.',
+    );
+  }
+
+  return secrets;
+}
+
 function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
   return buildBetterAuthRuntimeConfig(readBetterAuthUrlFromEnv());
 }
@@ -300,6 +360,11 @@ function resolveAbsoluteOrigin(value: string | undefined, label: string): string
  * Get the Better Auth secret, with validation.
  */
 export function getBetterAuthSecret(): string {
+  const versionedSecrets = getBetterAuthSecrets();
+  if (versionedSecrets && versionedSecrets.length > 0) {
+    return versionedSecrets[0].value;
+  }
+
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret) {
     if (isTestRuntime()) {
@@ -312,9 +377,48 @@ export function getBetterAuthSecret(): string {
     );
   }
 
+  return validateBetterAuthSecretValue(secret, 'BETTER_AUTH_SECRET');
+}
+
+export function getBetterAuthSecretForTooling(): string {
+  const versionedSecrets = getBetterAuthSecrets();
+  if (versionedSecrets && versionedSecrets.length > 0) {
+    return versionedSecrets[0].value;
+  }
+
+  const secret = process.env.BETTER_AUTH_SECRET;
+  if (!secret) {
+    return TEST_BETTER_AUTH_SECRET;
+  }
+
+  return validateBetterAuthSecretValue(secret, 'BETTER_AUTH_SECRET');
+}
+
+export function getBetterAuthSecrets(): BetterAuthVersionedSecret[] | undefined {
+  const rawSecrets = process.env.BETTER_AUTH_SECRETS?.trim();
+  if (!rawSecrets) {
+    return undefined;
+  }
+
+  return parseBetterAuthSecretsEnv(rawSecrets);
+}
+
+export function getAuthProxySharedSecret(): string {
+  const secret = readOptionalServerEnv('AUTH_PROXY_SHARED_SECRET');
+  if (!secret) {
+    const deployment = getAppDeploymentEnv();
+    if (isDevOrTestDeployment(deployment) || (deployment === null && isTestRuntime())) {
+      return TEST_AUTH_PROXY_SHARED_SECRET;
+    }
+
+    throw new Error(
+      'AUTH_PROXY_SHARED_SECRET environment variable is required for trusted auth proxy signing.',
+    );
+  }
+
   if (secret.length < 32) {
     throw new Error(
-      'BETTER_AUTH_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
+      'AUTH_PROXY_SHARED_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
     );
   }
 
@@ -376,6 +480,8 @@ export type StorageRuntimeConfig = {
   awsRegion: string | null;
   backendMode: FileStorageBackendMode;
   convexSiteUrl: string | null;
+  documentParseJsonResultMaxBytes: number;
+  documentParseTextResultMaxBytes: number;
   fileServeSigningSecret: string | null;
   fileUploadMaxBytes: number;
   malwareScanSlaMs: number;
@@ -604,6 +710,16 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
     awsRegion: readOptionalServerEnv('AWS_REGION'),
     backendMode,
     convexSiteUrl: readOptionalServerEnv('CONVEX_SITE_URL'),
+    documentParseJsonResultMaxBytes: parsePositiveInteger(
+      readOptionalServerEnv('AWS_DOCUMENT_PARSE_JSON_RESULT_MAX_BYTES'),
+      'AWS_DOCUMENT_PARSE_JSON_RESULT_MAX_BYTES',
+      25 * 1024 * 1024,
+    ),
+    documentParseTextResultMaxBytes: parsePositiveInteger(
+      readOptionalServerEnv('AWS_DOCUMENT_PARSE_TEXT_RESULT_MAX_BYTES'),
+      'AWS_DOCUMENT_PARSE_TEXT_RESULT_MAX_BYTES',
+      10 * 1024 * 1024,
+    ),
     fileServeSigningSecret: readOptionalServerEnv('AWS_FILE_SERVE_SIGNING_SECRET'),
     fileUploadMaxBytes: parsePositiveInteger(
       readOptionalServerEnv('FILE_UPLOAD_MAX_BYTES'),
@@ -626,7 +742,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       15 * 60 * 1000,
     ),
     parserResultStagingPrefix:
-      readOptionalServerEnv('AWS_DOCUMENT_RESULT_STAGING_PREFIX') ?? 'parser-staging/',
+      readOptionalServerEnv('AWS_DOCUMENT_RESULT_STAGING_PREFIX') ?? 'quarantine/parser-results/',
     s3DeleteMaxAttempts: parsePositiveInteger(
       readOptionalServerEnv('AWS_S3_DELETE_MAX_ATTEMPTS'),
       'AWS_S3_DELETE_MAX_ATTEMPTS',

@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { useAction, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { Download, Loader2, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -46,6 +46,7 @@ import {
   cancelOrganizationInvitationServerFn,
   createOrganizationInvitationServerFn,
   deactivateOrganizationMemberServerFn,
+  exportOrganizationDirectoryCsvServerFn,
   reactivateOrganizationMemberServerFn,
   removeOrganizationMemberServerFn,
   suspendOrganizationMemberServerFn,
@@ -81,7 +82,7 @@ export function OrganizationMembersManagement({
   const queryClient = useQueryClient();
   const router = useRouter();
   const { showToast } = useToast();
-  const exportDirectoryCsv = useAction(api.organizationManagement.exportOrganizationDirectoryCsv);
+  const exportDirectoryCsv = exportOrganizationDirectoryCsvServerFn;
   const [directoryAsOf, setDirectoryAsOf] = useState(() => Date.now());
   const directory = useQuery(api.organizationManagement.listOrganizationDirectory, {
     slug,
@@ -217,14 +218,16 @@ export function OrganizationMembersManagement({
 
     try {
       const result = await exportDirectoryCsv({
-        slug,
-        asOf: directoryAsOf,
-        sortBy: searchParams.sortBy,
-        sortOrder: searchParams.sortOrder,
-        secondarySortBy: searchParams.secondarySortBy,
-        secondarySortOrder: searchParams.secondarySortOrder,
-        search: searchParams.search,
-        kind: searchParams.kind,
+        data: {
+          slug,
+          asOf: directoryAsOf,
+          sortBy: searchParams.sortBy,
+          sortOrder: searchParams.sortOrder,
+          secondarySortBy: searchParams.secondarySortBy,
+          secondarySortOrder: searchParams.secondarySortOrder,
+          search: searchParams.search,
+          kind: searchParams.kind,
+        },
       });
       const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
       const url = window.URL.createObjectURL(blob);

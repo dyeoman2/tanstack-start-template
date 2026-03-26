@@ -75,6 +75,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   accessTokenExpiresAt?: null | number;
                   accountId: string;
                   createdAt: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId: string;
@@ -318,6 +319,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -841,6 +843,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -1495,6 +1498,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   accessTokenExpiresAt?: null | number;
                   accountId?: string;
                   createdAt?: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId?: string;
@@ -1513,6 +1517,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"
@@ -2160,6 +2165,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   accessTokenExpiresAt?: null | number;
                   accountId?: string;
                   createdAt?: number;
+                  googleHostedDomain?: null | string;
                   idToken?: null | string;
                   password?: null | string;
                   providerId?: string;
@@ -2178,6 +2184,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "accessToken"
                     | "refreshToken"
                     | "idToken"
+                    | "googleHostedDomain"
                     | "accessTokenExpiresAt"
                     | "refreshTokenExpiresAt"
                     | "scope"

@@ -6,12 +6,14 @@ const {
   handleServerErrorMock,
   listBetterAuthUserSessionsMock,
   requireAdminMock,
+  resolveRequestAuditContextMock,
 } = vi.hoisted(() => ({
   fetchAuthActionMock: vi.fn(),
   fetchAuthMutationMock: vi.fn(),
   handleServerErrorMock: vi.fn((error: unknown) => error),
   listBetterAuthUserSessionsMock: vi.fn(),
   requireAdminMock: vi.fn(),
+  resolveRequestAuditContextMock: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-start', () => ({
@@ -64,6 +66,10 @@ vi.mock('~/lib/server/better-auth/http', () => ({
   getBetterAuthRequest: vi.fn(),
 }));
 
+vi.mock('~/lib/server/request-audit-context', () => ({
+  resolveRequestAuditContext: resolveRequestAuditContextMock,
+}));
+
 vi.mock('~/lib/server/better-auth/api', () => ({
   banBetterAuthUser: vi.fn(),
   createBetterAuthUser: vi.fn(),
@@ -85,6 +91,11 @@ import { listAdminUserSessionsServerFn } from './admin-management';
 describe('listAdminUserSessionsServerFn', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resolveRequestAuditContextMock.mockReturnValue({
+      requestId: 'req-123',
+      ipAddress: '203.0.113.9',
+      userAgent: 'Vitest',
+    });
   });
 
   it('records the audit event through the dedicated admin audit action', async () => {
@@ -114,7 +125,11 @@ describe('listAdminUserSessionsServerFn', () => {
       },
     });
 
-    expect(listBetterAuthUserSessionsMock).toHaveBeenCalledWith('user_1', expect.any(Function));
+    expect(listBetterAuthUserSessionsMock).toHaveBeenCalledWith('user_1', expect.any(Function), {
+      requestId: 'req-123',
+      ipAddress: '203.0.113.9',
+      userAgent: 'Vitest',
+    });
     expect(fetchAuthActionMock).toHaveBeenCalledWith('recordAdminUserSessionsViewed', {
       sessionCount: 1,
       targetUserId: 'user_1',

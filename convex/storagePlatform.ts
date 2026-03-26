@@ -15,11 +15,17 @@ import {
   finalizeS3PrimaryUpload,
   generateS3PrimaryUploadTarget,
 } from './storageS3Primary';
-import { getCleanObject, putCleanObject } from './lib/storageS3';
+import {
+  deleteStorageObject,
+  getCleanObject,
+  promoteQuarantineObject,
+  putCleanObject,
+} from './lib/storageS3';
 import {
   type CreateUploadTargetArgs,
   type DeleteStoredFileArgs,
   type FinalizeUploadArgs,
+  type InspectionStatus,
   fileUrlResultValidator,
   type MalwareStatus,
   type RegisterFileForLifecycleTrackingArgs,
@@ -200,6 +206,29 @@ function resolveInheritedDerivedMalwareStatus(parentLifecycle: {
   return parentLifecycle.malwareStatus === 'CLEAN' ? 'CLEAN' : 'NOT_STARTED';
 }
 
+function resolveDerivedTrustState(args: {
+  parentLifecycle: {
+    malwareStatus?: MalwareStatus;
+  };
+  trustLevel: 'inherit_parent' | 'validated_clean';
+}): {
+  inspectionStatus?: InspectionStatus;
+  malwareStatus: MalwareStatus;
+} {
+  if (args.trustLevel === 'validated_clean') {
+    return {
+      inspectionStatus: 'PASSED',
+      malwareStatus: 'CLEAN',
+    };
+  }
+
+  const inheritedMalwareStatus = resolveInheritedDerivedMalwareStatus(args.parentLifecycle);
+  return {
+    inspectionStatus: inheritedMalwareStatus === 'CLEAN' ? 'PASSED' : undefined,
+    malwareStatus: inheritedMalwareStatus,
+  };
+}
+
 export async function storeDerivedFileWithMode(
   ctx: ActionCtx,
   args: {
@@ -210,11 +239,16 @@ export async function storeDerivedFileWithMode(
     parentStorageId: string;
     sourceId: string;
     sourceType: string;
+    stagedQuarantineKey?: string;
+    trustLevel?: 'inherit_parent' | 'validated_clean';
   },
 ) {
   const parentLifecycle = await resolveDerivedParentLifecycleOrThrow(ctx, args.parentStorageId);
   const backendMode = getFileStorageBackendMode();
-  const inheritedMalwareStatus = resolveInheritedDerivedMalwareStatus(parentLifecycle);
+  const trustState = resolveDerivedTrustState({
+    parentLifecycle,
+    trustLevel: args.trustLevel ?? 'inherit_parent',
+  });
 
   if (backendMode === 's3-primary') {
     const runtimeConfig = getStorageRuntimeConfig();
@@ -230,20 +264,32 @@ export async function storeDerivedFileWithMode(
       sourceType: args.sourceType,
       storageId,
     });
-    const body = new Uint8Array(await args.blob.arrayBuffer());
-    const result = await putCleanObject({
-      body,
-      contentType: args.mimeType,
-      key,
-    });
+    const result =
+      args.trustLevel === 'validated_clean' && args.stagedQuarantineKey
+        ? await promoteQuarantineObject({
+            contentType: args.mimeType,
+            destinationKey: key,
+            sourceKey: args.stagedQuarantineKey,
+          })
+        : await putCleanObject({
+            body: new Uint8Array(await args.blob.arrayBuffer()),
+            contentType: args.mimeType,
+            key,
+          });
+    if (args.trustLevel === 'validated_clean' && args.stagedQuarantineKey) {
+      await deleteStorageObject({
+        bucketKind: 'quarantine',
+        key: args.stagedQuarantineKey,
+      });
+    }
     await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
       backendMode,
       canonicalBucket: bucket,
       canonicalKey: key,
       canonicalVersionId: result.VersionId,
       fileSize: args.blob.size,
-      inspectionStatus: inheritedMalwareStatus === 'CLEAN' ? 'PASSED' : undefined,
-      malwareStatus: inheritedMalwareStatus,
+      inspectionStatus: trustState.inspectionStatus,
+      malwareStatus: trustState.malwareStatus,
       mimeType: args.mimeType,
       organizationId: args.organizationId,
       originalFileName: args.fileName,
@@ -255,7 +301,8 @@ export async function storeDerivedFileWithMode(
     });
     await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
       actionResult: 'success',
-      details: 'derived_finalized',
+      details:
+        args.trustLevel === 'validated_clean' ? 'validated_derived_promoted' : 'derived_finalized',
       eventType: 'finalized',
       storageId,
     });
@@ -268,8 +315,8 @@ export async function storeDerivedFileWithMode(
     await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
       backendMode,
       fileSize: args.blob.size,
-      inspectionStatus: inheritedMalwareStatus === 'CLEAN' ? 'PASSED' : undefined,
-      malwareStatus: inheritedMalwareStatus,
+      inspectionStatus: trustState.inspectionStatus,
+      malwareStatus: trustState.malwareStatus,
       mimeType: args.mimeType,
       mirrorDeadlineAt: Date.now() + runtimeConfig.malwareScanSlaMs,
       mirrorStatus: 'PENDING',
@@ -282,7 +329,10 @@ export async function storeDerivedFileWithMode(
     });
     await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
       actionResult: 'success',
-      details: 'derived_mirror_pending',
+      details:
+        args.trustLevel === 'validated_clean'
+          ? 'validated_derived_mirror_pending'
+          : 'derived_mirror_pending',
       eventType: 'finalized',
       storageId,
     });
@@ -295,8 +345,8 @@ export async function storeDerivedFileWithMode(
   await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
     backendMode,
     fileSize: args.blob.size,
-    inspectionStatus: inheritedMalwareStatus === 'CLEAN' ? 'PASSED' : undefined,
-    malwareStatus: inheritedMalwareStatus,
+    inspectionStatus: trustState.inspectionStatus,
+    malwareStatus: trustState.malwareStatus,
     mimeType: args.mimeType,
     organizationId: args.organizationId,
     originalFileName: args.fileName,
@@ -307,7 +357,10 @@ export async function storeDerivedFileWithMode(
   });
   await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
     actionResult: 'success',
-    details: 'derived_convex_finalized',
+    details:
+      args.trustLevel === 'validated_clean'
+        ? 'validated_derived_convex_finalized'
+        : 'derived_convex_finalized',
     eventType: 'finalized',
     storageId,
   });

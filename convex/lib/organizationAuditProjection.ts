@@ -134,6 +134,16 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Directory exported';
     case 'audit_log_exported':
       return 'Audit log exported';
+    case 'retention_hold_applied':
+      return 'Retention hold applied';
+    case 'retention_hold_released':
+      return 'Retention hold released';
+    case 'retention_purge_completed':
+      return 'Retention purge completed';
+    case 'retention_purge_failed':
+      return 'Retention purge failed';
+    case 'retention_purge_skipped_on_hold':
+      return 'Retention purge skipped on hold';
     case 'chat_thread_created':
       return 'Chat thread created';
     case 'chat_thread_deleted':
@@ -247,6 +257,8 @@ function getGenericAuditActorLabel(eventType: string) {
     case 'domain_removed':
     case 'organization_policy_updated':
     case 'enterprise_auth_mode_updated':
+    case 'retention_hold_applied':
+    case 'retention_hold_released':
     case 'support_access_granted':
     case 'support_access_revoked':
       return 'Organization admin';
@@ -291,6 +303,16 @@ function getAuditTargetLabel(event: OrganizationAuditEventSource, metadata: unkn
 
   if (event.eventType === 'enterprise_break_glass_used') {
     return 'Break-glass access';
+  }
+
+  if (
+    event.eventType === 'retention_hold_applied' ||
+    event.eventType === 'retention_hold_released' ||
+    event.eventType === 'retention_purge_completed' ||
+    event.eventType === 'retention_purge_failed' ||
+    event.eventType === 'retention_purge_skipped_on_hold'
+  ) {
+    return 'Retention controls';
   }
 
   if (
@@ -343,6 +365,28 @@ function getAuditSummary(eventType: string, metadata: unknown) {
   if (eventType === 'bulk_member_removed') {
     const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
     return targetRole ? `Removed ${targetRole}` : undefined;
+  }
+
+  if (
+    eventType === 'retention_hold_applied' ||
+    eventType === 'retention_hold_released' ||
+    eventType === 'retention_purge_completed' ||
+    eventType === 'retention_purge_failed' ||
+    eventType === 'retention_purge_skipped_on_hold'
+  ) {
+    const reason = toAuditMetadataDisplayValue(metadataRecord?.reason);
+    const deletedCount = metadataRecord?.deletedCount;
+    const skippedOnHoldCount = metadataRecord?.skippedOnHoldCount;
+    const failedCount = metadataRecord?.failedCount;
+
+    return [
+      reason,
+      typeof deletedCount === 'number' ? `Deleted: ${deletedCount}` : null,
+      typeof skippedOnHoldCount === 'number' ? `Skipped on hold: ${skippedOnHoldCount}` : null,
+      typeof failedCount === 'number' ? `Failures: ${failedCount}` : null,
+    ]
+      .filter((value): value is string => !!value)
+      .join(' · ');
   }
 
   if (

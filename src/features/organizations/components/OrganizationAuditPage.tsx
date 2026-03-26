@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useAction, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { Braces, Download, List, Loader2, ScrollText } from 'lucide-react';
 import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import {
@@ -35,6 +35,7 @@ import type {
   OrganizationAuditSortField,
 } from '~/features/organizations/lib/organization-management';
 import { getServerFunctionErrorMessage } from '~/features/organizations/lib/organization-session';
+import { exportOrganizationAuditCsvServerFn } from '~/features/organizations/server/organization-management';
 
 const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEventType>[] = [
   { label: 'All events', value: 'all' },
@@ -72,6 +73,11 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Support access used', value: 'support_access_used' },
   { label: 'Directory exported', value: 'directory_exported' },
   { label: 'Audit log exported', value: 'audit_log_exported' },
+  { label: 'Retention hold applied', value: 'retention_hold_applied' },
+  { label: 'Retention hold released', value: 'retention_hold_released' },
+  { label: 'Retention purge completed', value: 'retention_purge_completed' },
+  { label: 'Retention purge failed', value: 'retention_purge_failed' },
+  { label: 'Retention purge skipped', value: 'retention_purge_skipped_on_hold' },
   { label: 'Chat thread created', value: 'chat_thread_created' },
   { label: 'Chat thread deleted', value: 'chat_thread_deleted' },
   { label: 'Chat attachment uploaded', value: 'chat_attachment_uploaded' },
@@ -754,7 +760,7 @@ export function OrganizationAuditPage({
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const exportAuditCsv = useAction(api.organizationManagement.exportOrganizationAuditCsv);
+  const exportAuditCsv = exportOrganizationAuditCsvServerFn;
   const [isExporting, setIsExporting] = useState(false);
   const [viewMode, setViewMode] = useState<AuditViewMode>('summary');
 
@@ -1002,15 +1008,17 @@ export function OrganizationAuditPage({
 
     try {
       const result = await exportAuditCsv({
-        slug,
-        sortBy: searchParams.sortBy,
-        sortOrder: searchParams.sortOrder,
-        preset: searchParams.preset,
-        eventType: searchParams.eventType as never,
-        search: searchParams.search,
-        startDate: searchParams.startDate,
-        endDate: searchParams.endDate,
-        failuresOnly: searchParams.failuresOnly,
+        data: {
+          slug,
+          sortBy: searchParams.sortBy,
+          sortOrder: searchParams.sortOrder,
+          preset: searchParams.preset,
+          eventType: searchParams.eventType,
+          search: searchParams.search,
+          startDate: searchParams.startDate,
+          endDate: searchParams.endDate,
+          failuresOnly: searchParams.failuresOnly,
+        },
       });
       const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
       const url = window.URL.createObjectURL(blob);

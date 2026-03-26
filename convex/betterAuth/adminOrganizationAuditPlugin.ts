@@ -1,5 +1,6 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from 'better-auth';
 import { createAuthMiddleware } from 'better-auth/api';
+import { getTrustedClientIp, getTrustedUserAgent } from '../../src/lib/shared/better-auth-http';
 import type { AuditRecord } from '../lib/authAudit';
 import { recordAuthorizationDeniedAuditEvent } from './authorizationDeniedAudit';
 
@@ -21,24 +22,12 @@ function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function getHeaderValue(ctx: { headers?: Headers; request?: Request | undefined }, name: string) {
-  return ctx.request?.headers.get(name) ?? ctx.headers?.get(name) ?? undefined;
-}
-
 function getIpAddress(ctx: { headers?: Headers; request?: Request | undefined }) {
-  const forwardedFor = getHeaderValue(ctx, 'x-forwarded-for');
-  if (forwardedFor) {
-    return normalizeOptionalString(forwardedFor.split(',')[0]);
-  }
-
-  return (
-    normalizeOptionalString(getHeaderValue(ctx, 'cf-connecting-ip')) ??
-    normalizeOptionalString(getHeaderValue(ctx, 'x-real-ip'))
-  );
+  return getTrustedClientIp(ctx);
 }
 
 function getUserAgent(ctx: { headers?: Headers; request?: Request | undefined }) {
-  return normalizeOptionalString(getHeaderValue(ctx, 'user-agent'));
+  return getTrustedUserAgent(ctx);
 }
 
 async function readAfterHookErrorDetails(returned: unknown) {

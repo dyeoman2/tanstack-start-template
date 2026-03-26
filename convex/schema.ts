@@ -24,6 +24,8 @@ const storageLifecycleInspectionReasonValidator = v.union(
   v.literal('checksum_mismatch'),
   v.literal('file_signature_mismatch'),
   v.literal('inspection_error'),
+  v.literal('office_macro_enabled'),
+  v.literal('office_password_protected'),
   v.literal('pdf_active_content'),
   v.literal('pdf_embedded_files'),
   v.literal('pdf_encrypted'),
@@ -87,6 +89,8 @@ const pdfParseJobStatusValidator = v.union(
   v.literal('failed'),
   v.literal('quarantined'),
 );
+const organizationLegalHoldStatusValidator = v.union(v.literal('active'), v.literal('released'));
+const retentionDeletionJobKindValidator = v.literal('temporary_artifact_purge');
 
 const onboardingStatusValidator = v.union(
   v.literal('not_started'),
@@ -369,6 +373,21 @@ export default defineSchema({
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_organization_id_and_site_admin_user_id', ['organizationId', 'siteAdminUserId']),
 
+  organizationLegalHolds: defineTable({
+    organizationId: v.string(),
+    status: organizationLegalHoldStatusValidator,
+    reason: v.string(),
+    openedAt: v.number(),
+    openedByUserId: v.string(),
+    releasedAt: v.optional(v.number()),
+    releasedByUserId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organization_id', ['organizationId'])
+    .index('by_organization_id_and_status', ['organizationId', 'status'])
+    .index('by_status_and_opened_at', ['status', 'openedAt']),
+
   organizationCleanupRequests: defineTable({
     organizationId: v.string(),
     requestedByUserId: v.string(),
@@ -548,11 +567,13 @@ export default defineSchema({
     parserVersion: v.optional(v.string()),
     processingStartedAt: v.optional(v.number()),
     resultStorageId: v.optional(v.string()),
+    purgeEligibleAt: v.optional(v.number()),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_storageId', ['storageId'])
+    .index('by_purgeEligibleAt', ['purgeEligibleAt'])
     .index('by_status_and_updatedAt', ['status', 'updatedAt'])
     .index('by_requestedByUserId_and_createdAt', ['requestedByUserId', 'createdAt']),
 
@@ -1239,12 +1260,33 @@ export default defineSchema({
   retentionJobs: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
+    jobKind: v.union(
+      v.literal('attachment_purge'),
+      v.literal('quarantine_cleanup'),
+      retentionDeletionJobKindValidator,
+    ),
     status: v.union(v.literal('success'), v.literal('failure')),
     details: v.optional(v.string()),
     processedCount: v.number(),
     createdAt: v.number(),
   })
+    .index('by_job_kind_and_created_at', ['jobKind', 'createdAt'])
+    .index('by_created_at', ['createdAt']),
+
+  retentionDeletionBatches: defineTable({
+    organizationId: v.string(),
+    jobKind: retentionDeletionJobKindValidator,
+    policySnapshotJson: v.string(),
+    startedAt: v.number(),
+    completedAt: v.number(),
+    status: v.union(v.literal('success'), v.literal('failure')),
+    deletedCount: v.number(),
+    skippedOnHoldCount: v.number(),
+    failedCount: v.number(),
+    detailsJson: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_job_kind_and_created_at', ['jobKind', 'createdAt'])
     .index('by_created_at', ['createdAt']),
 

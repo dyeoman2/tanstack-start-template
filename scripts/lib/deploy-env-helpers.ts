@@ -2,6 +2,85 @@ import { convexEnvList, convexEnvSet, convexExecCaptured } from './convex-cli';
 
 export type ConvexDeploymentScope = 'dev' | 'prod';
 
+type BetterAuthJwksDoc = {
+  id: string;
+  publicKey: string;
+};
+
+type PublicJwks = {
+  keys: JsonWebKey[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isBetterAuthJwksDoc(value: unknown): value is BetterAuthJwksDoc {
+  return isRecord(value) && typeof value.id === 'string' && typeof value.publicKey === 'string';
+}
+
+function isPublicJwks(value: unknown): value is PublicJwks {
+  return isRecord(value) && Array.isArray(value.keys);
+}
+
+function normalizePublicJwk(value: unknown, fallbackKid: string): JsonWebKey {
+  if (!isRecord(value)) {
+    throw new Error('Better Auth returned a non-object public JWK.');
+  }
+
+  if (typeof value.k === 'string') {
+    throw new Error('Better Auth returned a symmetric JWK; a public JWKS export is required.');
+  }
+
+  const normalized = { ...value } as JsonWebKey & Record<string, unknown>;
+  normalized.kid =
+    typeof normalized.kid === 'string' && normalized.kid.length > 0 ? normalized.kid : fallbackKid;
+  delete normalized.d;
+  delete normalized.dp;
+  delete normalized.dq;
+  delete normalized.k;
+  delete normalized.oth;
+  delete normalized.p;
+  delete normalized.q;
+  delete normalized.qi;
+  return normalized;
+}
+
+export function normalizeBetterAuthJwksForEnv(rawJwks: string): string {
+  const trimmed = rawJwks.trim();
+  if (!trimmed) {
+    throw new Error('Better Auth JWKS output is empty.');
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error('Better Auth JWKS output is not valid JSON.');
+  }
+
+  if (isPublicJwks(parsed)) {
+    return JSON.stringify(parsed);
+  }
+
+  if (!Array.isArray(parsed) || !parsed.every(isBetterAuthJwksDoc)) {
+    throw new Error('Better Auth JWKS output is neither Better Auth key docs nor public JWKS.');
+  }
+
+  return JSON.stringify({
+    keys: parsed.map((entry) => {
+      let publicKey: unknown;
+      try {
+        publicKey = JSON.parse(entry.publicKey);
+      } catch {
+        throw new Error(`Better Auth returned an unreadable public JWK for key ${entry.id}.`);
+      }
+
+      return normalizePublicJwk(publicKey, entry.id);
+    }),
+  } satisfies PublicJwks);
+}
+
 /** Parses `convex env list` lines (`NAME=value`). */
 export function parseConvexEnvListNames(listOutput: string): string[] {
   const names: string[] = [];
@@ -90,16 +169,12 @@ export function verifyConvexJwksConfigured(scope: ConvexDeploymentScope): boolea
 
 export function printJwksRemediation(scope: ConvexDeploymentScope) {
   const target = scope === 'prod' ? 'production' : 'development';
-  const prodFlag = scope === 'prod' ? ' --prod' : '';
   console.log('');
   console.log(`⚠️  JWKS is missing or unreadable on Convex ${target}.`);
   console.log(
     '   Better Auth needs JWKS in Convex for JWT verification (see convex/auth.config.ts).',
   );
-  console.log(`   Try: pnpm run convex:jwks:sync${prodFlag ? ' -- --prod' : ''}`);
-  console.log(
-    '   Or:  pnpm exec convex run auth:getLatestJwks | pnpm exec convex env set JWKS' + prodFlag,
-  );
+  console.log(`   Try: pnpm run convex:jwks:sync${scope === 'prod' ? ' -- --prod' : ''}`);
   console.log(
     '   After key rotation, run convex:jwks:sync again (see docs/DEPLOY_ENVIRONMENT.md).',
   );
@@ -144,7 +219,7 @@ export function syncConvexJwksFromBetterAuth(scope: ConvexDeploymentScope) {
     args.push('--prod');
   }
   const out = convexExecCaptured(args);
-  const jwks = parseConvexRunStdout(out);
+  const jwks = normalizeBetterAuthJwksForEnv(parseConvexRunStdout(out));
   setConvexEnvJson('JWKS', jwks, scope);
 }
 

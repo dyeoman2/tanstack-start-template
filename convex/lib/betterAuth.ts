@@ -64,6 +64,7 @@ export type BetterAuthInvitation = BetterAuthRecord & {
 export type BetterAuthAccountRecord = BetterAuthRecord & {
   accessToken?: string | null;
   accountId: string;
+  googleHostedDomain?: string | null;
   idToken?: string | null;
   providerId: string;
   refreshToken?: string | null;

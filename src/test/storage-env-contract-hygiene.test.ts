@@ -53,6 +53,27 @@ function isAllowedLegacyReference(relativePath: string, token: string) {
     ].includes(relativePath);
   }
 
+  if (token === 'AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET') {
+    return ['scripts/setup-storage.ts', 'scripts/setup-storage-prod.ts'].includes(relativePath);
+  }
+
+  if (token === 'CONVEX_STORAGE_CALLBACK_SHARED_SECRET') {
+    return ['scripts/setup-storage.ts', 'scripts/setup-storage-prod.ts'].includes(relativePath);
+  }
+
+  if (
+    token === 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET' ||
+    token === 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET'
+  ) {
+    return [
+      'scripts/setup-storage.ts',
+      'scripts/setup-storage-prod.ts',
+      'src/lib/server/env.server.ts',
+      'src/lib/server/env.server.test.ts',
+      'src/lib/server/storage-service-env.ts',
+    ].includes(relativePath);
+  }
+
   return false;
 }
 

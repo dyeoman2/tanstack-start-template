@@ -6,6 +6,8 @@ export type StorageInspectionReason =
   | 'checksum_mismatch'
   | 'file_signature_mismatch'
   | 'inspection_error'
+  | 'office_macro_enabled'
+  | 'office_password_protected'
   | 'pdf_active_content'
   | 'pdf_embedded_files'
   | 'pdf_encrypted'
@@ -35,10 +37,71 @@ const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46];
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
 const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
 const GIF_SIGNATURE = [0x47, 0x49, 0x46, 0x38];
+const OLE_SIGNATURE = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 const WEBP_SIGNATURE = [0x52, 0x49, 0x46, 0x46];
+const ZIP_SIGNATURES = [
+  [0x50, 0x4b, 0x03, 0x04],
+  [0x50, 0x4b, 0x05, 0x06],
+  [0x50, 0x4b, 0x07, 0x08],
+];
 
 const MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const PDF_TOKEN_WINDOW_BYTES = 16 * 1024;
+const TEXT_SIGNATURE_WINDOW_BYTES = 512;
+
+const OOXML_MIME_TYPES = new Set([
+  'application/vnd.ms-excel.sheet.macroenabled.12',
+  'application/vnd.ms-excel.template.macroenabled.12',
+  'application/vnd.ms-powerpoint.presentation.macroenabled.12',
+  'application/vnd.ms-powerpoint.slideshow.macroenabled.12',
+  'application/vnd.ms-powerpoint.template.macroenabled.12',
+  'application/vnd.ms-word.document.macroenabled.12',
+  'application/vnd.ms-word.template.macroenabled.12',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.presentationml.slideshow',
+  'application/vnd.openxmlformats-officedocument.presentationml.template',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.template',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.template',
+]);
+
+const OOXML_EXTENSIONS = new Set([
+  '.docm',
+  '.docx',
+  '.dotm',
+  '.dotx',
+  '.potm',
+  '.potx',
+  '.ppsm',
+  '.ppsx',
+  '.pptm',
+  '.pptx',
+  '.xlam',
+  '.xlsm',
+  '.xlsx',
+  '.xltm',
+  '.xltx',
+]);
+
+const OOXML_MACRO_EXTENSIONS = new Set([
+  '.docm',
+  '.dotm',
+  '.potm',
+  '.ppsm',
+  '.pptm',
+  '.xlam',
+  '.xlsm',
+  '.xltm',
+]);
+const OLE_MIME_TYPES = new Set([
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+]);
+const OLE_EXTENSIONS = new Set(['.doc', '.ppt', '.xls']);
+
+type DocumentFormat = 'csv' | 'ole' | 'ooxml' | 'plain_text' | 'unknown';
 
 function startsWithSignature(bytes: Uint8Array, signature: number[]) {
   if (bytes.length < signature.length) {
@@ -46,6 +109,20 @@ function startsWithSignature(bytes: Uint8Array, signature: number[]) {
   }
 
   return signature.every((value, index) => bytes[index] === value);
+}
+
+function startsWithAnySignature(bytes: Uint8Array, signatures: number[][]) {
+  return signatures.some((signature) => startsWithSignature(bytes, signature));
+}
+
+function normalizeMimeType(mimeType: string) {
+  return mimeType.trim().toLowerCase().split(';', 1)[0] ?? '';
+}
+
+function getFileExtension(fileName: string) {
+  const normalizedFileName = fileName.trim().toLowerCase();
+  const extensionIndex = normalizedFileName.lastIndexOf('.');
+  return extensionIndex >= 0 ? normalizedFileName.slice(extensionIndex) : '';
 }
 
 function looksLikeUtf8Text(bytes: Uint8Array) {
@@ -66,8 +143,31 @@ function looksLikeUtf8Text(bytes: Uint8Array) {
   return printable / bytes.length >= 0.9;
 }
 
+function resolveDocumentFormat(mimeType: string, fileName: string): DocumentFormat {
+  const normalizedMimeType = normalizeMimeType(mimeType);
+  const extension = getFileExtension(fileName);
+
+  if (normalizedMimeType === 'text/csv' || extension === '.csv') {
+    return 'csv';
+  }
+
+  if (normalizedMimeType === 'text/plain' || extension === '.txt') {
+    return 'plain_text';
+  }
+
+  if (OOXML_MIME_TYPES.has(normalizedMimeType) || OOXML_EXTENSIONS.has(extension)) {
+    return 'ooxml';
+  }
+
+  if (OLE_MIME_TYPES.has(normalizedMimeType) || OLE_EXTENSIONS.has(extension)) {
+    return 'ole';
+  }
+
+  return 'unknown';
+}
+
 function resolveKnownKind(mimeType: string, fileName: string): AllowedFileKind | null {
-  const normalizedMimeType = mimeType.trim().toLowerCase();
+  const normalizedMimeType = normalizeMimeType(mimeType);
   const normalizedFileName = fileName.trim().toLowerCase();
 
   if (normalizedMimeType === 'application/pdf' || normalizedFileName.endsWith('.pdf')) {
@@ -88,12 +188,7 @@ function resolveKnownKind(mimeType: string, fileName: string): AllowedFileKind |
     return 'image';
   }
 
-  if (
-    normalizedMimeType === 'text/csv' ||
-    normalizedMimeType === 'text/plain' ||
-    normalizedFileName.endsWith('.csv') ||
-    normalizedFileName.endsWith('.txt')
-  ) {
+  if (resolveDocumentFormat(mimeType, fileName) !== 'unknown') {
     return 'document';
   }
 
@@ -101,7 +196,7 @@ function resolveKnownKind(mimeType: string, fileName: string): AllowedFileKind |
 }
 
 function signatureMatches(bytes: Uint8Array, mimeType: string, fileName: string) {
-  const normalizedMimeType = mimeType.trim().toLowerCase();
+  const normalizedMimeType = normalizeMimeType(mimeType);
   const normalizedFileName = fileName.trim().toLowerCase();
 
   if (normalizedMimeType === 'application/pdf' || normalizedFileName.endsWith('.pdf')) {
@@ -128,11 +223,20 @@ function signatureMatches(bytes: Uint8Array, mimeType: string, fileName: string)
     return startsWithSignature(bytes, WEBP_SIGNATURE);
   }
 
-  if (normalizedMimeType === 'text/plain' || normalizedMimeType === 'text/csv') {
-    return looksLikeUtf8Text(bytes.slice(0, 512));
+  const documentFormat = resolveDocumentFormat(mimeType, fileName);
+  if (documentFormat === 'plain_text' || documentFormat === 'csv') {
+    return looksLikeUtf8Text(bytes.slice(0, TEXT_SIGNATURE_WINDOW_BYTES));
   }
 
-  return true;
+  if (documentFormat === 'ooxml') {
+    return startsWithAnySignature(bytes, ZIP_SIGNATURES);
+  }
+
+  if (documentFormat === 'ole') {
+    return startsWithSignature(bytes, OLE_SIGNATURE);
+  }
+
+  return false;
 }
 
 function decodePdfWindow(bytes: Uint8Array) {
@@ -146,7 +250,7 @@ function decodePdfWindow(bytes: Uint8Array) {
   };
 }
 
-function rejectPdf(details: string, inspectedAt: number, reason: StorageInspectionReason) {
+function rejectInspection(details: string, inspectedAt: number, reason: StorageInspectionReason) {
   return {
     details,
     engine: 's3-intake-policy' as const,
@@ -156,6 +260,123 @@ function rejectPdf(details: string, inspectedAt: number, reason: StorageInspecti
   };
 }
 
+function decodeBinaryText(bytes: Uint8Array) {
+  return new TextDecoder('latin1').decode(bytes);
+}
+
+function containsToken(binaryText: string, token: string) {
+  return binaryText.includes(token);
+}
+
+function containsCaseInsensitiveToken(binaryText: string, token: string) {
+  return binaryText.toLowerCase().includes(token.toLowerCase());
+}
+
+function isMacroEnabledOoxml(mimeType: string, fileName: string, binaryText: string) {
+  return (
+    OOXML_MACRO_EXTENSIONS.has(getFileExtension(fileName)) ||
+    normalizeMimeType(mimeType).includes('macroenabled.12') ||
+    containsCaseInsensitiveToken(binaryText, 'vbaProject.bin') ||
+    containsCaseInsensitiveToken(binaryText, 'macroEnabled.12')
+  );
+}
+
+function isPasswordProtectedOfficeDocument(binaryText: string) {
+  return (
+    containsToken(binaryText, 'EncryptedPackage') || containsToken(binaryText, 'EncryptionInfo')
+  );
+}
+
+function inspectOoxmlDocument(
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+  inspectedAt: number,
+): StorageInspectionResult | null {
+  const binaryText = decodeBinaryText(bytes);
+
+  if (
+    !containsToken(binaryText, '[Content_Types].xml') ||
+    (!containsToken(binaryText, 'word/') &&
+      !containsToken(binaryText, 'xl/') &&
+      !containsToken(binaryText, 'ppt/'))
+  ) {
+    return rejectInspection(
+      'Unsupported or malformed OOXML package structure.',
+      inspectedAt,
+      'unsupported_type',
+    );
+  }
+
+  if (isPasswordProtectedOfficeDocument(binaryText)) {
+    return rejectInspection(
+      'Password-protected Office documents are not allowed.',
+      inspectedAt,
+      'office_password_protected',
+    );
+  }
+
+  if (isMacroEnabledOoxml(mimeType, fileName, binaryText)) {
+    return rejectInspection(
+      'Macro-enabled Office documents are not allowed.',
+      inspectedAt,
+      'office_macro_enabled',
+    );
+  }
+
+  return null;
+}
+
+function inspectOleDocument(bytes: Uint8Array, inspectedAt: number): StorageInspectionResult {
+  const binaryText = decodeBinaryText(bytes);
+
+  if (isPasswordProtectedOfficeDocument(binaryText)) {
+    return rejectInspection(
+      'Password-protected Office documents are not allowed.',
+      inspectedAt,
+      'office_password_protected',
+    );
+  }
+
+  if (
+    containsToken(binaryText, 'Macros') ||
+    containsToken(binaryText, 'VBA') ||
+    containsToken(binaryText, '_VBA_PROJECT') ||
+    containsToken(binaryText, 'PROJECTwm')
+  ) {
+    return rejectInspection(
+      'Macro-enabled Office documents are not allowed.',
+      inspectedAt,
+      'office_macro_enabled',
+    );
+  }
+
+  return rejectInspection(
+    'Legacy OLE compound Office documents are not supported.',
+    inspectedAt,
+    'unsupported_type',
+  );
+}
+
+function inspectDocumentStructure(
+  bytes: Uint8Array,
+  fileName: string,
+  mimeType: string,
+  inspectedAt: number,
+): StorageInspectionResult | null {
+  const documentFormat = resolveDocumentFormat(mimeType, fileName);
+
+  if (documentFormat === 'ooxml') {
+    return inspectOoxmlDocument(bytes, fileName, mimeType, inspectedAt);
+  }
+
+  if (documentFormat === 'ole') {
+    return inspectOleDocument(bytes, inspectedAt);
+  }
+
+  return null;
+}
+
 function inspectPdfStructure(
   bytes: Uint8Array,
   inspectedAt: number,
@@ -163,43 +384,55 @@ function inspectPdfStructure(
   const { head, tail, text } = decodePdfWindow(bytes);
 
   if (!head.startsWith('%PDF-')) {
-    return rejectPdf('PDF header is missing or malformed.', inspectedAt, 'pdf_malformed');
+    return rejectInspection('PDF header is missing or malformed.', inspectedAt, 'pdf_malformed');
   }
 
   if (!tail.includes('%%EOF')) {
-    return rejectPdf('PDF EOF marker is missing.', inspectedAt, 'pdf_malformed');
+    return rejectInspection('PDF EOF marker is missing.', inspectedAt, 'pdf_malformed');
   }
 
   if (/\/Encrypt\b/u.test(text)) {
-    return rejectPdf('Encrypted PDFs are not allowed.', inspectedAt, 'pdf_encrypted');
+    return rejectInspection('Encrypted PDFs are not allowed.', inspectedAt, 'pdf_encrypted');
   }
 
   if (/\/EmbeddedFile\b|\/Filespec\b/u.test(text)) {
-    return rejectPdf('PDF embedded files are not allowed.', inspectedAt, 'pdf_embedded_files');
+    return rejectInspection(
+      'PDF embedded files are not allowed.',
+      inspectedAt,
+      'pdf_embedded_files',
+    );
   }
 
   if (/\/JS\b|\/JavaScript\b/u.test(text)) {
-    return rejectPdf('PDF JavaScript is not allowed.', inspectedAt, 'pdf_javascript');
+    return rejectInspection('PDF JavaScript is not allowed.', inspectedAt, 'pdf_javascript');
   }
 
   if (/\/Launch\b/u.test(text)) {
-    return rejectPdf('PDF launch actions are not allowed.', inspectedAt, 'pdf_launch_action');
+    return rejectInspection(
+      'PDF launch actions are not allowed.',
+      inspectedAt,
+      'pdf_launch_action',
+    );
   }
 
   if (/\/OpenAction\b/u.test(text)) {
-    return rejectPdf('PDF open actions are not allowed.', inspectedAt, 'pdf_open_action');
+    return rejectInspection('PDF open actions are not allowed.', inspectedAt, 'pdf_open_action');
   }
 
   if (/\/XFA\b/u.test(text)) {
-    return rejectPdf('PDF XFA forms are not allowed.', inspectedAt, 'pdf_xfa');
+    return rejectInspection('PDF XFA forms are not allowed.', inspectedAt, 'pdf_xfa');
   }
 
   if (/\/RichMedia\b/u.test(text)) {
-    return rejectPdf('PDF rich media is not allowed.', inspectedAt, 'pdf_rich_media');
+    return rejectInspection('PDF rich media is not allowed.', inspectedAt, 'pdf_rich_media');
   }
 
   if (/\/SubmitForm\b|\/ImportData\b|\/Sound\b|\/Movie\b/u.test(text)) {
-    return rejectPdf('PDF active content is not allowed.', inspectedAt, 'pdf_active_content');
+    return rejectInspection(
+      'PDF active content is not allowed.',
+      inspectedAt,
+      'pdf_active_content',
+    );
   }
 
   return null;
@@ -241,7 +474,7 @@ export async function inspectStorageUploadBytes(args: {
   try {
     if (args.bytes.byteLength > args.maxBytes) {
       const sizeMB = (args.bytes.byteLength / (1024 * 1024)).toFixed(2);
-      return rejectPdf(
+      return rejectInspection(
         `File size (${sizeMB}MB) exceeds the maximum allowed size of ${(
           args.maxBytes /
           (1024 * 1024)
@@ -289,6 +522,18 @@ export async function inspectStorageUploadBytes(args: {
       const pdfResult = inspectPdfStructure(args.bytes, inspectedAt);
       if (pdfResult) {
         return pdfResult;
+      }
+    }
+
+    if (knownKind === 'document') {
+      const documentResult = inspectDocumentStructure(
+        args.bytes,
+        args.fileName,
+        args.mimeType,
+        inspectedAt,
+      );
+      if (documentResult) {
+        return documentResult;
       }
     }
 

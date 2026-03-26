@@ -132,7 +132,7 @@ describe('e2e-auth.server', () => {
     ]);
   });
 
-  it('normalizes forwarded auth headers without duplicating origin metadata', () => {
+  it('normalizes forwarded auth headers without duplicating origin metadata', async () => {
     const request = new Request('http://127.0.0.1:3000/api/test/agent-auth', {
       headers: {
         cookie: 'session=abc',
@@ -141,7 +141,7 @@ describe('e2e-auth.server', () => {
       },
     });
 
-    const headers = buildAuthEndpointHeaders(request);
+    const headers = await buildAuthEndpointHeaders(request);
 
     expect(headers.get('content-type')).toBe('application/json');
     expect(headers.get('origin')).toBe('http://127.0.0.1:3000');

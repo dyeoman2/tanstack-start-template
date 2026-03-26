@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { AUTH_PROXY_IP_HEADER } from '../../src/lib/server/better-auth/http';
 import { createAdminOrganizationAuditPlugin } from './adminOrganizationAuditPlugin';
 
 function getAfterHook() {
@@ -28,7 +29,7 @@ describe('createAdminOrganizationAuditPlugin', () => {
     const { afterHook, recordAuditEvent } = getAfterHook();
     const headers = new Headers({
       'user-agent': 'vitest',
-      'x-forwarded-for': '203.0.113.9',
+      [AUTH_PROXY_IP_HEADER]: '203.0.113.9',
     });
 
     await afterHook.handler({

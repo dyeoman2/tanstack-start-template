@@ -7,8 +7,10 @@ const {
   createBetterAuthOrganizationInvitationMock,
   createBetterAuthOrganizationMock,
   deleteBetterAuthOrganizationMock,
+  getBetterAuthRequestMock,
   removeBetterAuthOrganizationMemberMock,
   requireAuthMock,
+  resolveRequestAuditContextMock,
   fetchAuthActionMock,
   fetchAuthMutationMock,
   fetchAuthQueryMock,
@@ -21,8 +23,10 @@ const {
   createBetterAuthOrganizationInvitationMock: vi.fn(),
   createBetterAuthOrganizationMock: vi.fn(),
   deleteBetterAuthOrganizationMock: vi.fn(),
+  getBetterAuthRequestMock: vi.fn(),
   removeBetterAuthOrganizationMemberMock: vi.fn(),
   requireAuthMock: vi.fn(),
+  resolveRequestAuditContextMock: vi.fn(),
   fetchAuthActionMock: vi.fn(),
   fetchAuthMutationMock: vi.fn(),
   fetchAuthQueryMock: vi.fn(),
@@ -49,6 +53,8 @@ vi.mock('@convex/_generated/api', () => ({
       createOrganizationSupportAccessGrant: 'createOrganizationSupportAccessGrant',
       deactivateOrganizationMember: 'deactivateOrganizationMember',
       executePreparedOrganizationCleanup: 'executePreparedOrganizationCleanup',
+      exportOrganizationAuditCsv: 'exportOrganizationAuditCsv',
+      exportOrganizationDirectoryCsv: 'exportOrganizationDirectoryCsv',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
       recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
@@ -77,6 +83,14 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
     fetchAuthMutation: fetchAuthMutationMock,
     fetchAuthQuery: fetchAuthQueryMock,
   },
+}));
+
+vi.mock('~/lib/server/better-auth/http', () => ({
+  getBetterAuthRequest: getBetterAuthRequestMock,
+}));
+
+vi.mock('~/lib/server/request-audit-context', () => ({
+  resolveRequestAuditContext: resolveRequestAuditContextMock,
 }));
 
 vi.mock('~/lib/server/error-utils.server', () => ({
@@ -113,6 +127,8 @@ import {
   createOrganizationServerFn,
   deactivateOrganizationMemberServerFn,
   deleteOrganizationServerFn,
+  exportOrganizationAuditCsvServerFn,
+  exportOrganizationDirectoryCsvServerFn,
   reactivateOrganizationMemberServerFn,
   removeOrganizationMemberServerFn,
   revokeOrganizationSupportAccessGrantServerFn,
@@ -142,6 +158,7 @@ describe('organization management server functions', () => {
     });
     fetchAuthQueryMock.mockResolvedValue({ allowed: true });
     fetchAuthMutationMock.mockResolvedValue({ success: true });
+    fetchAuthActionMock.mockResolvedValue({ filename: 'report.csv', csv: 'csv-data' });
     checkBetterAuthOrganizationSlugMock.mockResolvedValue({ status: true });
     createBetterAuthOrganizationInvitationMock.mockResolvedValue({ id: 'invite-1' });
     updateBetterAuthOrganizationMemberRoleMock.mockResolvedValue({
@@ -157,6 +174,12 @@ describe('organization management server functions', () => {
     deleteBetterAuthOrganizationMock.mockResolvedValue({ id: 'org_1' });
     cancelBetterAuthOrganizationInvitationMock.mockResolvedValue({
       invitation: { id: 'invite_1' },
+    });
+    getBetterAuthRequestMock.mockReturnValue(new Request('https://app.example.com/app'));
+    resolveRequestAuditContextMock.mockReturnValue({
+      requestId: 'req-123',
+      ipAddress: '203.0.113.9',
+      userAgent: 'Vitest',
     });
   });
 
@@ -301,6 +324,11 @@ describe('organization management server functions', () => {
       enterpriseProviderKey: null,
       enterpriseProtocol: null,
       allowBreakGlassPasswordLogin: true,
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
     });
   });
 
@@ -323,6 +351,11 @@ describe('organization management server functions', () => {
       ticketId: 'INC-42',
       reason: 'Investigate ticket INC-42',
       expiresAt: 1_710_000_000_000,
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
     });
   });
 
@@ -339,6 +372,75 @@ describe('organization management server functions', () => {
       organizationId: 'org_1',
       grantId: 'grant_1',
       reason: 'Issue resolved',
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
+  it('exports audit logs through a server wrapper with request context', async () => {
+    await exportOrganizationAuditCsvServerFn({
+      data: {
+        slug: 'acme',
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+        preset: 'all',
+        eventType: 'all',
+        search: '',
+        startDate: '',
+        endDate: '',
+        failuresOnly: false,
+      },
+    });
+
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('exportOrganizationAuditCsv', {
+      slug: 'acme',
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      preset: 'all',
+      eventType: 'all',
+      search: '',
+      startDate: '',
+      endDate: '',
+      failuresOnly: false,
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
+  it('exports directories through a server wrapper with request context', async () => {
+    await exportOrganizationDirectoryCsvServerFn({
+      data: {
+        slug: 'acme',
+        asOf: 1_710_000_000_000,
+        sortBy: 'createdAt',
+        sortOrder: 'desc',
+        secondarySortBy: 'email',
+        secondarySortOrder: 'asc',
+        search: '',
+        kind: 'all',
+      },
+    });
+
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('exportOrganizationDirectoryCsv', {
+      slug: 'acme',
+      asOf: 1_710_000_000_000,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+      secondarySortBy: 'email',
+      secondarySortOrder: 'asc',
+      search: '',
+      kind: 'all',
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
     });
   });
 

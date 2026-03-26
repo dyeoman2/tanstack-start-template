@@ -1,4 +1,4 @@
-import { buildBetterAuthForwardHeaders } from '~/lib/server/better-auth/http';
+import { buildBetterAuthProxyHeaders } from '~/lib/server/better-auth/http';
 import {
   type E2EPrincipalType,
   getE2EPrincipalConfig,
@@ -64,9 +64,14 @@ function buildProvisioningHintMessage(message?: string) {
   return `${normalizedDetail} ${hint}`;
 }
 
-export function buildAuthEndpointHeaders(request: Request): Headers {
+export async function buildAuthEndpointHeaders(
+  request: Request,
+  path = '/api/auth/sign-in/email',
+): Promise<Headers> {
   const origin = new URL(request.url).origin;
-  const headers = buildBetterAuthForwardHeaders(request);
+  const headers = await buildBetterAuthProxyHeaders(request, {
+    targetPath: path,
+  });
 
   headers.set('content-type', 'application/json');
   headers.set('origin', request.headers.get('origin') || origin);
@@ -81,7 +86,7 @@ async function postToAuthEndpoint(
   principal: ReturnType<typeof getE2EPrincipalConfig>,
 ) {
   const url = new URL(path, request.url);
-  const headers = buildAuthEndpointHeaders(request);
+  const headers = await buildAuthEndpointHeaders(request, path);
   const body =
     path === '/api/auth/sign-up/email'
       ? {
