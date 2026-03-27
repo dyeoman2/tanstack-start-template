@@ -216,8 +216,12 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
   const reviewTaskGroups = useMemo(
     () => ({
       autoCollected:
-        currentAnnualReviewDetail?.tasks.filter((task) => task.taskType === 'automated_check') ??
-        [],
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) =>
+            task.taskType === 'automated_check' &&
+            task.status !== 'completed' &&
+            task.status !== 'exception',
+        ) ?? [],
       blocked:
         currentAnnualReviewDetail?.tasks.filter(
           (task) =>
@@ -244,30 +248,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
       vendorReviews: currentAnnualReviewDetail?.tasks.filter((task) => task.vendor !== null) ?? [],
     }),
     [currentAnnualReviewDetail],
-  );
-
-  const autoCollectedEvidenceLinks = useMemo(
-    () =>
-      reviewTaskGroups.autoCollected.flatMap((task) => {
-        const latestLink = task.evidenceLinks[0];
-        return latestLink
-          ? [
-              {
-                reviewTaskId: task.id,
-                link: {
-                  freshAt: latestLink.freshAt,
-                  id: latestLink.id,
-                  linkedAt: latestLink.linkedAt,
-                  sourceId: latestLink.sourceId,
-                  sourceLabel: latestLink.sourceLabel,
-                  sourceType: latestLink.sourceType,
-                },
-                taskTitle: task.title,
-              },
-            ]
-          : [];
-      }),
-    [reviewTaskGroups.autoCollected],
   );
 
   const reviewExceptionTasks = useMemo(
@@ -473,7 +453,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
   return (
     <>
       <AdminSecurityReviewsTab
-        autoCollectedEvidenceLinks={autoCollectedEvidenceLinks}
         batchReviewTasks={batchReviewTasks}
         busyReviewRunAction={busyReviewRunAction}
         busyReviewTaskAction={busyReviewTaskAction}

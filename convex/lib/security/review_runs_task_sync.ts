@@ -277,6 +277,10 @@ export async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<
   );
   const now = Date.now();
 
+  const validBlueprintTemplateKeys = new Set(
+    ANNUAL_REVIEW_TASK_BLUEPRINTS.map((b) => b.templateKey),
+  );
+
   await Promise.all(
     ANNUAL_REVIEW_TASK_BLUEPRINTS.map(async (blueprint) => {
       const existing = existingByTemplateKey.get(blueprint.templateKey);
@@ -312,6 +316,20 @@ export async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<
         createdAt: now,
       });
     }),
+  );
+
+  // Remove blueprint tasks whose templateKey was dropped from the array.
+  // Policy, vendor, and findings tasks are managed by their own sync functions.
+  await Promise.all(
+    existingTasks
+      .filter(
+        (task) =>
+          !task.templateKey.startsWith('annual:attest:policy:') &&
+          !task.templateKey.startsWith('annual:attest:vendor:') &&
+          task.templateKey !== 'annual:attest:findings-review' &&
+          !validBlueprintTemplateKeys.has(task.templateKey),
+      )
+      .map((task) => ctx.db.delete(task._id)),
   );
 
   await syncAnnualPolicyReviewTasks(ctx, {

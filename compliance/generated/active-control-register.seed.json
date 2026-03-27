@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-27T19:51:12.610Z",
+  "generatedAt": "2026-03-27T20:40:22.493Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -2288,8 +2288,8 @@
                 "url": null
               },
               {
-                "title": "Annual incident response procedure task",
-                "description": "Documentation Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.",
+                "title": "Annual policy review task",
+                "description": "Annual policy review task The Incident Response Policy is reviewed and attested as current during the annual site admin security review cycle, covering the incident-response procedure it describes.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

@@ -366,18 +366,6 @@ export const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
     statementText: 'I linked the current provider component inventory review and update procedure.',
   }),
   buildAnnualDocumentUploadTask({
-    allowException: true,
-    templateKey: 'annual:attest:incident-response-procedure',
-    title: 'Incident response procedure linked',
-    description:
-      'Attach or link the current provider incident response procedure covering triage, escalation, containment, customer coordination, and follow-up, including the current version when available.',
-    internalControlId: 'CTRL-IR-004',
-    itemId: 'provider-incident-response-procedure',
-    statementKey: 'incident-response-procedure-current',
-    statementText:
-      'I linked the current provider incident response procedure for the hosted service environment.',
-  }),
-  buildAnnualDocumentUploadTask({
     templateKey: 'annual:document:security-planning-artifact',
     title: 'Security planning artifact linked',
     description:

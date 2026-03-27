@@ -2286,8 +2286,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               'Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment, generated from the security policy document registry.',
             ),
             seededEvidence(
-              'Annual incident response procedure task',
-              'Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.',
+              'Annual policy review task',
+              'The Incident Response Policy is reviewed and attested as current during the annual site admin security review cycle, covering the incident-response procedure it describes.',
             ),
           ],
           'Security Incident Response',

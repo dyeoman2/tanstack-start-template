@@ -549,10 +549,6 @@ describe('policy review orchestration contracts', () => {
       taskType: 'document_upload',
       title: 'Component inventory review procedure linked',
     });
-    expect(taskByTemplateKey.get('annual:attest:incident-response-procedure')).toMatchObject({
-      taskType: 'document_upload',
-      title: 'Incident response procedure linked',
-    });
     expect(taskByTemplateKey.get('annual:document:security-planning-artifact')).toMatchObject({
       taskType: 'document_upload',
       title: 'Security planning artifact linked',

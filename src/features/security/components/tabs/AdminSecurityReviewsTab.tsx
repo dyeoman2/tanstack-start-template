@@ -1,9 +1,9 @@
-import { Check, ChevronDown, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { type Dispatch, type SetStateAction, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Input } from '~/components/ui/input';
 import {
   Select,
@@ -17,7 +17,6 @@ import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSe
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
   formatReviewRunStatus,
-  formatReviewTaskEvidenceSourceType,
   formatReviewTaskStatus,
   getReviewRunStatusBadgeVariant,
   getReviewTaskBadgeVariant,
@@ -68,7 +67,6 @@ export type AutoCollectedEvidenceLink = {
 };
 
 export function AdminSecurityReviewsTab(props: {
-  autoCollectedEvidenceLinks: AutoCollectedEvidenceLink[];
   busyReviewRunAction: string | null;
   busyReviewTaskAction: string | null;
   currentAnnualReviewRun: ReviewRunSummary | null;
@@ -243,164 +241,31 @@ export function AdminSecurityReviewsTab(props: {
             );
           })()}
 
-          {(() => {
-            const allPendingTasks = [
+          <ReviewTasksCard
+            busyReviewTaskAction={props.busyReviewTaskAction}
+            completedTasks={props.reviewTaskGroups.completed}
+            handleAttestTask={props.handleAttestTask}
+            isDetailLoading={props.isDetailLoading}
+            onOpenBatchReview={props.onOpenBatchReview}
+            onViewEvidenceLink={props.onViewEvidenceLink}
+            onViewTaskSource={props.onViewTaskSource}
+            openTasks={Array.from(
+              new Map(
+                [
+                  ...props.reviewTaskGroups.blocked,
+                  ...props.reviewTaskGroups.needsAttestation,
+                  ...props.reviewTaskGroups.needsDocumentUpload,
+                  ...props.reviewTaskGroups.findingsReview,
+                  ...props.reviewTaskGroups.vendorReviews,
+                  ...props.reviewTaskGroups.autoCollected,
+                ].map((task) => [task.id, task]),
+              ).values(),
+            )}
+            pendingTasks={[
               ...props.reviewTaskGroups.needsAttestation,
               ...props.reviewTaskGroups.needsDocumentUpload,
-            ];
-            const flatTaskListRaw = [
-              ...props.reviewTaskGroups.blocked,
-              ...props.reviewTaskGroups.needsAttestation,
-              ...props.reviewTaskGroups.needsDocumentUpload,
-              ...props.reviewTaskGroups.findingsReview,
-              ...props.reviewTaskGroups.vendorReviews,
-              ...props.reviewTaskGroups.autoCollected,
-            ];
-            const flatTaskList = Array.from(
-              new Map(flatTaskListRaw.map((task) => [task.id, task])).values(),
-            );
-            return (
-              <Card>
-                <CardHeader>
-                  <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                    <CardTitle>Review Tasks</CardTitle>
-                    {allPendingTasks.length > 0 && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => props.onOpenBatchReview(allPendingTasks)}
-                      >
-                        Start batch review ({allPendingTasks.length})
-                      </Button>
-                    )}
-                  </div>
-                  <CardDescription>
-                    All tasks for the current annual review, sorted by priority.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {props.isDetailLoading ? (
-                    <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" />
-                      Loading...
-                    </div>
-                  ) : flatTaskList.length ? (
-                    flatTaskList.map((task, index) => (
-                      <div
-                        key={`annual-review-task-${task.id}-${index}`}
-                        className="flex items-start justify-between gap-3 rounded-lg border p-3"
-                      >
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium">{task.title}</p>
-                            <Badge variant={getReviewTaskBadgeVariant(task)}>
-                              {getReviewTaskStatusLabel(task)}
-                            </Badge>
-                            <Badge variant="outline" className="text-[10px]">
-                              {task.taskType === 'automated_check'
-                                ? 'Auto'
-                                : task.taskType === 'document_upload'
-                                  ? 'Document'
-                                  : task.taskType === 'follow_up'
-                                    ? 'Follow-up'
-                                    : 'Attestation'}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{task.description}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {task.policy || task.vendor || task.findingsSummary ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => props.onViewTaskSource(task)}
-                            >
-                              View
-                            </Button>
-                          ) : null}
-                          {task.taskType !== 'follow_up' &&
-                          task.taskType !== 'automated_check' &&
-                          task.status !== 'completed' &&
-                          task.status !== 'exception' ? (
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={props.busyReviewTaskAction !== null}
-                              onClick={() => void props.handleAttestTask(task)}
-                            >
-                              {props.busyReviewTaskAction === `${task.id}:attest`
-                                ? 'Saving\u2026'
-                                : task.taskType === 'document_upload'
-                                  ? 'Upload'
-                                  : 'Attest'}
-                            </Button>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No tasks in the current review.</p>
-                  )}
-
-                  {!props.isDetailLoading && props.reviewTaskGroups.completed.length > 0 && (
-                    <CompletedTasksSection
-                      tasks={props.reviewTaskGroups.completed}
-                      onViewTaskSource={props.onViewTaskSource}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })()}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Auto-Collected Evidence</CardTitle>
-          <CardDescription>
-            The latest artifact currently linked to each automated annual-review task.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {props.isDetailLoading ? (
-            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Loading...
-            </div>
-          ) : props.autoCollectedEvidenceLinks.length ? (
-            props.autoCollectedEvidenceLinks.map(({ link, reviewTaskId, taskTitle }) => (
-              <div
-                key={`${reviewTaskId}:${link.id}`}
-                className="flex items-start justify-between gap-3 rounded-lg border p-4"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">{link.sourceLabel}</p>
-                  {link.sourceLabel !== taskTitle ? (
-                    <p className="text-sm text-muted-foreground">{taskTitle}</p>
-                  ) : null}
-                  <p className="text-sm text-muted-foreground">
-                    {formatReviewTaskEvidenceSourceType(link.sourceType)} · Linked{' '}
-                    {new Date(link.linkedAt).toLocaleString()}
-                    {link.freshAt ? ` · Fresh ${new Date(link.freshAt).toLocaleString()}` : ''}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => props.onViewEvidenceLink(link)}
-                >
-                  View
-                </Button>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No auto-collected evidence is linked yet.
-            </p>
-          )}
+            ]}
+          />
         </CardContent>
       </Card>
 
@@ -548,59 +413,164 @@ export function AdminSecurityReviewsTab(props: {
   );
 }
 
-function CompletedTasksSection(props: {
-  tasks: ReviewTaskDetail[];
+function ReviewTasksCard(props: {
+  busyReviewTaskAction: string | null;
+  completedTasks: ReviewTaskDetail[];
+  handleAttestTask: (task: ReviewTaskDetail) => Promise<void>;
+  isDetailLoading: boolean;
+  onOpenBatchReview: (tasks: ReviewTaskDetail[]) => void;
+  onViewEvidenceLink: (link: AutoCollectedEvidenceLink['link']) => void;
   onViewTaskSource: (task: ReviewTaskDetail) => void;
+  openTasks: ReviewTaskDetail[];
+  pendingTasks: ReviewTaskDetail[];
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const allTasks = Array.from(
+    new Map([...props.openTasks, ...props.completedTasks].map((t) => [t.id, t])).values(),
+  );
+  const [activeTab, setActiveTab] = useState<'all' | 'done' | 'open'>('open');
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="mt-4 border-t pt-4">
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
-        >
-          <ChevronDown
-            className={`size-4 transition-transform ${isOpen ? 'rotate-0' : '-rotate-90'}`}
-          />
-          Completed ({props.tasks.length})
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-2 space-y-2">
-        {props.tasks.map((task, index) => (
-          <div
-            key={`completed-task-${task.id}-${index}`}
-            className="flex items-start justify-between gap-3 rounded-lg border border-muted bg-muted/30 p-3"
-          >
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <Check className="size-4 text-green-600" />
-                <p className="font-medium text-muted-foreground">{task.title}</p>
-                <Badge variant={getReviewTaskBadgeVariant(task)}>
-                  {getReviewTaskStatusLabel(task)}
-                </Badge>
-              </div>
-              {task.latestAttestation ? (
-                <p className="text-xs text-muted-foreground">
-                  {task.latestAttestation.attestedByDisplay ?? 'Unknown'} ·{' '}
-                  {new Date(task.latestAttestation.attestedAt).toLocaleDateString()}
-                </p>
-              ) : null}
-            </div>
-            {task.policy || task.vendor || task.findingsSummary ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => props.onViewTaskSource(task)}
-              >
-                View
-              </Button>
-            ) : null}
+    <Card>
+      <CardHeader>
+        <div className="flex w-full flex-wrap items-center justify-between gap-2">
+          <CardTitle>Review Tasks</CardTitle>
+          {props.pendingTasks.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => props.onOpenBatchReview(props.pendingTasks)}
+            >
+              Start batch review ({props.pendingTasks.length})
+            </Button>
+          )}
+        </div>
+        <CardDescription>
+          All tasks for the current annual review, sorted by priority.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {props.isDetailLoading ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Loading...
           </div>
-        ))}
-      </CollapsibleContent>
-    </Collapsible>
+        ) : (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+              if (value === 'all' || value === 'done' || value === 'open') {
+                setActiveTab(value);
+              }
+            }}
+          >
+            <TabsList>
+              <TabsTrigger value="open">
+                Open{props.openTasks.length > 0 ? ` (${props.openTasks.length})` : ''}
+              </TabsTrigger>
+              <TabsTrigger value="done">
+                Done{props.completedTasks.length > 0 ? ` (${props.completedTasks.length})` : ''}
+              </TabsTrigger>
+              <TabsTrigger value="all">All ({allTasks.length})</TabsTrigger>
+            </TabsList>
+            <TabsContent value="open" className="space-y-2">
+              <ReviewTaskList
+                tasks={props.openTasks}
+                busyReviewTaskAction={props.busyReviewTaskAction}
+                handleAttestTask={props.handleAttestTask}
+                onViewEvidenceLink={props.onViewEvidenceLink}
+                onViewTaskSource={props.onViewTaskSource}
+                emptyMessage="No open tasks — all caught up."
+              />
+            </TabsContent>
+            <TabsContent value="done" className="space-y-2">
+              <ReviewTaskList
+                tasks={props.completedTasks}
+                busyReviewTaskAction={props.busyReviewTaskAction}
+                handleAttestTask={props.handleAttestTask}
+                onViewEvidenceLink={props.onViewEvidenceLink}
+                onViewTaskSource={props.onViewTaskSource}
+                emptyMessage="No completed tasks yet."
+              />
+            </TabsContent>
+            <TabsContent value="all" className="space-y-2">
+              <ReviewTaskList
+                tasks={allTasks}
+                busyReviewTaskAction={props.busyReviewTaskAction}
+                handleAttestTask={props.handleAttestTask}
+                onViewEvidenceLink={props.onViewEvidenceLink}
+                onViewTaskSource={props.onViewTaskSource}
+                emptyMessage="No tasks in the current review."
+              />
+            </TabsContent>
+          </Tabs>
+        )}
+      </CardContent>
+    </Card>
   );
+}
+
+function ReviewTaskList(props: {
+  busyReviewTaskAction: string | null;
+  emptyMessage: string;
+  handleAttestTask: (task: ReviewTaskDetail) => Promise<void>;
+  onViewEvidenceLink: (link: AutoCollectedEvidenceLink['link']) => void;
+  onViewTaskSource: (task: ReviewTaskDetail) => void;
+  tasks: ReviewTaskDetail[];
+}) {
+  if (!props.tasks.length) {
+    return <p className="py-4 text-sm text-muted-foreground">{props.emptyMessage}</p>;
+  }
+
+  return props.tasks.map((task, index) => (
+    <div
+      key={`review-task-${task.id}-${index}`}
+      className="flex items-start justify-between gap-3 rounded-lg border p-3"
+    >
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-medium">{task.title}</p>
+          <Badge variant={getReviewTaskBadgeVariant(task)}>{getReviewTaskStatusLabel(task)}</Badge>
+        </div>
+        <p className="text-sm text-muted-foreground">{task.description}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {task.policy || task.vendor || task.findingsSummary ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => props.onViewTaskSource(task)}
+          >
+            View
+          </Button>
+        ) : task.evidenceLinks.length > 0 ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => props.onViewEvidenceLink(task.evidenceLinks[0])}
+          >
+            View
+          </Button>
+        ) : null}
+        {task.taskType !== 'follow_up' &&
+        task.taskType !== 'automated_check' &&
+        task.status !== 'completed' &&
+        task.status !== 'exception' ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={props.busyReviewTaskAction !== null}
+            onClick={() => void props.handleAttestTask(task)}
+          >
+            {props.busyReviewTaskAction === `${task.id}:attest`
+              ? 'Saving\u2026'
+              : task.taskType === 'document_upload'
+                ? 'Upload'
+                : 'Attest'}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  ));
 }
