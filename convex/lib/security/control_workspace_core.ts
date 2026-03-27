@@ -87,6 +87,7 @@ async function listSecurityControlWorkspaceExportRecords(
 ) {
   return (
     await _listSecurityControlWorkspaceRecords(ctx, {
+      activeEvidenceOnly: true,
       controlIds: options?.controlIds,
       includeLinkedEntities: false,
       seedActor: options?.seedActor,
@@ -97,12 +98,14 @@ async function listSecurityControlWorkspaceExportRecords(
 async function _listSecurityControlWorkspaceRecords(
   ctx: QueryCtx,
   options?: {
+    activeEvidenceOnly?: boolean;
     controlIds?: string[];
     includeLinkedEntities?: boolean;
     seedActor?: { authUserId: string };
   },
 ) {
   const includeLinkedEntities = options?.includeLinkedEntities ?? true;
+  const activeEvidenceOnly = options?.activeEvidenceOnly ?? false;
   const controls = options?.controlIds
     ? ACTIVE_CONTROL_REGISTER.controls.filter((control) =>
         options.controlIds?.includes(control.internalControlId),
@@ -118,12 +121,21 @@ async function _listSecurityControlWorkspaceRecords(
               q.eq('internalControlId', control.internalControlId),
             )
             .collect(),
-          ctx.db
-            .query('securityControlEvidence')
-            .withIndex('by_internal_control_id', (q) =>
-              q.eq('internalControlId', control.internalControlId),
-            )
-            .collect(),
+          activeEvidenceOnly
+            ? ctx.db
+                .query('securityControlEvidence')
+                .withIndex('by_internal_control_id_and_lifecycle', (q) =>
+                  q
+                    .eq('internalControlId', control.internalControlId)
+                    .eq('lifecycleStatus', 'active'),
+                )
+                .collect()
+            : ctx.db
+                .query('securityControlEvidence')
+                .withIndex('by_internal_control_id', (q) =>
+                  q.eq('internalControlId', control.internalControlId),
+                )
+                .collect(),
         ]);
 
         return {

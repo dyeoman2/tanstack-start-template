@@ -1087,6 +1087,7 @@ export default defineSchema({
   })
     .index('by_internal_control_id', ['internalControlId'])
     .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId'])
+    .index('by_internal_control_id_and_lifecycle', ['internalControlId', 'lifecycleStatus'])
     .index('by_review_origin_review_task_id', ['reviewOriginReviewTaskId'])
     .index('by_review_origin_source_type_and_source_id', [
       'reviewOriginSourceType',
