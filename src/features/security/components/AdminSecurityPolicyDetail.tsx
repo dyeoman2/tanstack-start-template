@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
-import { Download, FileText, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, Download } from 'lucide-react';
 import { useState } from 'react';
 import {
   Accordion,
@@ -10,13 +10,7 @@ import {
 } from '~/components/ui/accordion';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
 import { Spinner } from '~/components/ui/spinner';
 import {
@@ -35,59 +29,12 @@ import type {
 
 export function AdminSecurityPolicyDetail(props: {
   children?: React.ReactNode;
-  hideReviewLinkage?: boolean;
-  hideSourceActions?: boolean;
   onOpenControl: (internalControlId: string) => void;
   policy: SecurityPolicyDetail;
+  /** Slot rendered after Controls — used by the Reviews route for the review status section */
+  reviewStatusSlot?: React.ReactNode;
 }) {
   const { policy } = props;
-  const [isSourceOpen, setIsSourceOpen] = useState(false);
-  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
-  const hasSourceMarkdown =
-    typeof policy.sourceMarkdown === 'string' && policy.sourceMarkdown.length > 0;
-
-  async function handleDownloadPdf() {
-    const sourceMarkdown = policy.sourceMarkdown;
-    if (typeof sourceMarkdown !== 'string' || sourceMarkdown.length === 0) {
-      return;
-    }
-
-    setIsDownloadingPdf(true);
-    try {
-      const response = await fetch('/api/security-policy-pdf', {
-        body: JSON.stringify({
-          fileName: getPolicyPdfFileName(policy.title),
-          markdownContent: sourceMarkdown,
-          sourcePath: policy.sourcePath,
-          title: policy.title,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-      });
-      if (!response.ok) {
-        throw new Error((await response.text()) || 'Failed to generate policy PDF');
-      }
-
-      const blob = await response.blob();
-      const contentDisposition = response.headers.get('Content-Disposition');
-      const resolvedFileName = getFileNameFromDisposition(
-        contentDisposition,
-        getPolicyPdfFileName(policy.title),
-      );
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = resolvedFileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.URL.revokeObjectURL(url);
-    } finally {
-      setIsDownloadingPdf(false);
-    }
-  }
 
   return (
     <>
@@ -96,85 +43,20 @@ export function AdminSecurityPolicyDetail(props: {
           <div className="space-y-1">
             <SheetTitle>{policy.title}</SheetTitle>
             <SheetDescription>{policy.summary}</SheetDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={getSupportBadgeVariant(policy.support)}>
-              {formatSupportStatus(policy.support)}
-            </Badge>
-            {hasSourceMarkdown && !props.hideSourceActions ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="icon" className="size-8">
-                    <MoreHorizontal className="size-4" />
-                    <span className="sr-only">Policy actions</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      setIsSourceOpen(true);
-                    }}
-                  >
-                    <FileText className="size-4" />
-                    View policy
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isDownloadingPdf}
-                    onSelect={() => {
-                      void handleDownloadPdf();
-                    }}
-                  >
-                    <Download className="size-4" />
-                    {isDownloadingPdf ? 'Generating PDF…' : 'Download PDF'}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            {policy.owner ? (
+              <p className="text-xs text-muted-foreground">Owner: {policy.owner}</p>
             ) : null}
           </div>
+          <Badge variant={getSupportBadgeVariant(policy.support)}>
+            {formatSupportStatus(policy.support)}
+          </Badge>
         </div>
       </SheetHeader>
 
       <div className="space-y-6 p-4">
-        <DetailSection title="Overview">
-          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-            <DetailItem label="Policy owner" value={policy.owner} />
-            <DetailItem
-              label="Policy last reviewed"
-              value={
-                policy.lastReviewedAt
-                  ? new Date(policy.lastReviewedAt).toLocaleString()
-                  : 'No completed review recorded'
-              }
-            />
-            <DetailItem
-              label="Next review"
-              value={
-                policy.nextReviewAt
-                  ? new Date(policy.nextReviewAt).toLocaleDateString()
-                  : 'No next review scheduled'
-              }
-            />
-          </dl>
-        </DetailSection>
-
-        {!props.hideReviewLinkage ? (
-          <DetailSection title="Annual review linkage">
-            {policy.linkedAnnualReviewTask ? (
-              <div className="space-y-1">
-                <p className="text-sm text-foreground">{policy.linkedAnnualReviewTask.title}</p>
-                <p className="text-sm text-muted-foreground">
-                  Status: {policy.linkedAnnualReviewTask.status.replaceAll('_', ' ')}
-                </p>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No annual review task is linked yet.</p>
-            )}
-          </DetailSection>
-        ) : null}
-
         {props.children}
 
-        <DetailSection title="Mapped controls">
+        <DetailSection title="Controls">
           <p className="text-sm text-muted-foreground">
             Policy support is derived only from these mapped control support states.
           </p>
@@ -224,36 +106,80 @@ export function AdminSecurityPolicyDetail(props: {
             <p className="text-sm text-muted-foreground">No mapped controls recorded yet.</p>
           )}
         </DetailSection>
-      </div>
 
-      <Dialog open={isSourceOpen} onOpenChange={setIsSourceOpen}>
-        <DialogContent className="grid max-h-[90vh] max-w-4xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0">
-          <DialogHeader className="border-b px-6 py-4 pr-14">
-            <div className="flex items-center justify-between gap-4">
-              <DialogTitle>{policy.title}</DialogTitle>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!hasSourceMarkdown || isDownloadingPdf}
-                onClick={() => {
-                  void handleDownloadPdf();
-                }}
-              >
-                <Download className="size-4" />
-                {isDownloadingPdf ? 'Generating PDF…' : 'Download PDF'}
-              </Button>
-            </div>
-          </DialogHeader>
-          <div className="min-h-0 overflow-y-auto px-6 py-4">
-            <SecurityPolicyMarkdownRenderer
-              bare
-              content={policy.sourceMarkdown ?? 'No bundled markdown source is available.'}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
+        {props.reviewStatusSlot ?? <PolicyReviewStatusReadOnly policy={policy} />}
+      </div>
     </>
+  );
+}
+
+export function PolicySourceCollapsible(props: { policy: SecurityPolicyDetail }) {
+  const { policy } = props;
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  async function handleDownloadPdf(e: React.MouseEvent) {
+    e.stopPropagation();
+    const sourceMarkdown = policy.sourceMarkdown;
+    if (typeof sourceMarkdown !== 'string' || sourceMarkdown.length === 0) return;
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch('/api/security-policy-pdf', {
+        body: JSON.stringify({
+          fileName: getPolicyPdfFileName(policy.title),
+          markdownContent: sourceMarkdown,
+          sourcePath: policy.sourcePath,
+          title: policy.title,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error((await response.text()) || 'Failed to generate policy PDF');
+      }
+      const blob = await response.blob();
+      const resolvedFileName = getFileNameFromDisposition(
+        response.headers.get('Content-Disposition'),
+        getPolicyPdfFileName(policy.title),
+      );
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = resolvedFileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Policy</h3>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isDownloading}
+          onClick={(e) => void handleDownloadPdf(e)}
+        >
+          <Download className="size-4" />
+          {isDownloading ? 'Generating PDF…' : 'Download PDF'}
+        </Button>
+      </div>
+      <Collapsible className="rounded-md border">
+        <CollapsibleTrigger className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium hover:bg-muted/20 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/70 [&[data-state=open]>svg]:rotate-180">
+          View policy document
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-t px-4 pb-4 pt-4">
+          <SecurityPolicyMarkdownRenderer bare content={policy.sourceMarkdown!} />
+        </CollapsibleContent>
+      </Collapsible>
+    </section>
   );
 }
 
@@ -316,22 +242,60 @@ function PolicyMappedControlChecklist(props: { control: SecurityPolicyControlMap
   return <SecurityChecklistReadOnlySection items={control.platformChecklist} />;
 }
 
+function PolicyReviewStatusReadOnly(props: { policy: SecurityPolicyDetail }) {
+  const { policy } = props;
+  const task = policy.linkedAnnualReviewTask;
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Reviews</h3>
+        {task ? (
+          <Badge
+            variant={
+              task.status === 'completed'
+                ? 'success'
+                : task.status === 'exception'
+                  ? 'warning'
+                  : task.status === 'blocked'
+                    ? 'destructive'
+                    : 'secondary'
+            }
+          >
+            {task.status === 'ready'
+              ? 'Needs attestation'
+              : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
+          </Badge>
+        ) : null}
+      </div>
+
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Next review
+          </dt>
+          <dd className="text-sm text-foreground">
+            {policy.nextReviewAt
+              ? new Date(policy.nextReviewAt).toLocaleDateString()
+              : 'Not scheduled'}
+          </dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Review cycle
+          </dt>
+          <dd className="text-sm text-foreground">Annual</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function DetailSection(props: { children: React.ReactNode; title: string }) {
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-semibold">{props.title}</h3>
       {props.children}
     </section>
-  );
-}
-
-function DetailItem(props: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {props.label}
-      </dt>
-      <dd className="text-sm text-foreground">{props.value}</dd>
-    </div>
   );
 }

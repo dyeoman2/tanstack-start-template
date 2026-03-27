@@ -1147,7 +1147,8 @@ describe('Admin security route', () => {
     expect(
       screen.getByText('Policy support is derived only from these mapped control support states.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /policy actions/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /view policy document/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download pdf/i })).toBeInTheDocument();
   });
 
   it('shows and downloads the bundled policy markdown source as pdf', async () => {
@@ -1203,8 +1204,7 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.click(screen.getByRole('button', { name: /policy actions/i }));
-    await user.click(screen.getByRole('menuitem', { name: /view policy/i }));
+    await user.click(screen.getByRole('button', { name: /view policy document/i }));
     await user.click(screen.getByRole('button', { name: /download pdf/i }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
@@ -1230,8 +1230,8 @@ describe('Admin security route', () => {
     const markdownDialog = screen.getByRole('dialog');
     expect(within(markdownDialog).getAllByText(/Access Control Policy/).length).toBeGreaterThan(0);
     expect(
-      within(markdownDialog).getByText(/Defines provider access requirements\./),
-    ).toBeInTheDocument();
+      within(markdownDialog).getAllByText(/Defines provider access requirements\./).length,
+    ).toBeGreaterThan(0);
 
     Object.defineProperty(URL, 'createObjectURL', {
       configurable: true,
@@ -1618,7 +1618,6 @@ describe('Admin security route', () => {
       });
     });
 
-    expect(screen.getByText('Current Annual Review')).toBeInTheDocument();
     expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
     expect(screen.getByText('Review Tasks')).toBeInTheDocument();
 

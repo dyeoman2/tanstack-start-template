@@ -2,7 +2,6 @@ import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { Check, ChevronDown, Download } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertDialog,
@@ -17,7 +16,6 @@ import {
 } from '~/components/ui/alert-dialog';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import {
   Sheet,
   SheetContent,
@@ -28,11 +26,9 @@ import {
 import { useToast } from '~/components/ui/toast';
 import {
   AdminSecurityPolicyDetail,
-  getFileNameFromDisposition,
-  getPolicyPdfFileName,
+  PolicySourceCollapsible,
 } from '~/features/security/components/AdminSecurityPolicyDetail';
 import { AdminSecurityReportDetail } from '~/features/security/components/AdminSecurityReportDetail';
-import { SecurityPolicyMarkdownRenderer } from '~/features/security/components/SecurityPolicyMarkdownRenderer';
 import { DetailLoadingState } from '~/features/security/components/routes/AdminSecurityRouteShared';
 import {
   getSecurityPath,
@@ -226,6 +222,10 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         currentAnnualReviewDetail?.tasks.filter(
           (task) =>
             task.status === 'blocked' && task.findingsSummary === null && task.vendor === null,
+        ) ?? [],
+      completed:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) => task.status === 'completed' || task.status === 'exception',
         ) ?? [],
       findingsReview:
         currentAnnualReviewDetail?.tasks.filter((task) => task.findingsSummary !== null) ?? [],
@@ -478,6 +478,11 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         busyReviewRunAction={busyReviewRunAction}
         busyReviewTaskAction={busyReviewTaskAction}
         currentAnnualReviewRun={currentAnnualReviewRun}
+        isDetailLoading={
+          currentAnnualReviewRunQuery === undefined ||
+          isPreparingAnnualReview ||
+          (currentAnnualReviewRun !== null && currentAnnualReviewDetailQuery === undefined)
+        }
         isBatchReviewOpen={isBatchReviewOpen}
         onBatchReviewOpenChange={setIsBatchReviewOpen}
         onOpenBatchReview={handleOpenBatchReview}
@@ -636,23 +641,23 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
             viewingPolicyDetail === undefined ? (
               <DetailLoadingState label="Loading policy detail" />
             ) : viewingPolicyDetail ? (
-              <>
-                <AdminSecurityPolicyDetail
-                  hideReviewLinkage
-                  hideSourceActions
-                  onOpenControl={navigateToControl}
-                  policy={viewingPolicyDetail}
-                >
-                  {viewingPolicyDetail.sourceMarkdown ? (
-                    <PolicySourceCollapsible policy={viewingPolicyDetail} />
-                  ) : null}
-                </AdminSecurityPolicyDetail>
-                <PolicyReviewStatus
-                  task={viewingTask}
-                  onAttest={handleAttestTask}
-                  busyAction={busyReviewTaskAction}
-                />
-              </>
+              <AdminSecurityPolicyDetail
+                onOpenControl={navigateToControl}
+                policy={viewingPolicyDetail}
+                reviewStatusSlot={
+                  <PolicyReviewStatus
+                    task={viewingTask}
+                    liveTask={currentAnnualReviewDetail?.tasks.find((t) => t.id === viewingTask.id)}
+                    policy={viewingPolicyDetail}
+                    onAttest={handleAttestTask}
+                    busyAction={busyReviewTaskAction}
+                  />
+                }
+              >
+                {viewingPolicyDetail.sourceMarkdown ? (
+                  <PolicySourceCollapsible policy={viewingPolicyDetail} />
+                ) : null}
+              </AdminSecurityPolicyDetail>
             ) : (
               <SheetHeader>
                 <SheetTitle>Policy not found</SheetTitle>
@@ -712,78 +717,84 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
 
 function PolicyReviewStatus(props: {
   busyAction: string | null;
+  liveTask?: ReviewTaskDetail;
   onAttest: (task: ReviewTaskDetail) => Promise<void>;
+  policy: SecurityPolicyDetail;
   task: ReviewTaskDetail;
 }) {
-  const { task, busyAction } = props;
+  const { task, policy, busyAction } = props;
+  const liveTask = props.liveTask ?? task;
   const isBusy = busyAction === `${task.id}:attest`;
-  const canAttest =
-    task.status === 'ready' && task.taskType !== 'automated_check' && task.taskType !== 'follow_up';
 
   const attestationHistory = useQuery(api.securityReviews.getReviewTaskAttestationHistory, {
     reviewTaskId: task.id as Id<'reviewTasks'>,
   });
 
+  const liveCanAttest =
+    liveTask.status === 'ready' &&
+    liveTask.taskType !== 'automated_check' &&
+    liveTask.taskType !== 'follow_up';
+
   return (
-    <div className="space-y-3 px-4">
-      <h3 className="text-sm font-semibold">Review status</h3>
+    <section className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Reviews</h3>
+        <div className="flex items-center gap-2">
+          {!liveCanAttest ? (
+            <Badge variant={getReviewTaskBadgeVariant(liveTask)}>
+              {getReviewTaskStatusLabel(liveTask)}
+            </Badge>
+          ) : null}
+          {liveCanAttest ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="outline" size="sm" disabled={isBusy}>
+                  {isBusy ? 'Saving…' : 'Attest to review'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirm attestation</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    You are attesting that you have reviewed{' '}
+                    <strong>{task.policy?.title ?? task.title}</strong> and it remains current.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={isBusy}
+                    onClick={() => {
+                      void props.onAttest(task);
+                    }}
+                  >
+                    {isBusy ? 'Saving…' : 'Confirm'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
+        </div>
+      </div>
 
       <dl className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Next review
+          </dt>
+          <dd className="text-sm text-foreground">
+            {policy.nextReviewAt
+              ? new Date(policy.nextReviewAt).toLocaleDateString()
+              : 'Not scheduled'}
+          </dd>
+        </div>
         <div className="space-y-1">
           <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Review cycle
           </dt>
           <dd className="text-sm text-foreground">Annual</dd>
         </div>
-        <div className="space-y-1">
-          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Status
-          </dt>
-          <dd>
-            <Badge variant={getReviewTaskBadgeVariant(task)}>
-              {getReviewTaskStatusLabel(task)}
-            </Badge>
-          </dd>
-        </div>
       </dl>
-
-      {task.status === 'completed' && task.latestAttestation ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Check className="size-4 text-green-600" />
-          <span>
-            Attested by {task.latestAttestation.attestedByDisplay ?? 'Unknown'} on{' '}
-            {new Date(task.latestAttestation.attestedAt).toLocaleDateString()}
-          </span>
-        </div>
-      ) : canAttest ? (
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button type="button" variant="outline" size="sm" disabled={isBusy}>
-              {isBusy ? 'Saving…' : 'Attest to review'}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Confirm attestation</AlertDialogTitle>
-              <AlertDialogDescription>
-                You are attesting that you have reviewed{' '}
-                <strong>{task.policy?.title ?? task.title}</strong> and it remains current.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={isBusy}
-                onClick={() => {
-                  void props.onAttest(task);
-                }}
-              >
-                {isBusy ? 'Saving…' : 'Confirm'}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      ) : null}
 
       {attestationHistory && attestationHistory.length > 0 ? (
         <div className="space-y-2">
@@ -801,7 +812,7 @@ function PolicyReviewStatus(props: {
                     {entry.attestedByDisplay ?? 'Unknown'}
                   </span>
                   <span className="text-muted-foreground">
-                    {new Date(entry.attestedAt).toLocaleDateString()}
+                    {new Date(entry.attestedAt).toLocaleString()}
                   </span>
                 </div>
               ),
@@ -809,76 +820,6 @@ function PolicyReviewStatus(props: {
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function PolicySourceCollapsible(props: { policy: SecurityPolicyDetail }) {
-  const { policy } = props;
-  const [isDownloading, setIsDownloading] = useState(false);
-
-  async function handleDownloadPdf(e: React.MouseEvent) {
-    e.stopPropagation();
-    const sourceMarkdown = policy.sourceMarkdown;
-    if (typeof sourceMarkdown !== 'string' || sourceMarkdown.length === 0) return;
-
-    setIsDownloading(true);
-    try {
-      const response = await fetch('/api/security-policy-pdf', {
-        body: JSON.stringify({
-          fileName: getPolicyPdfFileName(policy.title),
-          markdownContent: sourceMarkdown,
-          sourcePath: policy.sourcePath,
-          title: policy.title,
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        method: 'POST',
-      });
-      if (!response.ok) {
-        throw new Error((await response.text()) || 'Failed to generate policy PDF');
-      }
-      const blob = await response.blob();
-      const resolvedFileName = getFileNameFromDisposition(
-        response.headers.get('Content-Disposition'),
-        getPolicyPdfFileName(policy.title),
-      );
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = resolvedFileName;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      window.URL.revokeObjectURL(url);
-    } finally {
-      setIsDownloading(false);
-    }
-  }
-
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Policy source</h3>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={isDownloading}
-          onClick={(e) => void handleDownloadPdf(e)}
-        >
-          <Download className="size-4" />
-          {isDownloading ? 'Generating PDF…' : 'Download PDF'}
-        </Button>
-      </div>
-      <Collapsible className="rounded-md border">
-        <CollapsibleTrigger className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium hover:bg-muted/20 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/70 [&[data-state=open]>svg]:rotate-180">
-          View policy document
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="border-t px-4 pb-4 pt-4">
-          <SecurityPolicyMarkdownRenderer bare content={policy.sourceMarkdown!} />
-        </CollapsibleContent>
-      </Collapsible>
     </section>
   );
 }

@@ -322,25 +322,6 @@ export const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
     templateKey: 'annual:attest:poam-review',
     title: 'Remediation backlog (POA&M) reviewed',
   },
-  {
-    allowException: false,
-    controlLinks: [
-      {
-        internalControlId: 'CTRL-AT-002',
-        itemId: 'provider-security-awareness-program-documented',
-      },
-    ],
-    description:
-      'Review the provider security-awareness training program and confirm it remains current.',
-    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
-    required: true,
-    statementKey: 'security-awareness-program-current',
-    statementText:
-      'I reviewed the provider security-awareness training program and it remains current.',
-    taskType: 'attestation',
-    templateKey: 'annual:attest:security-awareness-program',
-    title: 'Security awareness training program reviewed',
-  },
   buildAnnualDocumentUploadTask({
     templateKey: 'annual:document:assessment-plan',
     title: 'Control assessment plan linked',

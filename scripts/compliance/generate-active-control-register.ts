@@ -927,8 +927,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               { sufficiency: 'partial' },
             ),
             seededEvidence(
-              'Annual awareness review task',
-              'Annual review task definition requiring the provider security-awareness training program to be reviewed and attested as current during the site admin security review cycle.',
+              'Annual policy review task',
+              'The Security Awareness and Training Policy is reviewed and attested as current during the annual site admin security review cycle, covering both the policy document and the training program it describes.',
               { sufficiency: 'partial' },
             ),
           ],

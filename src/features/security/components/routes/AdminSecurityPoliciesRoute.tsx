@@ -10,7 +10,10 @@ import {
   SheetTitle,
 } from '~/components/ui/sheet';
 import { useToast } from '~/components/ui/toast';
-import { AdminSecurityPolicyDetail } from '~/features/security/components/AdminSecurityPolicyDetail';
+import {
+  AdminSecurityPolicyDetail,
+  PolicySourceCollapsible,
+} from '~/features/security/components/AdminSecurityPolicyDetail';
 import { DetailLoadingState } from '~/features/security/components/routes/AdminSecurityRouteShared';
 import {
   getSecurityPath,
@@ -111,7 +114,11 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
           {selectedPolicy === undefined && selectedPolicyId ? (
             <DetailLoadingState label="Loading policy detail" />
           ) : selectedPolicy ? (
-            <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy} />
+            <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy}>
+              {selectedPolicy.sourceMarkdown ? (
+                <PolicySourceCollapsible policy={selectedPolicy} />
+              ) : null}
+            </AdminSecurityPolicyDetail>
           ) : null}
         </SheetContent>
       </Sheet>
