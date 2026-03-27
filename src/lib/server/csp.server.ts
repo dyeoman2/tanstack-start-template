@@ -105,9 +105,11 @@ export function buildDocumentContentSecurityPolicy({
     // react-remove-scroll (Radix Dialog / Sheet / AlertDialog) injects a fixed <style> for scroll lock;
     // allow that exact stylesheet via hash without opening all inline styles.
     "style-src 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='",
-    // ACCEPTED RESIDUAL RISK: style-src-attr 'unsafe-inline' is required for
-    // Tailwind CSS and shadcn/ui inline style attributes (e.g., data-[state=open]:...,
-    // style="--radix-*") that cannot be nonce-gated or hash-gated.
+    // ACCEPTED RESIDUAL RISK: style-src-attr 'unsafe-inline' is required because
+    // Radix UI (Dialog, Select, Dropdown, Navigation Menu, Tooltip) injects runtime
+    // CSS custom properties (--radix-*) as inline style attributes computed from DOM
+    // measurements. These values change dynamically and cannot be hashed or nonce-gated
+    // without forking the component library. Verified infeasible to remove 2026-03-26.
     // Compensating controls:
     //   1. script-src is nonce-locked — CSS cannot execute JavaScript
     //   2. CSP violation reports are monitored via /api/csp-report

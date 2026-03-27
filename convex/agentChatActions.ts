@@ -1503,6 +1503,8 @@ export const runChatGenerationInternal = internalAction({
           context: {
             runId: args.runId,
             useWebSearch: run.useWebSearch,
+            zdr: true,
+            data_collection: 'deny',
           },
         },
       );
@@ -1572,6 +1574,8 @@ export const runChatGenerationInternal = internalAction({
             context: {
               runId: args.runId,
               useWebSearch: latestRun.useWebSearch,
+              zdr: true,
+              data_collection: 'deny',
             },
           },
         );

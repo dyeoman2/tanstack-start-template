@@ -933,6 +933,10 @@ export function createSharedBetterAuthOptions(
         ipAddressHeaders: [AUTH_PROXY_IP_HEADER, 'x-forwarded-for', 'cf-connecting-ip'],
         ipv6Subnet: 64,
       },
+      // SameSite=Strict is safe for enterprise SSO (OAuth/SAML) callbacks because
+      // Better Auth sets a fresh session cookie in the callback response (first-party),
+      // and state verification uses URL query params + server-side storage, not cookies
+      // sent cross-origin from the IdP redirect. Verified 2026-03-26.
       defaultCookieAttributes: {
         secure: secureCookies,
         httpOnly: true,

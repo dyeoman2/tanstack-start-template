@@ -42,8 +42,6 @@ import { Route as AppAdminSecurityRouteImport } from './routes/app/admin/securit
 import { Route as AppAdminModelsRouteImport } from './routes/app/admin/models'
 import { Route as AppAdminEmailsRouteImport } from './routes/app/admin/emails'
 import { Route as AppAdminLayoutRouteImport } from './routes/app/admin/_layout'
-import { Route as ApiTestE2eAuthRouteImport } from './routes/api/test/e2e-auth'
-import { Route as ApiTestAgentAuthRouteImport } from './routes/api/test/agent-auth'
 import { Route as ApiFilesServeRouteImport } from './routes/api/files/serve'
 import { Route as ApiChatSourceFaviconRouteImport } from './routes/api/chat/source-favicon'
 import { Route as ApiAuthStepUpRouteImport } from './routes/api/auth/step-up'
@@ -228,16 +226,6 @@ const AppAdminLayoutRoute = AppAdminLayoutRouteImport.update({
   path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
-const ApiTestE2eAuthRoute = ApiTestE2eAuthRouteImport.update({
-  id: '/api/test/e2e-auth',
-  path: '/api/test/e2e-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiTestAgentAuthRoute = ApiTestAgentAuthRouteImport.update({
-  id: '/api/test/agent-auth',
-  path: '/api/test/agent-auth',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiFilesServeRoute = ApiFilesServeRouteImport.update({
   id: '/api/files/serve',
   path: '/api/files/serve',
@@ -366,8 +354,6 @@ export interface FileRoutesByFullPath {
   '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/chat/source-favicon': typeof ApiChatSourceFaviconRoute
   '/api/files/serve': typeof ApiFilesServeRoute
-  '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
-  '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin': typeof AppAdminLayoutRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
@@ -420,8 +406,6 @@ export interface FileRoutesByTo {
   '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/chat/source-favicon': typeof ApiChatSourceFaviconRoute
   '/api/files/serve': typeof ApiFilesServeRoute
-  '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
-  '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin': typeof AppAdminIndexRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
@@ -473,8 +457,6 @@ export interface FileRoutesById {
   '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/chat/source-favicon': typeof ApiChatSourceFaviconRoute
   '/api/files/serve': typeof ApiFilesServeRoute
-  '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
-  '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin/_layout': typeof AppAdminLayoutRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
@@ -530,8 +512,6 @@ export interface FileRouteTypes {
     | '/api/auth/step-up'
     | '/api/chat/source-favicon'
     | '/api/files/serve'
-    | '/api/test/agent-auth'
-    | '/api/test/e2e-auth'
     | '/app/admin'
     | '/app/admin/emails'
     | '/app/admin/models'
@@ -584,8 +564,6 @@ export interface FileRouteTypes {
     | '/api/auth/step-up'
     | '/api/chat/source-favicon'
     | '/api/files/serve'
-    | '/api/test/agent-auth'
-    | '/api/test/e2e-auth'
     | '/app/admin'
     | '/app/admin/emails'
     | '/app/admin/models'
@@ -636,8 +614,6 @@ export interface FileRouteTypes {
     | '/api/auth/step-up'
     | '/api/chat/source-favicon'
     | '/api/files/serve'
-    | '/api/test/agent-auth'
-    | '/api/test/e2e-auth'
     | '/app/admin/_layout'
     | '/app/admin/emails'
     | '/app/admin/models'
@@ -690,8 +666,6 @@ export interface RootRouteChildren {
   ApiAuthStepUpRoute: typeof ApiAuthStepUpRoute
   ApiChatSourceFaviconRoute: typeof ApiChatSourceFaviconRoute
   ApiFilesServeRoute: typeof ApiFilesServeRoute
-  ApiTestAgentAuthRoute: typeof ApiTestAgentAuthRoute
-  ApiTestE2eAuthRoute: typeof ApiTestE2eAuthRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -927,20 +901,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminLayoutRouteImport
       parentRoute: typeof AppRoute
     }
-    '/api/test/e2e-auth': {
-      id: '/api/test/e2e-auth'
-      path: '/api/test/e2e-auth'
-      fullPath: '/api/test/e2e-auth'
-      preLoaderRoute: typeof ApiTestE2eAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/test/agent-auth': {
-      id: '/api/test/agent-auth'
-      path: '/api/test/agent-auth'
-      fullPath: '/api/test/agent-auth'
-      preLoaderRoute: typeof ApiTestAgentAuthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/files/serve': {
       id: '/api/files/serve'
       path: '/api/files/serve'
@@ -1166,8 +1126,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthStepUpRoute: ApiAuthStepUpRoute,
   ApiChatSourceFaviconRoute: ApiChatSourceFaviconRoute,
   ApiFilesServeRoute: ApiFilesServeRoute,
-  ApiTestAgentAuthRoute: ApiTestAgentAuthRoute,
-  ApiTestE2eAuthRoute: ApiTestE2eAuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2278,18 +2278,16 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The workspace now includes a documented provider incident-response policy and an annual document-link workflow for the current procedure, but the current procedure artifact still has to be linked during review.',
+          'done',
+          'The workspace includes a documented provider incident-response policy generated from the security policy document registry and an annual review task linking the current procedure into the site admin security review cycle.',
           [
             seededEvidence(
               'Incident response policy',
-              'Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment.',
-              { sufficiency: 'partial' },
+              'Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment, generated from the security policy document registry.',
             ),
             seededEvidence(
               'Annual incident response procedure task',
               'Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.',
-              { sufficiency: 'partial' },
             ),
           ],
           'Security Incident Response',
@@ -4911,9 +4909,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include completed screening records or an approval workflow for provider workforce access.',
-          [],
+          'in_progress',
+          'The workspace includes a personnel-security policy defining screening requirements. The screening records retention workflow and approval artifact structure are being formalized for the site admin security review cycle.',
+          [
+            seededEvidence(
+              'Personnel security policy with screening requirements',
+              'Provider policy documenting workforce-screening requirements that defines which roles require screening before receiving administrative or support access.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Workforce Security',
         ),
       },

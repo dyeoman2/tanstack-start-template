@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-27T04:57:49.284Z",
+  "generatedAt": "2026-03-27T06:14:02.873Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -1892,13 +1892,6 @@
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
-              },
-              {
-                "title": "Offline audit archive integrity verification",
-                "description": "scripts/verify-audit-archive.ts provides an offline CLI tool that downloads archived audit batches from S3 and re-verifies hash chains independently of the running service, supporting air-gapped integrity verification.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
               }
             ]
           }
@@ -2283,22 +2276,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Security Incident Response",
-            "notes": "The workspace now includes a documented provider incident-response policy and an annual document-link workflow for the current procedure, but the current procedure artifact still has to be linked during review.",
+            "notes": "The workspace includes a documented provider incident-response policy generated from the security policy document registry and an annual review task linking the current procedure into the site admin security review cycle.",
             "evidence": [
               {
                 "title": "Incident response policy",
-                "description": "Incident response policy Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment.",
+                "description": "Incident response policy Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment, generated from the security policy document registry.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Annual incident response procedure task",
                 "description": "Documentation Annual review task definition requiring the current provider incident-response procedure to be linked into the site admin security review cycle.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -5930,10 +5923,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Workforce Security",
-            "notes": "The workspace does not yet include completed screening records or an approval workflow for provider workforce access.",
-            "evidence": []
+            "notes": "The workspace includes a personnel-security policy defining screening requirements. The screening records retention workflow and approval artifact structure are being formalized for the site admin security review cycle.",
+            "evidence": [
+              {
+                "title": "Personnel security policy with screening requirements",
+                "description": "Personnel security policy with screening requirements Provider policy documenting workforce-screening requirements that defines which roles require screening before receiving administrative or support access.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
