@@ -7,7 +7,11 @@ import {
   ALWAYS_ON_REGULATED_BASELINE,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../../../src/lib/shared/security-baseline';
-import { getVerifiedCurrentSiteAdminUserFromActionOrThrow } from '../../auth/access';
+import { STEP_UP_REQUIREMENTS } from '../../../src/lib/shared/auth-policy';
+import {
+  getVerifiedCurrentSiteAdminUserFromActionOrThrow,
+  requireFreshStepUpSessionFromMutationOrActionOrThrow,
+} from '../../auth/access';
 import {
   ANNUAL_REVIEW_TASK_BLUEPRINTS,
   BACKUP_DRILL_STALE_WINDOW_MS,
@@ -45,6 +49,12 @@ export async function exportEvidenceReportHandler(
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  await requireFreshStepUpSessionFromMutationOrActionOrThrow(ctx, {
+    currentUser,
+    forbiddenImpersonationMessage: 'Impersonated sessions cannot export evidence reports.',
+    requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+    stepUpRequiredMessage: 'Step-up authentication is required to export evidence reports.',
+  });
   const auditRequestContext = resolveAuditRequestContext({
     requestContext: args.requestContext,
     session: currentUser.authSession,

@@ -628,6 +628,54 @@ export async function requireRecentStepUpFromActionOrThrow(ctx: ActionCtx): Prom
   return await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.organizationAdmin);
 }
 
+export async function requireFreshStepUpSessionFromMutationOrActionOrThrow(
+  ctx: MutationCtx | ActionCtx,
+  args: {
+    currentUser: CurrentUser;
+    forbiddenImpersonationMessage: string;
+    requirement: StepUpRequirement;
+    stepUpRequiredMessage?: string;
+  },
+): Promise<CurrentUser> {
+  if (args.currentUser.authSession?.impersonatedBy) {
+    throwConvexError('FORBIDDEN', args.forbiddenImpersonationMessage);
+  }
+
+  const sessionId = args.currentUser.authSession?.id ?? null;
+  const activeClaim =
+    sessionId === null
+      ? null
+      : await ctx.runQuery(internal.stepUp.getActiveClaimInternal, {
+          authUserId: args.currentUser.authUserId,
+          requirement: args.requirement,
+          sessionId,
+        });
+
+  if (
+    !evaluateStepUpClaim({
+      claim: activeClaim
+        ? {
+            consumedAt: activeClaim.consumedAt,
+            expiresAt: activeClaim.expiresAt,
+            method: activeClaim.method,
+            requirement: activeClaim.requirement,
+            sessionId: activeClaim.sessionId,
+            verifiedAt: activeClaim.verifiedAt,
+          }
+        : null,
+      requirement: args.requirement,
+      sessionId,
+    }).satisfied
+  ) {
+    throwConvexError(
+      'FORBIDDEN',
+      args.stepUpRequiredMessage ?? `Step-up authentication is required (${args.requirement})`,
+    );
+  }
+
+  return args.currentUser;
+}
+
 export async function requireStepUpFromActionOrThrow(
   ctx: ActionCtx,
   requirement: StepUpRequirement,

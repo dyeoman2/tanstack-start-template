@@ -1231,8 +1231,10 @@ async function removeSiteAdminMember(
   await ctx.runMutation(
     components.betterAuth.adapter.deleteOne as never,
     {
-      model: 'member',
-      id: memberId,
+      input: {
+        model: 'member',
+        where: [{ field: '_id', operator: 'eq', value: memberId }],
+      },
     } as never,
   );
 
@@ -1351,8 +1353,10 @@ async function deleteSiteAdminOrganization(ctx: ActionCtx, organizationId: strin
   await ctx.runMutation(
     components.betterAuth.adapter.deleteOne as never,
     {
-      model: 'organization',
-      id: organizationId,
+      input: {
+        model: 'organization',
+        where: [{ field: '_id', operator: 'eq', value: organizationId }],
+      },
     } as never,
   );
 
@@ -2294,8 +2298,10 @@ export const createAuth = (
                 await ctxWithRunMutation.runMutation?.(
                   components.betterAuth.adapter.deleteOne as never,
                   {
-                    model: 'session',
-                    id: oldSession._id,
+                    input: {
+                      model: 'session',
+                      where: [{ field: '_id', operator: 'eq', value: oldSession._id }],
+                    },
                   } as never,
                 );
               }),

@@ -2,11 +2,16 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anyApi } from 'convex/server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 
-vi.mock('./auth/access', () => ({
-  getVerifiedCurrentSiteAdminUserFromActionOrThrow: vi.fn(),
-  getVerifiedCurrentSiteAdminUserOrThrow: vi.fn(),
-  getVerifiedCurrentUserOrThrow: vi.fn(),
-}));
+vi.mock('./auth/access', async () => {
+  const actual = await vi.importActual<typeof import('./auth/access')>('./auth/access');
+  return {
+    ...actual,
+    getVerifiedCurrentSiteAdminUserFromActionOrThrow: vi.fn(),
+    getVerifiedCurrentSiteAdminUserOrThrow: vi.fn(),
+    getVerifiedCurrentUserFromActionOrThrow: vi.fn(),
+    getVerifiedCurrentUserOrThrow: vi.fn(),
+  };
+});
 
 vi.mock('./lib/betterAuth', () => ({
   fetchAllBetterAuthPasskeys: vi.fn(),
@@ -42,6 +47,7 @@ let reviewSecurityFindingHandler: typeof import('./lib/security/workspace').revi
 let summarizeIntegrityCheckFn: typeof import('./lib/security/core').summarizeIntegrityCheck;
 let getVerifiedCurrentSiteAdminUserFromActionOrThrowMock: ReturnType<typeof vi.fn>;
 let getVerifiedCurrentSiteAdminUserOrThrowMock: ReturnType<typeof vi.fn>;
+let getVerifiedCurrentUserFromActionOrThrowMock: ReturnType<typeof vi.fn>;
 
 type DocId = string;
 
@@ -391,6 +397,9 @@ beforeAll(async () => {
   getVerifiedCurrentSiteAdminUserOrThrowMock = vi.mocked(
     accessModule.getVerifiedCurrentSiteAdminUserOrThrow,
   );
+  getVerifiedCurrentUserFromActionOrThrowMock = vi.mocked(
+    accessModule.getVerifiedCurrentUserFromActionOrThrow,
+  );
   const [
     workspaceModule,
     postureModule,
@@ -459,11 +468,34 @@ beforeEach(() => {
     authUser: {
       email: 'admin@example.com',
     },
+    authSession: {
+      id: 'session-1',
+      impersonatedBy: null,
+    },
     authUserId: 'admin-user',
   } as never);
   getVerifiedCurrentSiteAdminUserOrThrowMock.mockResolvedValue({
     activeOrganizationId: 'org-1',
+    authSession: {
+      id: 'session-1',
+      impersonatedBy: null,
+    },
+    authUser: {
+      email: 'admin@example.com',
+    },
     authUserId: 'admin-user',
+  } as never);
+  getVerifiedCurrentUserFromActionOrThrowMock.mockResolvedValue({
+    activeOrganizationId: 'org-1',
+    authSession: {
+      id: 'session-1',
+      impersonatedBy: null,
+    },
+    authUser: {
+      email: 'admin@example.com',
+    },
+    authUserId: 'admin-user',
+    isSiteAdmin: true,
   } as never);
 });
 
@@ -2089,8 +2121,19 @@ describe('audit evidence helpers', () => {
       reviewStatus: 'reviewed',
       reviewedAt: Date.parse('2026-03-18T15:45:00.000Z'),
     };
-    const runQuery = vi.fn(async (_ref: unknown, _args?: unknown) => {
-      if (runQuery.mock.calls.length === 2) {
+    const runQuery = vi.fn(async (_ref: unknown, args?: Record<string, unknown>) => {
+      if (args?.requirement === 'organization_admin') {
+        return {
+          consumedAt: null,
+          expiresAt: Date.parse('2026-03-18T16:10:00.000Z'),
+          method: 'totp',
+          requirement: 'organization_admin',
+          sessionId: 'session-1',
+          verifiedAt: Date.parse('2026-03-18T15:58:00.000Z'),
+        };
+      }
+
+      if (args?.resourceType === 'evidence_report_export') {
         return {
           allowed: true,
           legalHoldActive: true,
@@ -2182,6 +2225,161 @@ describe('audit evidence helpers', () => {
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',
       userAgent: 'Vitest',
+    });
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('requires a fresh privileged session before reviewing an evidence report', async () => {
+    const handler = (
+      securityReportsModuleRef.reviewEvidenceReport as unknown as {
+        _handler: Function;
+      }
+    )._handler as (
+      ctx: {
+        db: {
+          get: ReturnType<typeof vi.fn>;
+        };
+        runQuery: ReturnType<typeof vi.fn>;
+      },
+      args: {
+        customerSummary?: string;
+        id: string;
+        internalNotes?: string;
+        reviewStatus: 'reviewed' | 'needs_follow_up';
+      },
+    ) => Promise<unknown>;
+
+    const dbGet = vi.fn();
+    const runQuery = vi.fn().mockResolvedValue(null);
+
+    await expect(
+      handler(
+        {
+          db: {
+            get: dbGet,
+          },
+          runQuery,
+        },
+        {
+          id: 'report-1',
+          reviewStatus: 'reviewed',
+        },
+      ),
+    ).rejects.toThrow('Step-up authentication is required to review evidence reports.');
+    expect(dbGet).not.toHaveBeenCalled();
+  });
+
+  it('records an audited event when the global audit ledger export runs', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-18T18:00:00.000Z'));
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
+      '00000000-0000-4000-8000-000000000999',
+    );
+
+    const handler = (
+      auditModuleRef.exportAuditLedgerJsonl as unknown as {
+        _handler: Function;
+      }
+    )._handler as (
+      ctx: {
+        runMutation: ReturnType<typeof vi.fn>;
+        runQuery: ReturnType<typeof vi.fn>;
+      },
+      args: {
+        organizationId?: string;
+        outcome?: 'success' | 'failure';
+        resourceType?: string;
+        severity?: 'info' | 'warning' | 'critical';
+        sourceSurface?: string;
+      },
+    ) => Promise<{
+      filename: string;
+      jsonl: string;
+      manifest: {
+        chainId: string;
+        chainVersion: number;
+        exportedAt: number;
+        firstSequence: number | null;
+        headHash: string | null;
+        lastSequence: number | null;
+        rowCount: number;
+      };
+    }>;
+
+    const runQuery = vi.fn(async (_ref: unknown, args?: Record<string, unknown>) => {
+      if (args?.requirement === 'audit_export') {
+        return {
+          consumedAt: null,
+          expiresAt: Date.parse('2026-03-18T18:10:00.000Z'),
+          method: 'totp',
+          requirement: 'audit_export',
+          sessionId: 'session-1',
+          verifiedAt: Date.parse('2026-03-18T17:58:00.000Z'),
+        };
+      }
+
+      if (args?.limit === 100) {
+        return {
+          continueCursor: null,
+          events: [
+            {
+              eventType: 'audit_ledger_viewed',
+              sequence: 7,
+            },
+          ],
+          isDone: true,
+          limit: 100,
+        };
+      }
+
+      return {
+        chainVersion: 1,
+        headEventHash: 'head-hash',
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(null);
+
+    const result = await handler(
+      {
+        runMutation,
+        runQuery,
+      },
+      {
+        organizationId: 'org-1',
+        outcome: 'success',
+      },
+    );
+
+    expect(result).toMatchObject({
+      filename: 'security-audit-events-2026-03-18.jsonl',
+      manifest: {
+        chainId: 'primary',
+        exportedAt: Date.parse('2026-03-18T18:00:00.000Z'),
+        firstSequence: 7,
+        headHash: 'head-hash',
+        lastSequence: 7,
+        rowCount: 1,
+      },
+    });
+    expect(runMutation).toHaveBeenCalledWith(anyApi.audit.appendAuditLedgerEventInternal, {
+      actorUserId: 'admin-user',
+      eventType: 'audit_log_exported',
+      metadata: expect.stringContaining('"scope":"org-1"'),
+      organizationId: 'org-1',
+      outcome: 'success',
+      provenance: expect.objectContaining({
+        actorUserId: 'admin-user',
+        emitter: 'audit.ledger_export',
+        kind: 'site_admin',
+      }),
+      resourceId: 'org-1',
+      resourceLabel: 'security-audit-events',
+      resourceType: 'audit_export',
+      severity: 'info',
+      sessionId: 'session-1',
+      sourceSurface: 'admin.audit_ledger_export',
+      userId: 'admin-user',
     });
     vi.restoreAllMocks();
     vi.useRealTimers();

@@ -3,6 +3,8 @@
  * Provides automatic inference of common environment variables.
  */
 
+import { validateOpenRouterRuntimeConfigForStartup } from './openrouter';
+
 const TEST_BETTER_AUTH_SECRET = 'test-better-auth-secret-abcdefghijklmnopqrstuvwxyz';
 const TEST_AUTH_PROXY_SHARED_SECRET = 'test-auth-proxy-shared-secret-abcdefghijklmnopqrstuvwxyz';
 const TEST_BETTER_AUTH_URL = 'http://127.0.0.1:3000';
@@ -557,6 +559,10 @@ function parseAppDeploymentEnv(value: string): AppDeploymentEnv {
     );
   }
 })();
+
+// Fail early on unsafe outbound AI privacy configuration so the process never
+// reaches protected routes with a non-strict OpenRouter privacy mode.
+validateOpenRouterRuntimeConfigForStartup();
 
 export function getAppDeploymentEnv(): AppDeploymentEnv | null {
   const value = readOptionalServerEnv('APP_DEPLOYMENT_ENV');

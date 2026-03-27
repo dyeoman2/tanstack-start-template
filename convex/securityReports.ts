@@ -1,7 +1,11 @@
 import { action, internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
-import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
+import {
+  getVerifiedCurrentSiteAdminUserOrThrow,
+  requireFreshStepUpSessionFromMutationOrActionOrThrow,
+} from './auth/access';
+import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import {
   buildEvidenceReportDetail,
   createTriggeredReviewRunRecord,
@@ -116,6 +120,12 @@ export const reviewEvidenceReport = mutation({
   returns: evidenceReportRecordValidator,
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    await requireFreshStepUpSessionFromMutationOrActionOrThrow(ctx, {
+      currentUser,
+      forbiddenImpersonationMessage: 'Impersonated sessions cannot review evidence reports.',
+      requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+      stepUpRequiredMessage: 'Step-up authentication is required to review evidence reports.',
+    });
     const auditRequestContext = resolveAuditRequestContext({
       requestContext: args.requestContext,
       session: currentUser.authSession,

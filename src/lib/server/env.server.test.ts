@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getAppDeploymentEnv,
   getAuthProxySharedSecret,
@@ -226,6 +226,18 @@ describe('Better Auth env helpers', () => {
     process.env.APP_DEPLOYMENT_ENV = 'invalid';
     expect(() => getAppDeploymentEnv()).toThrow(
       'APP_DEPLOYMENT_ENV must be one of: development, test, preview, staging, production.',
+    );
+  });
+
+  it('fails module initialization when OpenRouter privacy mode is not strict', async () => {
+    vi.resetModules();
+    process.env = {
+      ...ORIGINAL_ENV,
+      OPENROUTER_PRIVACY_MODE: 'standard',
+    };
+
+    await expect(import('./env.server')).rejects.toThrow(
+      'OPENROUTER_PRIVACY_MODE must be "strict"',
     );
   });
 

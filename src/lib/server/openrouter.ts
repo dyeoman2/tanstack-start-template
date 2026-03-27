@@ -30,6 +30,10 @@ function getOpenRouterPrivacyMode() {
   );
 }
 
+export function validateOpenRouterRuntimeConfigForStartup() {
+  getOpenRouterPrivacyMode();
+}
+
 export function getOpenRouterConfig(): OpenRouterConfig {
   assertVendorBoundary({
     vendor: 'openrouter',

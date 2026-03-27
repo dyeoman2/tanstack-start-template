@@ -7,6 +7,7 @@ import {
   isAuthAuditEventType,
   normalizeAuditIdentifier,
 } from '../src/lib/shared/auth-audit';
+import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { assertUserId } from '../src/lib/shared/user-id';
 import type { Doc } from './_generated/dataModel';
 import { internal } from './_generated/api';
@@ -21,6 +22,7 @@ import {
 } from './_generated/server';
 import {
   getVerifiedCurrentAuthUserOrNull,
+  requireFreshStepUpSessionFromMutationOrActionOrThrow,
   getVerifiedCurrentUserFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
@@ -204,7 +206,10 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
       'sourceSurface',
     ],
   ],
-  ['audit_ledger_viewed', ['actorUserId', 'outcome', 'severity', 'sourceSurface']],
+  [
+    'audit_ledger_viewed',
+    ['actorUserId', 'organizationId', 'outcome', 'severity', 'sourceSurface'],
+  ],
   [
     'audit_ledger_segment_archived',
     ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
@@ -1307,6 +1312,12 @@ export const exportAuditLedgerJsonl = action({
     if (!user.isSiteAdmin) {
       throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
     }
+    await requireFreshStepUpSessionFromMutationOrActionOrThrow(ctx, {
+      currentUser: user,
+      forbiddenImpersonationMessage: 'Impersonated sessions cannot export the audit ledger.',
+      requirement: STEP_UP_REQUIREMENTS.auditExport,
+      stepUpRequiredMessage: 'Step-up authentication is required to export the audit ledger.',
+    });
 
     const events: AuthAuditEvent[] = [];
     let cursor: string | null = null;
@@ -1341,19 +1352,59 @@ export const exportAuditLedgerJsonl = action({
     );
     const lastEvent =
       orderedEvents.length > 0 ? orderedEvents[orderedEvents.length - 1] : undefined;
+    const exportedAt = Date.now();
+    const manifest = {
+      chainId: AUDIT_LEDGER_CHAIN_ID,
+      chainVersion: state?.chainVersion ?? 1,
+      firstSequence: orderedEvents[0]?.sequence ?? null,
+      lastSequence: lastEvent?.sequence ?? null,
+      rowCount: orderedEvents.length,
+      headHash: state?.headEventHash ?? null,
+      exportedAt,
+    };
+    const jsonl = orderedEvents.map((event) => JSON.stringify(event)).join('\n');
+    const exportId = crypto.randomUUID();
+    const exportHash = await hashAuditPayload(jsonl);
+    const manifestHash = await hashAuditPayload(JSON.stringify(manifest));
+
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      eventType: 'audit_log_exported',
+      provenance: {
+        kind: 'site_admin',
+        emitter: 'audit.ledger_export',
+        actorUserId: user.authUserId,
+        sessionId: user.authSession?.id ?? undefined,
+      },
+      actorUserId: user.authUserId,
+      userId: user.authUserId,
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: args.organizationId ?? 'global-audit-ledger',
+      resourceLabel: 'security-audit-events',
+      resourceType: 'audit_export',
+      severity: 'info',
+      sessionId: user.authSession?.id ?? undefined,
+      sourceSurface: 'admin.audit_ledger_export',
+      metadata: JSON.stringify({
+        exportHash,
+        exportId,
+        filters: {
+          organizationId: args.organizationId ?? null,
+          outcome: args.outcome ?? null,
+          severity: args.severity ?? null,
+          sourceSurface: args.sourceSurface ?? null,
+          resourceType: args.resourceType ?? null,
+        },
+        manifestHash,
+        rowCount: manifest.rowCount,
+        scope: args.organizationId ?? 'global',
+      }),
+    });
 
     return {
-      filename: `security-audit-events-${new Date().toISOString().slice(0, 10)}.jsonl`,
-      jsonl: orderedEvents.map((event) => JSON.stringify(event)).join('\n'),
-      manifest: {
-        chainId: AUDIT_LEDGER_CHAIN_ID,
-        chainVersion: state?.chainVersion ?? 1,
-        firstSequence: orderedEvents[0]?.sequence ?? null,
-        lastSequence: lastEvent?.sequence ?? null,
-        rowCount: orderedEvents.length,
-        headHash: state?.headEventHash ?? null,
-        exportedAt: Date.now(),
-      },
+      filename: `security-audit-events-${new Date(exportedAt).toISOString().slice(0, 10)}.jsonl`,
+      jsonl,
+      manifest,
     };
   },
 });
