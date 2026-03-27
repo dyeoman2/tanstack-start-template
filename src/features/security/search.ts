@@ -50,6 +50,9 @@ export const securityVendorsSearchSchema = z.object({
 
 export const securityReviewsSearchSchema = z.object({
   selectedReviewRun: z.string().optional(),
+});
+
+export const securityReportsSearchSchema = z.object({
   reportKind: z.enum(REPORT_KIND_FILTER_VALUES).default('all'),
   reportReviewStatus: z.enum(REPORT_REVIEW_STATUS_FILTER_VALUES).default('all'),
   reportSearch: z.string().default(''),
@@ -62,3 +65,4 @@ export type SecurityPoliciesSearch = z.infer<typeof securityPoliciesSearchSchema
 export type SecurityFindingsSearch = z.infer<typeof securityFindingsSearchSchema>;
 export type SecurityVendorsSearch = z.infer<typeof securityVendorsSearchSchema>;
 export type SecurityReviewsSearch = z.infer<typeof securityReviewsSearchSchema>;
+export type SecurityReportsSearch = z.infer<typeof securityReportsSearchSchema>;

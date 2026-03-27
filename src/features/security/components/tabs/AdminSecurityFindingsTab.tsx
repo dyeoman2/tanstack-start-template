@@ -19,59 +19,14 @@ import { Textarea } from '~/components/ui/textarea';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
+  formatFindingDisposition,
   formatFindingSeverity,
   formatFindingStatus,
+  formatFindingType,
+  getFindingDispositionBadgeVariant,
   getFindingSeverityBadgeVariant,
 } from '~/features/security/formatters';
 import type { SecurityFindingListItem } from '~/features/security/types';
-
-function formatFindingDisposition(disposition: SecurityFindingListItem['disposition']) {
-  switch (disposition) {
-    case 'accepted_risk':
-      return 'Accepted risk';
-    case 'false_positive':
-      return 'False positive';
-    case 'investigating':
-      return 'Investigating';
-    case 'pending_review':
-      return 'Pending review';
-    case 'resolved':
-      return 'Resolved';
-  }
-}
-
-function formatFindingType(findingType: SecurityFindingListItem['findingType']) {
-  switch (findingType) {
-    case 'audit_archive_health':
-      return 'Archive health';
-    case 'audit_request_context_gaps':
-      return 'Request context gaps';
-    case 'audit_integrity_failures':
-      return 'Audit integrity';
-    case 'document_scan_quarantines':
-      return 'Scan quarantines';
-    case 'document_scan_rejections':
-      return 'Scan rejections';
-    case 'release_security_validation':
-      return 'Release validation';
-  }
-}
-
-function getFindingDispositionBadgeVariant(
-  disposition: SecurityFindingListItem['disposition'],
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (disposition) {
-    case 'resolved':
-      return 'default';
-    case 'accepted_risk':
-    case 'false_positive':
-      return 'secondary';
-    case 'investigating':
-      return 'outline';
-    case 'pending_review':
-      return 'destructive';
-  }
-}
 
 export function AdminSecurityFindingsTab(props: {
   busyAction: string | null;

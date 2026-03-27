@@ -23,9 +23,12 @@ import {
   formatEvidenceReviewDueInterval,
   formatEvidenceSource,
   formatEvidenceSufficiency,
+  formatFindingDisposition,
   formatFindingSeverity,
   formatFindingStatus,
+  formatFollowUpStatus,
   getFindingSeverityBadgeVariant,
+  getFollowUpStatusBadgeVariant,
   getTodayDateInputValue,
   parseEvidenceDateInput,
 } from '~/features/security/formatters';
@@ -36,49 +39,6 @@ import type {
   SecurityFindingFollowUpAction,
   SecurityFindingListItem,
 } from '~/features/security/types';
-
-function formatFindingDisposition(disposition: SecurityFindingListItem['disposition']) {
-  switch (disposition) {
-    case 'accepted_risk':
-      return 'Accepted risk';
-    case 'false_positive':
-      return 'False positive';
-    case 'investigating':
-      return 'Investigating';
-    case 'pending_review':
-      return 'Pending review';
-    case 'resolved':
-      return 'Resolved';
-  }
-}
-
-function formatFollowUpStatus(status: SecurityFindingFollowUpAction['status']) {
-  switch (status) {
-    case 'open':
-      return 'Open';
-    case 'in_progress':
-      return 'In progress';
-    case 'blocked':
-      return 'Blocked';
-    case 'resolved':
-      return 'Resolved';
-  }
-}
-
-function getFollowUpStatusBadgeVariant(
-  status: SecurityFindingFollowUpAction['status'],
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (status) {
-    case 'resolved':
-      return 'default';
-    case 'blocked':
-      return 'destructive';
-    case 'in_progress':
-      return 'secondary';
-    case 'open':
-      return 'outline';
-  }
-}
 
 function toDateInputValue(timestamp: number | null) {
   if (timestamp === null) {

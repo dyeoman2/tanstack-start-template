@@ -10,6 +10,12 @@ import {
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
   formatPolicySupportProgress,
@@ -192,16 +198,23 @@ export function AdminSecurityPoliciesTab(props: {
         title="Policies"
         description="Governance layer backed by repo markdown, mapped controls, and annual policy attestations."
         actions={
-          <Button
-            type="button"
-            variant="outline"
-            disabled={props.busySync}
-            onClick={() => {
-              void props.onSyncPolicies();
-            }}
-          >
-            {props.busySync ? 'Syncing…' : 'Sync policy catalog'}
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="sm">
+                Actions
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={props.busySync}
+                onSelect={() => {
+                  void props.onSyncPolicies();
+                }}
+              >
+                {props.busySync ? 'Syncing…' : 'Sync policy catalog'}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
 

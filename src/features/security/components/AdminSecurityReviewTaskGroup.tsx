@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -34,7 +35,16 @@ export function AdminSecurityReviewTaskGroup(props: {
   onOpenFollowUp: (task: ReviewTaskDetail) => Promise<void>;
   tasks: ReviewTaskDetail[];
   title: string;
+  defaultCollapsed?: boolean;
 }) {
+  if (props.defaultCollapsed) {
+    return <CollapsedReviewTaskGroup {...props} />;
+  }
+
+  const doneCount = props.tasks.filter(
+    (t) => t.status === 'completed' || t.status === 'exception',
+  ).length;
+
   return (
     <Card>
       <CardHeader>
@@ -42,8 +52,7 @@ export function AdminSecurityReviewTaskGroup(props: {
           <CardTitle>{props.title}</CardTitle>
           <Badge variant="outline">{props.tasks.length}</Badge>
           <Badge variant="outline">
-            {props.tasks.filter((t) => t.status === 'completed' || t.status === 'exception').length}{' '}
-            of {props.tasks.length} done
+            {doneCount} of {props.tasks.length} done
           </Badge>
           {props.onBatchReview && props.tasks.length > 1 ? (
             <Button type="button" variant="outline" size="sm" onClick={props.onBatchReview}>
@@ -333,5 +342,53 @@ export function AdminSecurityReviewTaskGroup(props: {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function CollapsedReviewTaskGroup(
+  props: {
+    description: string;
+    tasks: ReviewTaskDetail[];
+    title: string;
+  } & Record<string, unknown>,
+) {
+  const [isOpen, setIsOpen] = useState(false);
+  const doneCount = props.tasks.filter(
+    (t) => t.status === 'completed' || t.status === 'exception',
+  ).length;
+
+  if (!isOpen) {
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>{props.title}</CardTitle>
+            <Badge variant="outline">{props.tasks.length}</Badge>
+            <Badge variant={doneCount === props.tasks.length ? 'default' : 'outline'}>
+              {doneCount} of {props.tasks.length} done
+            </Badge>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              onClick={() => {
+                setIsOpen(true);
+              }}
+            >
+              Expand
+            </Button>
+          </div>
+          <CardDescription>{props.description}</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  return (
+    <AdminSecurityReviewTaskGroup
+      {...(props as Parameters<typeof AdminSecurityReviewTaskGroup>[0])}
+      defaultCollapsed={undefined}
+    />
   );
 }

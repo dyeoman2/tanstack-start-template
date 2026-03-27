@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
-import { Download, FileText } from 'lucide-react';
+import { Download, FileText, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import {
   Accordion,
@@ -11,6 +11,12 @@ import {
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
 import { Spinner } from '~/components/ui/spinner';
 import {
@@ -88,9 +94,40 @@ export function AdminSecurityPolicyDetail(props: {
             <SheetTitle>{policy.title}</SheetTitle>
             <SheetDescription>{policy.summary}</SheetDescription>
           </div>
-          <Badge variant={getSupportBadgeVariant(policy.support)}>
-            {formatSupportStatus(policy.support)}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant={getSupportBadgeVariant(policy.support)}>
+              {formatSupportStatus(policy.support)}
+            </Badge>
+            {hasSourceMarkdown ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" size="icon" className="size-8">
+                    <MoreHorizontal className="size-4" />
+                    <span className="sr-only">Policy actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setIsSourceOpen(true);
+                    }}
+                  >
+                    <FileText className="size-4" />
+                    View policy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isDownloadingPdf}
+                    onSelect={() => {
+                      void handleDownloadPdf();
+                    }}
+                  >
+                    <Download className="size-4" />
+                    {isDownloadingPdf ? 'Generating PDF…' : 'Download PDF'}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         </div>
       </SheetHeader>
 
@@ -115,30 +152,6 @@ export function AdminSecurityPolicyDetail(props: {
               }
             />
           </dl>
-        </DetailSection>
-
-        <DetailSection title="Policy source">
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!hasSourceMarkdown}
-                onClick={() => {
-                  setIsSourceOpen(true);
-                }}
-              >
-                <FileText className="size-4" />
-                View policy
-              </Button>
-            </div>
-            {!hasSourceMarkdown ? (
-              <p className="text-sm text-muted-foreground">
-                No bundled markdown source is available for this policy.
-              </p>
-            ) : null}
-          </div>
         </DetailSection>
 
         <DetailSection title="Annual review linkage">

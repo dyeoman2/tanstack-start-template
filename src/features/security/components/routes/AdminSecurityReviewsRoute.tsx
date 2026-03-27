@@ -13,7 +13,6 @@ import {
   SheetTitle,
 } from '~/components/ui/sheet';
 import { useToast } from '~/components/ui/toast';
-import { AdminSecurityReportDetail } from '~/features/security/components/AdminSecurityReportDetail';
 import { DetailLoadingState } from '~/features/security/components/routes/AdminSecurityRouteShared';
 import {
   getSecurityPath,
@@ -22,18 +21,11 @@ import {
 import { AdminSecurityReviewsTab } from '~/features/security/components/tabs/AdminSecurityReviewsTab';
 import { mergeReviewRunSummaryWithDetail } from '~/features/security/formatters';
 import type { SecurityReviewsSearch } from '~/features/security/search';
-import {
-  exportEvidenceReportServerFn,
-  generateEvidenceReportServerFn,
-  reviewEvidenceReportServerFn,
-} from '~/features/security/server/security-reports';
 import { finalizeReviewRunServerFn } from '~/features/security/server/security-reviews';
 import type {
-  EvidenceReportDetail,
   ReviewRunDetail,
   ReviewRunSummary,
   ReviewTaskDetail,
-  SecurityReportsBoard,
 } from '~/features/security/types';
 
 export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch }) {
@@ -95,161 +87,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
   const [isBatchReviewOpen, setIsBatchReviewOpen] = useState(false);
   const reviewsInitializedRef = useRef(false);
   const reviewsRefreshedForRunRef = useRef<string | null>(null);
-
-  // --- Report state (absorbed from AdminSecurityReportsRoute) ---
-  const reportsBoard = useQuery(api.securityPosture.getSecurityReportsBoard, {}) as
-    | SecurityReportsBoard
-    | undefined;
-  const [report, setReport] = useState<string | null>(null);
-  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
-  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
-    {},
-  );
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
-  const allReports = reportsBoard?.evidenceReports;
-  const filteredReports = useMemo(() => {
-    const rows = allReports;
-    if (!rows) {
-      return rows;
-    }
-
-    const searchTerm = props.search.reportSearch.trim().toLowerCase();
-    return rows.filter((reportItem) => {
-      if (
-        props.search.reportReviewStatus !== 'all' &&
-        reportItem.reviewStatus !== props.search.reportReviewStatus
-      ) {
-        return false;
-      }
-      if (props.search.reportKind !== 'all' && reportItem.reportKind !== props.search.reportKind) {
-        return false;
-      }
-      if (!searchTerm) {
-        return true;
-      }
-
-      const haystack = [
-        reportItem.reportKind,
-        reportItem.customerSummary ?? '',
-        reportItem.internalNotes ?? '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(searchTerm);
-    });
-  }, [
-    allReports,
-    props.search.reportKind,
-    props.search.reportReviewStatus,
-    props.search.reportSearch,
-  ]);
-  const selectedReportDetail = useQuery(
-    api.securityReports.getEvidenceReportDetail,
-    props.search.selectedReport
-      ? { id: props.search.selectedReport as Id<'evidenceReports'> }
-      : 'skip',
-  ) as EvidenceReportDetail | null | undefined;
-  const selectedReport = useMemo(() => {
-    if (selectedReportDetail) {
-      return selectedReportDetail;
-    }
-    return allReports?.find((entry) => entry.id === props.search.selectedReport) ?? null;
-  }, [allReports, props.search.selectedReport, selectedReportDetail]);
-  const auditReadiness = reportsBoard?.auditReadiness;
-  const auditReadinessSummary = useMemo(() => {
-    if (auditReadiness === undefined) {
-      return {
-        latestDrill: null,
-        latestManifestHash: null,
-        metadataGapCount: undefined,
-        recentDeniedCount: undefined,
-        recentExportCount: undefined,
-        staleDrill: undefined,
-      };
-    }
-
-    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
-    const staleDrill =
-      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
-
-    return {
-      latestDrill,
-      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
-      metadataGapCount: auditReadiness.metadataGaps.length,
-      recentDeniedCount: auditReadiness.recentDeniedActions.length,
-      recentExportCount: auditReadiness.recentExports.length,
-      staleDrill,
-    };
-  }, [auditReadiness]);
-  const restoreDrillFooter =
-    auditReadinessSummary.staleDrill === undefined
-      ? undefined
-      : auditReadinessSummary.staleDrill
-        ? 'Drill evidence is stale'
-        : auditReadinessSummary.latestDrill
-          ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
-          : 'No drill evidence recorded';
-
-  const updateReviewSearch = useCallback(
-    (nextSearch: Partial<SecurityReviewsSearch>) => {
-      void navigate({
-        search: {
-          ...props.search,
-          ...nextSearch,
-        },
-        to: getSecurityPath('reviews'),
-      });
-    },
-    [navigate, props.search],
-  );
-
-  const handleGenerateReport = useCallback(
-    async (reportKind: 'audit_readiness' | 'security_posture' = 'security_posture') => {
-      setIsGenerating(true);
-      try {
-        const generated = await generateEvidenceReportServerFn({ data: { reportKind } });
-        setReport(generated.report);
-        updateReviewSearch({ selectedReport: generated.id });
-      } finally {
-        setIsGenerating(false);
-      }
-    },
-    [updateReviewSearch],
-  );
-
-  const handleReviewReport = useCallback(
-    async (id: Id<'evidenceReports'>, reviewStatus: 'needs_follow_up' | 'reviewed') => {
-      setBusyReportAction(`${id}:${reviewStatus}`);
-      try {
-        await reviewEvidenceReportServerFn({
-          data: {
-            customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
-            id,
-            internalNotes: reportNotes[id]?.trim() || undefined,
-            reviewStatus,
-          },
-        });
-      } finally {
-        setBusyReportAction(null);
-      }
-    },
-    [reportCustomerSummaries, reportNotes],
-  );
-
-  const handleExportReport = useCallback(
-    async (id: Id<'evidenceReports'>) => {
-      setBusyReportAction(`${id}:export`);
-      try {
-        const exported = await exportEvidenceReportServerFn({ data: { id } });
-        setReport(exported.report);
-        updateReviewSearch({ selectedReport: id });
-      } finally {
-        setBusyReportAction(null);
-      }
-    },
-    [updateReviewSearch],
-  );
 
   // --- Reviews effects ---
   useEffect(() => {
@@ -616,36 +453,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
         setNewTriggeredReviewType={setNewTriggeredReviewType}
         triggeredReviewRuns={triggeredReviewRuns}
-        // Report props
-        auditReadiness={auditReadiness}
-        auditReadinessSummary={auditReadinessSummary}
-        busyReportAction={busyReportAction}
-        evidenceReports={filteredReports}
-        handleExportReport={handleExportReport}
-        handleGenerateReport={handleGenerateReport}
-        handleOpenReportDetail={(reportId) => {
-          updateReviewSearch({ selectedReport: reportId });
-        }}
-        handleReviewReport={handleReviewReport}
-        isGenerating={isGenerating}
-        report={report}
-        reportCustomerSummaries={reportCustomerSummaries}
-        reportKindFilter={props.search.reportKind}
-        reportNotes={reportNotes}
-        reportReviewStatusFilter={props.search.reportReviewStatus}
-        reportSearch={props.search.reportSearch}
-        restoreDrillFooter={restoreDrillFooter}
-        setReportCustomerSummaries={setReportCustomerSummaries}
-        setReportNotes={setReportNotes}
-        onChangeReportKind={(reportKind) => {
-          updateReviewSearch({ reportKind });
-        }}
-        onChangeReportReviewStatus={(reportReviewStatus) => {
-          updateReviewSearch({ reportReviewStatus });
-        }}
-        onChangeReportSearch={(reportSearch) => {
-          updateReviewSearch({ reportSearch });
-        }}
       />
 
       {/* Review run detail sheet */}
@@ -743,39 +550,6 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
                 )}
               </div>
             </div>
-          ) : null}
-        </SheetContent>
-      </Sheet>
-
-      {/* Evidence report detail sheet */}
-      <Sheet
-        open={props.search.selectedReport !== undefined}
-        onOpenChange={(open) => {
-          if (open) {
-            return;
-          }
-
-          updateReviewSearch({ selectedReport: undefined });
-        }}
-      >
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Evidence report detail</SheetTitle>
-            <SheetDescription>
-              Review the selected evidence report and linked review task context.
-            </SheetDescription>
-          </SheetHeader>
-          {selectedReport === null && props.search.selectedReport ? (
-            <DetailLoadingState label="Loading report detail" />
-          ) : selectedReport ? (
-            <AdminSecurityReportDetail
-              generatedReport={report}
-              onOpenControl={navigateToControl}
-              onOpenReviewRun={(reviewRunId) => {
-                updateReviewSearch({ selectedReport: undefined, selectedReviewRun: reviewRunId });
-              }}
-              report={selectedReport}
-            />
           ) : null}
         </SheetContent>
       </Sheet>

@@ -30,6 +30,7 @@ type ActionQueueItem = {
   key: string;
   label: string;
   navigate: () => void;
+  priority: 'critical' | 'warning' | 'info';
 };
 
 export function AdminSecurityOverviewTab(props: {
@@ -54,10 +55,6 @@ export function AdminSecurityOverviewTab(props: {
     void navigate({
       to: '/app/admin/security/reviews',
       search: {
-        reportKind: 'all' as const,
-        reportReviewStatus: 'all' as const,
-        reportSearch: '',
-        selectedReport: undefined,
         selectedReviewRun: undefined,
       },
     });
@@ -77,60 +74,84 @@ export function AdminSecurityOverviewTab(props: {
   const actionItems = useMemo(() => {
     const items: ActionQueueItem[] = [];
 
-    if (props.queues?.undispositionedFindings && props.queues.undispositionedFindings > 0) {
+    // Critical priority — action required immediately
+    if (props.auditReadiness?.lastIntegrityFailure) {
       items.push({
-        count: props.queues.undispositionedFindings,
-        icon: <AlertTriangle className="size-4 text-amber-600" />,
-        key: 'undispositioned-findings',
-        label: 'Undispositioned findings',
-        navigate: () => {
-          navigateToFindings({ findingDisposition: 'pending_review' });
-        },
+        count: 1,
+        icon: <AlertTriangle className="size-4 text-red-600" />,
+        key: 'audit-integrity-failure',
+        label: 'Investigate audit integrity failure',
+        navigate: navigateToReviews,
+        priority: 'critical',
       });
     }
 
     if (props.queues?.blockedReviewTasks && props.queues.blockedReviewTasks > 0) {
+      const n = props.queues.blockedReviewTasks;
       items.push({
-        count: props.queues.blockedReviewTasks,
+        count: n,
         icon: <ClipboardList className="size-4 text-red-600" />,
         key: 'blocked-review-tasks',
-        label: 'Blocked review tasks',
+        label: `Unblock ${n} review task${n === 1 ? '' : 's'}`,
         navigate: navigateToReviews,
+        priority: 'critical',
+      });
+    }
+
+    // Warning priority — needs attention soon
+    if (props.queues?.undispositionedFindings && props.queues.undispositionedFindings > 0) {
+      const n = props.queues.undispositionedFindings;
+      items.push({
+        count: n,
+        icon: <AlertTriangle className="size-4 text-amber-600" />,
+        key: 'undispositioned-findings',
+        label: `Review ${n} undispositioned finding${n === 1 ? '' : 's'}`,
+        navigate: () => {
+          navigateToFindings({ findingDisposition: 'pending_review' });
+        },
+        priority: 'warning',
       });
     }
 
     if (props.queues?.pendingVendorReviews && props.queues.pendingVendorReviews > 0) {
+      const n = props.queues.pendingVendorReviews;
       items.push({
-        count: props.queues.pendingVendorReviews,
+        count: n,
         icon: <Package className="size-4 text-orange-600" />,
         key: 'pending-vendor-reviews',
-        label: 'Vendor reviews due',
+        label: `Complete ${n} vendor review${n === 1 ? '' : 's'}`,
         navigate: navigateToVendors,
+        priority: 'warning',
       });
     }
 
     if (props.queues?.missingSupportControls && props.queues.missingSupportControls > 0) {
+      const n = props.queues.missingSupportControls;
       items.push({
-        count: props.queues.missingSupportControls,
+        count: n,
         icon: <Shield className="size-4 text-red-600" />,
         key: 'missing-support-controls',
-        label: 'Controls missing evidence',
+        label: `Add evidence for ${n} control${n === 1 ? '' : 's'}`,
         navigate: () => {
           navigateToControls({ support: 'missing' });
         },
+        priority: 'warning',
       });
     }
 
+    // Informational priority — routine follow-up
     if (
       props.currentAnnualReviewRun?.taskCounts.ready &&
       props.currentAnnualReviewRun.taskCounts.ready > 0
     ) {
+      const n = props.currentAnnualReviewRun.taskCounts.ready;
       items.push({
-        count: props.currentAnnualReviewRun.taskCounts.ready,
+        count: n,
         icon: <Eye className="size-4 text-blue-600" />,
         key: 'review-tasks-pending',
-        label: 'Review tasks pending',
+        label: `Complete ${n} pending review task${n === 1 ? '' : 's'}`,
         navigate: navigateToReviews,
+        priority: 'info',
       });
     }
 
@@ -143,18 +164,9 @@ export function AdminSecurityOverviewTab(props: {
           count: 1,
           icon: <AlertTriangle className="size-4 text-amber-600" />,
           key: 'stale-backup-drill',
-          label: 'Stale backup drill evidence',
+          label: 'Renew stale backup drill evidence',
           navigate: navigateToReviews,
-        });
-      }
-
-      if (props.auditReadiness.lastIntegrityFailure) {
-        items.push({
-          count: 1,
-          icon: <AlertTriangle className="size-4 text-red-600" />,
-          key: 'audit-integrity-failure',
-          label: 'Audit integrity failure detected',
-          navigate: navigateToReviews,
+          priority: 'info',
         });
       }
     }
@@ -217,6 +229,9 @@ export function AdminSecurityOverviewTab(props: {
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
                     {item.icon}
                   </span>
+                  <span
+                    className={`mr-1 inline-block size-2 shrink-0 rounded-full ${item.priority === 'critical' ? 'bg-destructive' : item.priority === 'warning' ? 'bg-amber-500' : 'bg-muted-foreground/40'}`}
+                  />
                   <span className="flex-1 text-sm font-medium">{item.label}</span>
                   <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
                     {item.count}

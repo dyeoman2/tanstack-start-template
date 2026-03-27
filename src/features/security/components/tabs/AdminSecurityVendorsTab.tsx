@@ -1,4 +1,3 @@
-import { type Dispatch, type SetStateAction } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -7,14 +6,11 @@ import {
 } from '~/components/ui/accordion';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
 import { Spinner } from '~/components/ui/spinner';
-import { Textarea } from '~/components/ui/textarea';
 import {
   formatVendorDecisionSummary,
   formatVendorRuntimePosture,
   getVendorGovernanceState,
-  getVendorPrimaryActionLabel,
   getVendorPrimaryStatus,
 } from '~/features/security/formatters';
 import type { VendorWorkspace } from '~/features/security/types';
@@ -24,42 +20,29 @@ export function AdminSecurityVendorsTab(props: {
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: () => void;
   onOpenVendor: (vendorKey: VendorWorkspace['vendor']) => void;
-  vendorSummaries: Record<string, string>;
-  vendorOwners: Record<string, string>;
   vendorWorkspaces: VendorWorkspace[] | undefined;
-  handleReviewVendor: (vendor: VendorWorkspace) => Promise<void>;
-  setVendorSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
     <div className="space-y-4">
       {props.vendorWorkspaces ? (
         <Accordion type="multiple" className="space-y-3">
           {props.vendorWorkspaces.map((vendor) => {
-            const currentOwner = props.vendorOwners[vendor.vendor] ?? vendor.owner ?? '';
-            const currentSummary = props.vendorSummaries[vendor.vendor] ?? vendor.summary ?? '';
-            const isDirty =
-              currentOwner !== (vendor.owner ?? '') || currentSummary !== (vendor.summary ?? '');
+            const currentOwner = vendor.owner ?? '';
             const primaryStatus = getVendorPrimaryStatus(vendor);
             const governanceState = getVendorGovernanceState({
               controlCount: vendor.relatedControls.length,
-              hasDraftReview: isDirty,
+              hasDraftReview: false,
               owner: currentOwner,
               reviewStatus: vendor.reviewStatus,
             });
             const runtimePosture = formatVendorRuntimePosture(vendor);
             const decisionSummary = formatVendorDecisionSummary({
               controlCount: vendor.relatedControls.length,
-              hasDraftReview: isDirty,
+              hasDraftReview: false,
               lastReviewedAt: vendor.lastReviewedAt,
               owner: currentOwner,
               reviewStatus: vendor.reviewStatus,
               vendor,
-            });
-            const primaryActionLabel = getVendorPrimaryActionLabel({
-              controlCount: vendor.relatedControls.length,
-              hasDraftReview: isDirty,
-              owner: currentOwner,
             });
 
             return (
@@ -130,22 +113,11 @@ export function AdminSecurityVendorsTab(props: {
                       <Button
                         type="button"
                         size="sm"
-                        disabled={props.busyVendorKey !== null}
-                        onClick={() => {
-                          void props.handleReviewVendor(vendor);
-                        }}
-                      >
-                        {props.busyVendorKey === vendor.vendor ? 'Saving…' : primaryActionLabel}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
                         onClick={() => {
                           props.onOpenVendor(vendor.vendor);
                         }}
                       >
-                        View details
+                        Edit
                       </Button>
                     </div>
                   </div>
@@ -155,24 +127,12 @@ export function AdminSecurityVendorsTab(props: {
                     <div className="space-y-4">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
-                          <label
-                            className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground"
-                            htmlFor={`vendor-owner-${vendor.vendor}`}
-                          >
+                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                             Owner
-                          </label>
-                          <Input
-                            id={`vendor-owner-${vendor.vendor}`}
-                            value={currentOwner}
-                            onChange={(event) => {
-                              props.setVendorOwners((current) => ({
-                                ...current,
-                                [vendor.vendor]: event.target.value,
-                              }));
-                            }}
-                            placeholder="Assign a vendor owner"
-                            className="bg-background"
-                          />
+                          </p>
+                          <p className="text-sm text-foreground">
+                            {currentOwner.length > 0 ? currentOwner : 'Not assigned'}
+                          </p>
                         </div>
                         <div className="space-y-2">
                           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -185,30 +145,14 @@ export function AdminSecurityVendorsTab(props: {
                           </div>
                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Decision summary
-                        </p>
-                        <div className="rounded-lg border bg-background p-3 text-sm text-foreground">
-                          {decisionSummary}
+                      {vendor.summary ? (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            Vendor summary
+                          </p>
+                          <p className="text-sm text-foreground">{vendor.summary}</p>
                         </div>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Vendor summary
-                        </p>
-                        <Textarea
-                          value={currentSummary}
-                          onChange={(event) => {
-                            props.setVendorSummaries((current) => ({
-                              ...current,
-                              [vendor.vendor]: event.target.value,
-                            }));
-                          }}
-                          placeholder="Summarize the vendor posture and review context"
-                          className="min-h-28 bg-background"
-                        />
-                      </div>
+                      ) : null}
                       <div className="space-y-2">
                         <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           Related controls

@@ -7,7 +7,7 @@ import { type ReactNode, useCallback, useMemo, useState } from 'react';
 import {
   createSortableHeader,
   DataTable,
-  TableFilter,
+  TableFilterCombobox,
   type TableFilterOption,
   TableSearch,
 } from '~/components/data-table';
@@ -1275,11 +1275,13 @@ export function OrganizationAuditPage({
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <TableFilter
+            <TableFilterCombobox
               value={searchParams.eventType}
               options={AUDIT_EVENT_FILTER_OPTIONS}
               onValueChange={handleEventTypeChange}
-              className="sm:w-44"
+              className="sm:w-56"
+              searchPlaceholder="Search events…"
+              emptyMessage="No matching events."
               ariaLabel="Filter audit events by type"
             />
             <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as AuditViewMode)}>

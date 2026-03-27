@@ -62,6 +62,7 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
             Reviews
             <TabBadge count={queues?.blockedReviewTasks} />
           </TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -81,6 +82,7 @@ export function AdminSecurityLayout(props: { children: React.ReactNode }) {
     if (pathname === getSecurityPath('vendors')) return 'vendors';
     if (pathname === getSecurityPath('findings')) return 'findings';
     if (pathname === getSecurityPath('reviews')) return 'reviews';
+    if (pathname === getSecurityPath('reports')) return 'reports';
     return 'overview';
   }, [location.pathname]);
 

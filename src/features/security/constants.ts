@@ -5,6 +5,7 @@ export const SECURITY_TABS = [
   'vendors',
   'findings',
   'reviews',
+  'reports',
 ] as const;
 export const SECURITY_TAB_PATHS = {
   overview: '/app/admin/security',
@@ -13,6 +14,7 @@ export const SECURITY_TAB_PATHS = {
   vendors: '/app/admin/security/vendors',
   findings: '/app/admin/security/findings',
   reviews: '/app/admin/security/reviews',
+  reports: '/app/admin/security/reports',
 } as const;
 
 export const CONTROL_TABLE_SORT_FIELDS = [

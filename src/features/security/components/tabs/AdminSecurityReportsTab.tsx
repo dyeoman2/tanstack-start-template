@@ -21,39 +21,12 @@ import { Textarea } from '~/components/ui/textarea';
 import { formatTableDate } from '~/components/data-table';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
+import {
+  formatEvidenceQueueReviewStatus,
+  getEvidenceQueueReviewBadgeVariant,
+  truncateHash,
+} from '~/features/security/formatters';
 import type { AuditReadinessOverview, EvidenceReportListItem } from '~/features/security/types';
-
-function formatEvidenceQueueReviewStatus(status: EvidenceReportListItem['reviewStatus']) {
-  switch (status) {
-    case 'needs_follow_up':
-      return 'Needs follow-up';
-    case 'pending':
-      return 'Pending review';
-    case 'reviewed':
-      return 'Reviewed';
-  }
-}
-
-function getEvidenceQueueReviewBadgeVariant(
-  status: EvidenceReportListItem['reviewStatus'],
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (status) {
-    case 'reviewed':
-      return 'default';
-    case 'needs_follow_up':
-      return 'destructive';
-    case 'pending':
-      return 'outline';
-  }
-}
-
-function truncateHash(value: string, visibleChars = 8) {
-  if (value.length <= visibleChars * 2 + 3) {
-    return value;
-  }
-
-  return `${value.slice(0, visibleChars)}...${value.slice(-visibleChars)}`;
-}
 
 export function AdminSecurityReportsTab(props: {
   auditReadiness: AuditReadinessOverview | undefined;

@@ -2,6 +2,7 @@ import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { Archive, Check, History, MoreHorizontal, RefreshCw } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import {
   Accordion,
   AccordionContent,
@@ -154,6 +155,21 @@ export function AdminSecurityControlDetail(props: {
       </SheetHeader>
 
       <div className="space-y-6 p-4">
+        <DetailSection title="Evidence checklist">
+          <PlatformChecklistSection
+            busyAction={props.busyAction}
+            control={control}
+            onAddEvidenceLink={props.onAddEvidenceLink}
+            onAddEvidenceNote={props.onAddEvidenceNote}
+            onArchiveEvidence={props.onArchiveEvidence}
+            onOpenEvidence={props.onOpenEvidence}
+            onOpenReviews={props.onOpenReviews}
+            onReviewEvidence={props.onReviewEvidence}
+            onRenewEvidence={props.onRenewEvidence}
+            onUploadEvidenceFile={props.onUploadEvidenceFile}
+          />
+        </DetailSection>
+
         <DetailSection title="Overview">
           <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
             <DetailItem
@@ -170,27 +186,9 @@ export function AdminSecurityControlDetail(props: {
               }
             />
           </dl>
-        </DetailSection>
-
-        <DetailSection title="Description">
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
             {control.implementationSummary}
           </p>
-        </DetailSection>
-
-        <DetailSection title="Checklist">
-          <PlatformChecklistSection
-            busyAction={props.busyAction}
-            control={control}
-            onAddEvidenceLink={props.onAddEvidenceLink}
-            onAddEvidenceNote={props.onAddEvidenceNote}
-            onArchiveEvidence={props.onArchiveEvidence}
-            onOpenEvidence={props.onOpenEvidence}
-            onOpenReviews={props.onOpenReviews}
-            onReviewEvidence={props.onReviewEvidence}
-            onRenewEvidence={props.onRenewEvidence}
-            onUploadEvidenceFile={props.onUploadEvidenceFile}
-          />
         </DetailSection>
 
         <DetailSection title="Linked governance context">
@@ -218,44 +216,48 @@ export function AdminSecurityControlDetail(props: {
           )}
         </DetailSection>
 
-        <DetailSection title="Customer responsibilities">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {control.customerResponsibilityNotes ??
-              'No additional customer responsibilities recorded.'}
-          </p>
-        </DetailSection>
+        <CollapsibleDetailSection title="More details">
+          <DetailSection title="Customer responsibilities">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {control.customerResponsibilityNotes ??
+                'No additional customer responsibilities recorded.'}
+            </p>
+          </DetailSection>
 
-        <DetailSection title="Framework mappings">
-          <MappingAccordion type="multiple" className="rounded-md border">
-            <FrameworkAccordionItem
-              title="HIPAA"
-              value="hipaa"
-              values={control.mappings.hipaa.map((mapping) => formatHipaaMapping(mapping))}
-            />
-            <FrameworkAccordionItem
-              title="CSF 2.0"
-              value="csf"
-              values={control.mappings.csf20.map(
-                (mapping) =>
-                  `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
-              )}
-            />
-            <FrameworkAccordionItem
-              title="NIST 800-66r2"
-              value="nist-800-66r2"
-              values={control.mappings.nist80066.map(
-                (mapping) => `${mapping.referenceId}${mapping.label ? ` · ${mapping.label}` : ''}`,
-              )}
-            />
-            <FrameworkAccordionItem
-              title="SOC 2"
-              value="soc2"
-              values={control.mappings.soc2.map(
-                (mapping) => `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}`,
-              )}
-            />
-          </MappingAccordion>
-        </DetailSection>
+          <DetailSection title="Framework mappings">
+            <MappingAccordion type="multiple" className="rounded-md border">
+              <FrameworkAccordionItem
+                title="HIPAA"
+                value="hipaa"
+                values={control.mappings.hipaa.map((mapping) => formatHipaaMapping(mapping))}
+              />
+              <FrameworkAccordionItem
+                title="CSF 2.0"
+                value="csf"
+                values={control.mappings.csf20.map(
+                  (mapping) =>
+                    `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+                )}
+              />
+              <FrameworkAccordionItem
+                title="NIST 800-66r2"
+                value="nist-800-66r2"
+                values={control.mappings.nist80066.map(
+                  (mapping) =>
+                    `${mapping.referenceId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+                )}
+              />
+              <FrameworkAccordionItem
+                title="SOC 2"
+                value="soc2"
+                values={control.mappings.soc2.map(
+                  (mapping) =>
+                    `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+                )}
+              />
+            </MappingAccordion>
+          </DetailSection>
+        </CollapsibleDetailSection>
       </div>
     </>
   );
@@ -966,6 +968,24 @@ function DetailItem(props: { label: string; value: string }) {
       </dt>
       <dd className="text-sm text-foreground">{props.value}</dd>
     </div>
+  );
+}
+
+function CollapsibleDetailSection(props: { children: React.ReactNode; title: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-md px-1 py-2 text-left text-sm font-semibold hover:bg-muted/50"
+        >
+          {props.title}
+          <span className="text-xs text-muted-foreground">{isOpen ? 'Collapse' : 'Expand'}</span>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="space-y-6 pt-2">{props.children}</CollapsibleContent>
+    </Collapsible>
   );
 }
 

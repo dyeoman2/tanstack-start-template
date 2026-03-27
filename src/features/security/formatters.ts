@@ -1,4 +1,5 @@
 import type {
+  EvidenceReportListItem,
   EvidenceReviewDueIntervalMonths,
   ReviewRunDetail,
   ReviewRunSummary,
@@ -7,11 +8,12 @@ import type {
   SecurityChecklistEvidence,
   SecurityChecklistEvidenceActivity,
   SecurityChecklistItem,
+  SecurityFindingFollowUpAction,
+  SecurityFindingListItem,
   SecurityPolicySummary,
   SecurityControlWorkspace,
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
-  SecurityFindingListItem,
   StoredEvidenceSource,
   VendorWorkspace,
 } from '~/features/security/types';
@@ -88,6 +90,13 @@ export function getResponsibilityBadgeVariant(
   }
 }
 
+/**
+ * Badge color convention used across the security module:
+ * - `default` (green) = good / complete / resolved
+ * - `secondary` (yellow) = needs attention / partial
+ * - `destructive` (red) = action required / blocked / critical
+ * - `outline` (gray) = neutral / pending / info
+ */
 export function getSupportBadgeVariant(
   support: SecurityControlWorkspace['support'],
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
@@ -95,7 +104,7 @@ export function getSupportBadgeVariant(
     case 'complete':
       return 'default';
     case 'partial':
-      return 'outline';
+      return 'secondary';
     case 'missing':
       return 'destructive';
   }
@@ -604,4 +613,132 @@ export function formatEvidenceSource(source: StoredEvidenceSource) {
 
 export function formatEvidenceTimestamp(timestamp: number) {
   return new Date(timestamp).toLocaleString();
+}
+
+// ---------------------------------------------------------------------------
+// Finding disposition
+// ---------------------------------------------------------------------------
+
+export function formatFindingDisposition(disposition: SecurityFindingListItem['disposition']) {
+  switch (disposition) {
+    case 'accepted_risk':
+      return 'Accepted risk';
+    case 'false_positive':
+      return 'False positive';
+    case 'investigating':
+      return 'Investigating';
+    case 'pending_review':
+      return 'Pending review';
+    case 'resolved':
+      return 'Resolved';
+  }
+}
+
+export function getFindingDispositionBadgeVariant(
+  disposition: SecurityFindingListItem['disposition'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (disposition) {
+    case 'resolved':
+      return 'default';
+    case 'accepted_risk':
+    case 'false_positive':
+      return 'secondary';
+    case 'investigating':
+      return 'outline';
+    case 'pending_review':
+      return 'destructive';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Finding type
+// ---------------------------------------------------------------------------
+
+export function formatFindingType(findingType: SecurityFindingListItem['findingType']) {
+  switch (findingType) {
+    case 'audit_archive_health':
+      return 'Archive health';
+    case 'audit_request_context_gaps':
+      return 'Request context gaps';
+    case 'audit_integrity_failures':
+      return 'Audit integrity';
+    case 'document_scan_quarantines':
+      return 'Scan quarantines';
+    case 'document_scan_rejections':
+      return 'Scan rejections';
+    case 'release_security_validation':
+      return 'Release validation';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up action status
+// ---------------------------------------------------------------------------
+
+export function formatFollowUpStatus(status: SecurityFindingFollowUpAction['status']) {
+  switch (status) {
+    case 'open':
+      return 'Open';
+    case 'in_progress':
+      return 'In progress';
+    case 'blocked':
+      return 'Blocked';
+    case 'resolved':
+      return 'Resolved';
+  }
+}
+
+export function getFollowUpStatusBadgeVariant(
+  status: SecurityFindingFollowUpAction['status'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'resolved':
+      return 'default';
+    case 'blocked':
+      return 'destructive';
+    case 'in_progress':
+      return 'secondary';
+    case 'open':
+      return 'outline';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Evidence report review status
+// ---------------------------------------------------------------------------
+
+export function formatEvidenceQueueReviewStatus(status: EvidenceReportListItem['reviewStatus']) {
+  switch (status) {
+    case 'needs_follow_up':
+      return 'Needs follow-up';
+    case 'pending':
+      return 'Pending review';
+    case 'reviewed':
+      return 'Reviewed';
+  }
+}
+
+export function getEvidenceQueueReviewBadgeVariant(
+  status: EvidenceReportListItem['reviewStatus'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'reviewed':
+      return 'default';
+    case 'needs_follow_up':
+      return 'destructive';
+    case 'pending':
+      return 'outline';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+export function truncateHash(value: string, visibleChars = 8) {
+  if (value.length <= visibleChars * 2 + 3) {
+    return value;
+  }
+
+  return `${value.slice(0, visibleChars)}...${value.slice(-visibleChars)}`;
 }

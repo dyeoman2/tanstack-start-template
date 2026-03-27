@@ -4,6 +4,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import {
   Sheet,
   SheetContent,
@@ -11,6 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '~/components/ui/sheet';
+import { Textarea } from '~/components/ui/textarea';
 import { useToast } from '~/components/ui/toast';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
@@ -131,16 +133,11 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
 
       <AdminSecurityVendorsTab
         busyVendorKey={busyVendorKey}
-        handleReviewVendor={handleReviewVendor}
         navigateToControl={navigateToControl}
         navigateToReviews={navigateToReviews}
         onOpenVendor={(vendorKey) => {
           updateVendorSearch(vendorKey);
         }}
-        setVendorSummaries={setVendorSummaries}
-        setVendorOwners={setVendorOwners}
-        vendorSummaries={vendorSummaries}
-        vendorOwners={vendorOwners}
         vendorWorkspaces={vendorWorkspaces}
       />
 
@@ -224,7 +221,17 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
                         <p className="text-sm font-medium text-muted-foreground">
                           Governance posture
                         </p>
-                        <p className="mt-2">{currentOwner || 'Owner not assigned'}</p>
+                        <Input
+                          value={currentOwner}
+                          onChange={(event) => {
+                            setVendorOwners((current) => ({
+                              ...current,
+                              [selectedVendor.vendor]: event.target.value,
+                            }));
+                          }}
+                          placeholder="Assign a vendor owner"
+                          className="mt-2"
+                        />
                         <p className="text-sm text-muted-foreground">
                           {selectedVendor.relatedControls.length > 0
                             ? `${selectedVendor.relatedControls.length} linked control${selectedVendor.relatedControls.length === 1 ? '' : 's'}`
@@ -270,9 +277,17 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
 
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-muted-foreground">Vendor summary</p>
-                    <p className="rounded-lg border bg-background p-3 text-sm">
-                      {currentSummary || 'No vendor summary recorded yet.'}
-                    </p>
+                    <Textarea
+                      value={currentSummary}
+                      onChange={(event) => {
+                        setVendorSummaries((current) => ({
+                          ...current,
+                          [selectedVendor.vendor]: event.target.value,
+                        }));
+                      }}
+                      placeholder="Summarize the vendor posture and review context"
+                      className="min-h-28"
+                    />
                   </div>
 
                   <div className="space-y-2">

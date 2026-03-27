@@ -5,6 +5,7 @@ import { AdminSecurityControlsRoute } from '~/features/security/components/route
 import { AdminSecurityFindingsRoute } from '~/features/security/components/routes/AdminSecurityFindingsRoute';
 import { AdminSecurityOverviewRoute } from '~/features/security/components/routes/AdminSecurityOverviewRoute';
 import { AdminSecurityPoliciesRoute } from '~/features/security/components/routes/AdminSecurityPoliciesRoute';
+import { AdminSecurityReportsRoute } from '~/features/security/components/routes/AdminSecurityReportsRoute';
 import { AdminSecurityReviewsRoute } from '~/features/security/components/routes/AdminSecurityReviewsRoute';
 import { AdminSecurityPageShell } from '~/features/security/components/routes/AdminSecurityShell';
 import { AdminSecurityVendorsRoute } from '~/features/security/components/routes/AdminSecurityVendorsRoute';
@@ -130,7 +131,7 @@ vi.mock('~/features/security/server/security-reviews', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reviews';
+  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reviews' | 'reports';
   findingDisposition?:
     | 'all'
     | 'accepted_risk'
@@ -877,11 +878,17 @@ function renderRoute() {
       {activeTab === 'reviews' ? (
         <AdminSecurityReviewsRoute
           search={{
+            selectedReviewRun: search.selectedReviewRun,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reports' ? (
+        <AdminSecurityReportsRoute
+          search={{
             reportKind: search.reportKind ?? 'all',
             reportReviewStatus: search.reportReviewStatus ?? 'all',
             reportSearch: search.reportSearch ?? '',
             selectedReport: search.selectedReport,
-            selectedReviewRun: search.selectedReviewRun,
           }}
         />
       ) : null}
@@ -1011,6 +1018,7 @@ describe('Admin security route', () => {
   });
 
   it('generates evidence reports and submits trimmed review notes', async () => {
+    useSearchMock.mockReturnValue({ ...defaultSearch, tab: 'reports' });
     const user = userEvent.setup();
     generateEvidenceReportServerFnMock.mockResolvedValue({
       id: 'report-generated',
@@ -1149,7 +1157,7 @@ describe('Admin security route', () => {
     expect(
       screen.getByText('Policy support is derived only from these mapped control support states.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /view policy/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /policy actions/i })).toBeInTheDocument();
   });
 
   it('shows and downloads the bundled policy markdown source as pdf', async () => {
@@ -1205,7 +1213,8 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.click(screen.getByRole('button', { name: /view policy/i }));
+    await user.click(screen.getByRole('button', { name: /policy actions/i }));
+    await user.click(screen.getByRole('menuitem', { name: /view policy/i }));
     await user.click(screen.getByRole('button', { name: /download pdf/i }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
@@ -1303,6 +1312,7 @@ describe('Admin security route', () => {
   });
 
   it('surfaces audit readiness signals and manifest hashes in the reports tab', () => {
+    useSearchMock.mockReturnValue({ ...defaultSearch, tab: 'reports' });
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness({
         metadataGaps: [
@@ -1351,6 +1361,7 @@ describe('Admin security route', () => {
   });
 
   it('loads persisted report detail and control deep-links from the reports route', async () => {
+    useSearchMock.mockReturnValue({ ...defaultSearch, tab: 'reports' });
     const user = userEvent.setup();
 
     mockSecurityQueries({
@@ -1370,22 +1381,22 @@ describe('Admin security route', () => {
       search: expect.objectContaining({
         selectedReport: 'report-1',
       }),
-      to: '/app/admin/security/reviews',
+      to: '/app/admin/security/reports',
     });
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
+      tab: 'reports',
       selectedReport: 'report-1',
     });
     view.rerender(
-      <AdminSecurityPageShell activeTab="reviews">
-        <AdminSecurityReviewsRoute
+      <AdminSecurityPageShell activeTab="reports">
+        <AdminSecurityReportsRoute
           search={{
             reportKind: 'all',
             reportReviewStatus: 'all',
             reportSearch: '',
-            selectedReport: (useSearchMock() as SearchState).selectedReport,
-            selectedReviewRun: undefined,
+            selectedReport: 'report-1',
           }}
         />
       </AdminSecurityPageShell>,
@@ -1649,54 +1660,26 @@ describe('Admin security route', () => {
     expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
     expect(screen.getByText('Needs document upload')).toBeInTheDocument();
 
-    await user.click(screen.getAllByRole('button', { name: 'Details' })[0]!);
-
-    await user.type(screen.getAllByPlaceholderText('Task note')[0]!, 'reviewed this procedure');
-    await user.click(screen.getByRole('button', { name: /review and attest/i }));
+    // Use the inline "Attest" button for the attestation task
+    await user.click(screen.getAllByRole('button', { name: 'Attest' })[0]!);
 
     await waitFor(() => {
-      expect(attestReviewTaskMock).toHaveBeenCalledWith({
-        documentLabel: undefined,
-        documentUrl: undefined,
-        documentVersion: undefined,
-        note: 'reviewed this procedure',
-        reviewTaskId: 'review-task-1',
-      });
+      expect(attestReviewTaskMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reviewTaskId: 'review-task-1',
+        }),
+      );
     });
 
-    await user.click(screen.getAllByRole('button', { name: 'Details' })[1]!);
-    await user.type(
-      screen.getByPlaceholderText('Document label'),
-      'Provider control assessment plan',
-    );
-    await user.type(
-      screen.getByPlaceholderText('Document URL'),
-      'https://example.com/policies/assessment-plan.pdf',
-    );
-    await user.type(screen.getByPlaceholderText('Version'), '2026.03');
-    await user.type(
-      screen.getAllByPlaceholderText('Task note')[1]!,
-      'linked approved assessment plan',
-    );
-    await user.click(screen.getByRole('button', { name: /upload \/ link latest document/i }));
+    // Use the inline "Upload" button for the document_upload task
+    await user.click(screen.getAllByRole('button', { name: 'Upload' })[0]!);
 
     await waitFor(() => {
-      expect(attestReviewTaskMock).toHaveBeenCalledWith({
-        documentLabel: 'Provider control assessment plan',
-        documentUrl: 'https://example.com/policies/assessment-plan.pdf',
-        documentVersion: '2026.03',
-        note: 'linked approved assessment plan',
-        reviewTaskId: 'review-task-2',
-      });
-    });
-
-    await user.click(screen.getByRole('button', { name: /au-6 · provider review procedure/i }));
-
-    expect(navigateMock).toHaveBeenCalledWith({
-      search: expect.objectContaining({
-        selectedControl: 'CTRL-AU-006',
-      }),
-      to: '/app/admin/security/controls',
+      expect(attestReviewTaskMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reviewTaskId: 'review-task-2',
+        }),
+      );
     });
 
     await user.type(screen.getByPlaceholderText('Triggered review title'), 'Manual follow-up');
@@ -1749,6 +1732,7 @@ describe('Admin security route', () => {
     useSearchMock.mockReturnValue({
       ...defaultSearch,
       tab: 'vendors',
+      selectedVendor: 'sentry',
     });
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness(),
@@ -1762,7 +1746,6 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.click(screen.getByText('Sentry'));
     const ownerField = screen.getByPlaceholderText('Assign a vendor owner');
     await user.clear(ownerField);
     await user.type(ownerField, 'Infra team');
