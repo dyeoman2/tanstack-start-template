@@ -1,5 +1,18 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight, Monitor, Shield, Zap } from 'lucide-react';
+import {
+  ArrowRight,
+  Eye,
+  FileSearch,
+  Fingerprint,
+  Globe,
+  Headset,
+  Lock,
+  Monitor,
+  ScrollText,
+  Shield,
+  Gauge,
+  Zap,
+} from 'lucide-react';
 import type { ComponentProps, ComponentType, FC } from 'react';
 import type { IconType } from 'react-icons';
 import {
@@ -258,6 +271,111 @@ export function MarketingHome() {
               Role-based access control enforced on both client and server with minimal database
               hits. Single capability map drives all authorization, with automatic cache
               invalidation for real-time role updates.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-border bg-muted/40 p-10 shadow-sm">
+        <div className="text-center space-y-3 mb-10">
+          <span className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
+            Security
+          </span>
+          <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">
+            Infrastructure you'd otherwise build yourself
+          </h2>
+          <p className="text-base text-muted-foreground">
+            Authentication, file handling, audit logging, and access control — configured and
+            enforced, not left as an exercise for the reader.
+          </p>
+        </div>
+
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Fingerprint className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Authentication</h3>
+            <p className="text-sm text-muted-foreground">
+              MFA on by default. Progressive account lockout. Step-up verification for sensitive
+              operations like credential changes and admin actions.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <FileSearch className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">File Upload Pipeline</h3>
+            <p className="text-sm text-muted-foreground">
+              Uploads quarantined before serving. Validated against magic bytes, scanned for malware
+              via GuardDuty, checked for macros and archive bombs.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Eye className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">AI Privacy</h3>
+            <p className="text-sm text-muted-foreground">
+              Zero Data Retention enforced on every vendor request. Web search disabled by default,
+              configurable per organization.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <ScrollText className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Audit Log</h3>
+            <p className="text-sm text-muted-foreground">
+              Security events logged with tamper-proof hash chain and immutable archival. Queryable
+              from the admin surface, exportable as JSONL.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Gauge className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Rate Limiting</h3>
+            <p className="text-sm text-muted-foreground">
+              Token-bucket limits on auth, chat, file access, and AI endpoints. Configured out of
+              the box.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Globe className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Content Security Policy</h3>
+            <p className="text-sm text-muted-foreground">
+              Strict CSP headers with nonces, frame-ancestors, and form-action restrictions.
+              Tightened by default, not left permissive.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Lock className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Tenant-Isolated Storage</h3>
+            <p className="text-sm text-muted-foreground">
+              File paths scoped by organization. Signed, time-limited URLs for access. No shared
+              namespace across tenants.
+            </p>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-border/60 bg-background p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+              <Headset className="h-5 w-5 text-primary" />
+            </div>
+            <h3 className="text-base font-semibold text-foreground">Support Access Grants</h3>
+            <p className="text-sm text-muted-foreground">
+              Time-boxed, scoped, and tracked. Auto-expiring grants with usage logging so support
+              can help without permanent access.
             </p>
           </div>
         </div>

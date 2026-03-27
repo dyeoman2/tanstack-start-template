@@ -13,10 +13,12 @@ import {
 import type { AuthAuditEvent } from '../src/lib/shared/auth-audit';
 import { isAuthAuditEventType } from '../src/lib/shared/auth-audit';
 import {
+  type AuditArchiveObjectLockStatus,
   getAuditArchiveObjectBytes,
   headAuditArchiveObject,
   putAuditArchiveMetricData,
   putAuditArchiveObject,
+  verifyAuditArchiveBucketObjectLock,
 } from './lib/auditArchiveS3';
 import { recordSystemAuditEvent } from './lib/auditEmitters';
 
@@ -836,5 +838,35 @@ export const verifyLatestSealedAuditLedgerSegmentInImmutableStoreInternal = inte
       latestSealVerified: true,
     });
     return result;
+  },
+});
+
+export const verifyAuditArchiveBucketObjectLockInternal = internalAction({
+  args: {},
+  returns: v.object({
+    enabled: v.boolean(),
+    mode: v.union(v.string(), v.null()),
+    retentionDays: v.union(v.number(), v.null()),
+  }),
+  handler: async (_ctx): Promise<AuditArchiveObjectLockStatus> => {
+    const runtimeState = getArchiveRuntimeState();
+    if (!runtimeState.configured) {
+      return { enabled: false, mode: null, retentionDays: null };
+    }
+
+    const status = await verifyAuditArchiveBucketObjectLock();
+
+    if (!status.enabled) {
+      console.error(
+        '[CRITICAL] Audit archive bucket does not have Object Lock enabled. ' +
+          'Immutability assurance is degraded. Expected COMPLIANCE mode with retention.',
+      );
+    } else if (status.mode !== 'COMPLIANCE') {
+      console.error(
+        `[WARNING] Audit archive bucket Object Lock mode is "${status.mode}", expected "COMPLIANCE".`,
+      );
+    }
+
+    return status;
   },
 });

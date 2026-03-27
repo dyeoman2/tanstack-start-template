@@ -3,6 +3,7 @@
 import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
 import {
   GetObjectCommand,
+  GetObjectLockConfigurationCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -183,6 +184,29 @@ export async function putAuditArchiveObject(args: {
       ServerSideEncryption: 'aws:kms',
     }),
   );
+}
+
+export type AuditArchiveObjectLockStatus = {
+  enabled: boolean;
+  mode: string | null;
+  retentionDays: number | null;
+};
+
+export async function verifyAuditArchiveBucketObjectLock(): Promise<AuditArchiveObjectLockStatus> {
+  const { bucket } = getRequiredArchiveConfig();
+  const response = await getAuditArchiveClient().send(
+    new GetObjectLockConfigurationCommand({ Bucket: bucket }),
+  );
+
+  const rule = response.ObjectLockConfiguration?.Rule?.DefaultRetention;
+  const enabled =
+    response.ObjectLockConfiguration?.ObjectLockEnabled === 'Enabled' && rule !== undefined;
+
+  return {
+    enabled,
+    mode: rule?.Mode ?? null,
+    retentionDays: rule?.Days ?? null,
+  };
 }
 
 export async function putAuditArchiveMetricData(args: {

@@ -67,20 +67,31 @@ export const Route = createFileRoute('/api/csp-report')({
         const body = extractReportBody(payload);
 
         if (body) {
+          const effectiveDirective = readString(body, 'effectiveDirective', 'effective-directive');
+          const violatedDirective = readString(body, 'violatedDirective', 'violated-directive');
+
+          // Track style-src-attr violations separately for residual-risk monitoring.
+          // This directive is an accepted risk (Tailwind/Radix inline style attributes),
+          // but unexpected violations could indicate a CSS injection attempt.
+          const isStyleSrcAttrViolation =
+            effectiveDirective === 'style-src-attr' ||
+            violatedDirective?.startsWith('style-src-attr');
+
           logSecurityEvent({
             data: {
               blockedURL: readString(body, 'blockedURL', 'blocked-uri'),
               disposition: readString(body, 'disposition'),
               documentURL: readString(body, 'documentURL', 'document-uri'),
-              effectiveDirective: readString(body, 'effectiveDirective', 'effective-directive'),
+              effectiveDirective,
+              isStyleSrcAttrViolation,
               originalPolicy: readString(body, 'originalPolicy', 'original-policy'),
               referrer: readString(body, 'referrer'),
               statusCode: readNumber(body, 'statusCode', 'status-code'),
-              violatedDirective: readString(body, 'violatedDirective', 'violated-directive'),
+              violatedDirective,
             },
             event: 'csp_violation',
             scope: 'telemetry',
-            status: 'warning',
+            status: isStyleSrcAttrViolation ? 'info' : 'warning',
           });
         }
 

@@ -58,6 +58,7 @@ describe('/api/csp-report route', () => {
         disposition: 'report',
         documentURL: 'https://app.example.com/app',
         effectiveDirective: 'script-src-elem',
+        isStyleSrcAttrViolation: false,
         originalPolicy: "script-src 'self'",
         referrer: 'https://app.example.com/login',
         statusCode: 200,

@@ -104,6 +104,7 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'ai_model_created',
   'ai_model_updated',
   'ai_model_active_state_changed',
+  'audit_ledger_viewed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -263,6 +264,7 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   ai_model_created: ['organization'],
   ai_model_updated: ['organization'],
   ai_model_active_state_changed: ['organization'],
+  audit_ledger_viewed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

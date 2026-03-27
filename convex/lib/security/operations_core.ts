@@ -435,6 +435,7 @@ type SecurityFindingSnapshot = {
 const REQUEST_CONTEXT_MONITORED_AUDIT_EVENT_TYPES = new Set([
   'admin_step_up_challenged',
   'admin_user_sessions_viewed',
+  'audit_ledger_viewed',
   'audit_log_exported',
   'directory_exported',
   'domain_verification_failed',

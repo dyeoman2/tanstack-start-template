@@ -6,6 +6,19 @@ import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 const MINUTE_MS = 60 * 1000;
 const GLOBAL_CHAT_PROVIDER_KEY = 'chat-provider-global';
 
+/**
+ * Chat rate limits use a token bucket model with per-user and global tiers.
+ *
+ * Global limits (`chatGlobalRequests`, `chatGlobalActualTokens`) use 10 shards for
+ * distributed counting. Sharded rate limiting trades precision for throughput:
+ * under extreme concurrent load, brief overages above the stated capacity are
+ * possible (up to ~10× shard count in the worst case). This is an accepted
+ * tradeoff — the per-user limits provide the primary enforcement boundary,
+ * and the global limits serve as a capacity backstop rather than a hard ceiling.
+ *
+ * If tighter global enforcement is needed, reduce the shard count (at the cost
+ * of higher contention) or add a secondary hard cap at the API gateway level.
+ */
 export const CHAT_RATE_LIMITS = {
   chatUserRequests: {
     kind: 'token bucket' as const,

@@ -364,6 +364,7 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'admin_user_sessions_viewed',
   'directory_exported',
   'audit_log_exported',
+  'audit_ledger_viewed',
   'retention_hold_applied',
   'retention_hold_released',
   'retention_purge_completed',

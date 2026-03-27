@@ -108,6 +108,7 @@ describe('auth audit coverage', () => {
       'ai_model_active_state_changed',
       'directory_exported',
       'audit_log_exported',
+      'audit_ledger_viewed',
       'audit_ledger_segment_archived',
       'security_control_evidence_created',
       'security_control_evidence_reviewed',

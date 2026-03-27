@@ -134,6 +134,8 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Directory exported';
     case 'audit_log_exported':
       return 'Audit log exported';
+    case 'audit_ledger_viewed':
+      return 'Audit ledger viewed';
     case 'retention_hold_applied':
       return 'Retention hold applied';
     case 'retention_hold_released':

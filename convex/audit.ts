@@ -204,6 +204,7 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
       'sourceSurface',
     ],
   ],
+  ['audit_ledger_viewed', ['actorUserId', 'outcome', 'severity', 'sourceSurface']],
   [
     'audit_ledger_segment_archived',
     ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
@@ -650,6 +651,12 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'batchId', 'string');
       requireMetadataKey(record.eventType, parsed, 'deletedCount', 'number');
       requireMetadataKey(record.eventType, parsed, 'failedCount', 'number');
+      return;
+    }
+    case 'audit_ledger_viewed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'surface', 'string');
+      requireMetadataKey(record.eventType, parsed, 'resultCount', 'number');
       return;
     }
     default:
@@ -1206,6 +1213,40 @@ export const listAuditLedgerEvents = query({
       continueCursor: events.length >= limit ? cursor : null,
       isDone: isDone && events.length < limit,
     };
+  },
+});
+
+export const recordAuditLedgerViewed = action({
+  args: {
+    organizationId: v.optional(v.string()),
+    resultCount: v.number(),
+    surface: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const actorUserId = user.authUserId;
+
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      eventType: 'audit_ledger_viewed',
+      provenance: {
+        kind: user.isSiteAdmin ? 'site_admin' : 'user',
+        emitter: 'audit.ledger_view',
+        actorUserId,
+      },
+      actorUserId,
+      userId: actorUserId,
+      organizationId: args.organizationId,
+      outcome: 'success',
+      severity: 'info',
+      sourceSurface: args.surface,
+      metadata: JSON.stringify({
+        surface: args.surface,
+        resultCount: args.resultCount,
+      }),
+    });
+
+    return null;
   },
 });
 

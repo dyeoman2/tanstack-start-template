@@ -36,7 +36,11 @@ type StorageAwsRuntimeConfig = {
   storageRoleArns: Partial<Record<StorageCapability, string>>;
 };
 
-const PRESIGN_EXPIRY_SECONDS = 60 * 60;
+/**
+ * Default presigned URL TTL. Callers should pass explicit `expiresInSeconds` when possible.
+ * Kept short to limit the window of URL reuse or capture (HIPAA minimum-necessary).
+ */
+const PRESIGN_EXPIRY_SECONDS = 5 * 60;
 const ASSUME_ROLE_REFRESH_WINDOW_MS = 60 * 1000;
 const assumedCredentialsCache = new Map<string, Promise<CachedCredentials>>();
 const capabilityClientCache = new Map<string, S3Client>();

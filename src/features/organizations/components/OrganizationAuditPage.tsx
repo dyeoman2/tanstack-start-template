@@ -73,6 +73,7 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Support access used', value: 'support_access_used' },
   { label: 'Directory exported', value: 'directory_exported' },
   { label: 'Audit log exported', value: 'audit_log_exported' },
+  { label: 'Audit ledger viewed', value: 'audit_ledger_viewed' },
   { label: 'Retention hold applied', value: 'retention_hold_applied' },
   { label: 'Retention hold released', value: 'retention_hold_released' },
   { label: 'Retention purge completed', value: 'retention_purge_completed' },
