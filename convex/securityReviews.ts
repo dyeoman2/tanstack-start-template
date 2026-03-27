@@ -4,7 +4,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { VENDOR_KEYS, type VendorKey } from '../src/lib/shared/vendor-boundary';
-import { siteAdminAction } from './auth/authorized';
+import { siteAdminAction, siteAdminQuery } from './auth/authorized';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
@@ -18,6 +18,7 @@ import {
   getCurrentAnnualReviewYear,
   getSecurityScopeFields,
 } from './lib/security/core';
+import { buildActorDisplayMap, getActorDisplayName } from './lib/security/operations_core';
 import {
   finalizeReviewRunHandler,
   refreshReviewRunAutomationHandler,
@@ -564,6 +565,38 @@ export const finalizeReviewRun = siteAdminAction({
   },
   returns: v.union(reviewRunDetailValidator, v.null()),
   handler: finalizeReviewRunHandler,
+});
+
+export const getReviewTaskAttestationHistory = siteAdminQuery({
+  args: {
+    reviewTaskId: v.id('reviewTasks'),
+  },
+  returns: v.array(
+    v.object({
+      attestedAt: v.number(),
+      attestedByDisplay: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const attestations = await ctx.db
+      .query('reviewAttestations')
+      .withIndex('by_review_task_id', (q) => q.eq('reviewTaskId', args.reviewTaskId))
+      .collect();
+
+    if (attestations.length === 0) return [];
+
+    const actorDisplayById = await buildActorDisplayMap(
+      ctx,
+      attestations.map((a) => a.attestedByUserId),
+    );
+
+    return attestations
+      .sort((a, b) => b.attestedAt - a.attestedAt)
+      .map((a) => ({
+        attestedAt: a.attestedAt,
+        attestedByDisplay: getActorDisplayName(actorDisplayById, a.attestedByUserId),
+      }));
+  },
 });
 
 export { buildPolicyReviewDatePatch };

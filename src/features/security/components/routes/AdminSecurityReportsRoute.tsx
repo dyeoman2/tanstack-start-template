@@ -228,14 +228,16 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Evidence report detail</SheetTitle>
-            <SheetDescription>
-              Review the selected evidence report and linked review task context.
-            </SheetDescription>
-          </SheetHeader>
           {selectedReport === null && props.search.selectedReport ? (
-            <DetailLoadingState label="Loading report detail" />
+            <>
+              <SheetHeader className="sr-only">
+                <SheetTitle>Evidence report detail</SheetTitle>
+                <SheetDescription>
+                  Review the selected evidence report and linked review task context.
+                </SheetDescription>
+              </SheetHeader>
+              <DetailLoadingState label="Loading report detail" />
+            </>
           ) : selectedReport ? (
             <AdminSecurityReportDetail
               generatedReport={report}

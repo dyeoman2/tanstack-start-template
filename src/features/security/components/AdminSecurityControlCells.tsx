@@ -22,11 +22,6 @@ export function AdminSecurityControlCell(props: { control: SecurityControlWorksp
               <p className="font-medium text-foreground">
                 {control.nist80053Id} {control.title}
               </p>
-              {control.hasExpiringSoonEvidence ? (
-                <div className="mt-2">
-                  <Badge variant="secondary">Expiring soon</Badge>
-                </div>
-              ) : null}
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" align="start" className="max-w-md">
@@ -94,11 +89,15 @@ export function AdminSecuritySupportCell(props: { control: SecurityControlWorksp
   const progress = getEvidenceProgress(control);
 
   return (
-    <div className="space-y-2 py-1">
-      <Badge variant={getSupportBadgeVariant(control.support)}>
-        {formatSupportStatus(control.support)} {progress.label}
-      </Badge>
-      {control.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
+    <div className="py-1">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant={getSupportBadgeVariant(control.support)}>
+          {formatSupportStatus(control.support)} {progress.label}
+        </Badge>
+        {control.hasExpiringSoonEvidence ? (
+          <span className="text-xs text-amber-600 font-medium">⚠ Expiring</span>
+        ) : null}
+      </div>
     </div>
   );
 }

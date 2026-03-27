@@ -2,15 +2,18 @@ import { useNavigate } from '@tanstack/react-router';
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ClipboardList,
   Eye,
   Package,
   Shield,
 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Spinner } from '~/components/ui/spinner';
+import { HelpTip } from '~/features/security/components/HelpTip';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import type {
@@ -32,6 +35,83 @@ type ActionQueueItem = {
   navigate: () => void;
   priority: 'critical' | 'warning' | 'info';
 };
+
+function ActionQueue({ actionItems }: { actionItems: ActionQueueItem[] }) {
+  const [showAllActions, setShowAllActions] = useState(false);
+  const primary = actionItems[0];
+  const remaining = actionItems.slice(1);
+
+  return (
+    <div className="space-y-3">
+      {/* Primary action hero */}
+      <div className="flex items-center gap-4 rounded-lg border p-4">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+          {primary.icon}
+        </span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-block size-2 shrink-0 rounded-full ${primary.priority === 'critical' ? 'bg-destructive' : primary.priority === 'warning' ? 'bg-amber-500' : 'bg-muted-foreground/40'}`}
+            />
+            <span className="text-base font-semibold">{primary.label}</span>
+            <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+              {primary.count}
+            </span>
+          </div>
+        </div>
+        <Button size="sm" onClick={primary.navigate}>
+          Go to action
+          <ChevronRight className="ml-1 size-4" />
+        </Button>
+      </div>
+
+      {/* Collapsible remaining items */}
+      {remaining.length > 0 && (
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground"
+            onClick={() => {
+              setShowAllActions((prev) => !prev);
+            }}
+          >
+            <ChevronDown
+              className={`mr-2 size-4 transition-transform ${showAllActions ? 'rotate-0' : '-rotate-90'}`}
+            />
+            {remaining.length} more item{remaining.length === 1 ? '' : 's'} need
+            {remaining.length === 1 ? 's' : ''} attention
+          </Button>
+
+          {showAllActions && (
+            <div className="mt-1 divide-y rounded-lg border">
+              {remaining.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+                  onClick={item.navigate}
+                >
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                    {item.icon}
+                  </span>
+                  <span
+                    className={`mr-1 inline-block size-2 shrink-0 rounded-full ${item.priority === 'critical' ? 'bg-destructive' : item.priority === 'warning' ? 'bg-amber-500' : 'bg-muted-foreground/40'}`}
+                  />
+                  <span className="flex-1 text-sm font-medium">{item.label}</span>
+                  <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+                    {item.count}
+                  </span>
+                  <ChevronRight className="size-4 text-muted-foreground" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AdminSecurityOverviewTab(props: {
   auditReadiness: AuditReadinessOverview | undefined;
@@ -218,28 +298,7 @@ export function AdminSecurityOverviewTab(props: {
               <p className="text-sm text-emerald-900">All clear -- no items need attention</p>
             </div>
           ) : (
-            <div className="divide-y rounded-lg border">
-              {actionItems.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50"
-                  onClick={item.navigate}
-                >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
-                    {item.icon}
-                  </span>
-                  <span
-                    className={`mr-1 inline-block size-2 shrink-0 rounded-full ${item.priority === 'critical' ? 'bg-destructive' : item.priority === 'warning' ? 'bg-amber-500' : 'bg-muted-foreground/40'}`}
-                  />
-                  <span className="flex-1 text-sm font-medium">{item.label}</span>
-                  <span className="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
-                    {item.count}
-                  </span>
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </button>
-              ))}
-            </div>
+            <ActionQueue actionItems={actionItems} />
           )}
         </CardContent>
       </Card>
@@ -277,7 +336,12 @@ export function AdminSecurityOverviewTab(props: {
           }
         />
         <AdminSecuritySummaryCard
-          title="Audit Integrity"
+          title={
+            <>
+              Audit Integrity
+              <HelpTip term="hash chain" />
+            </>
+          }
           description="Hash-chain failure signal from the audit subsystem."
           value={
             props.summary
@@ -323,7 +387,12 @@ export function AdminSecurityOverviewTab(props: {
           }
         />
         <AdminSecuritySummaryCard
-          title="Session Policy"
+          title={
+            <>
+              Session Policy
+              <HelpTip term="step-up window" />
+            </>
+          }
           description="Short-lived verification posture applied across the app."
           value={
             props.summary

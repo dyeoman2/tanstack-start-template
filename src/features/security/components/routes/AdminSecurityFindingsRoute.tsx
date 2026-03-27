@@ -440,14 +440,17 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Finding detail</SheetTitle>
-            <SheetDescription>
-              Review the selected finding, its linked controls, and the review workflow hand-off.
-            </SheetDescription>
-          </SheetHeader>
           {selectedFinding === null && props.search.selectedFinding ? (
-            <DetailLoadingState label="Loading finding detail" />
+            <>
+              <SheetHeader className="sr-only">
+                <SheetTitle>Finding detail</SheetTitle>
+                <SheetDescription>
+                  Review the selected finding, its linked controls, and the review workflow
+                  hand-off.
+                </SheetDescription>
+              </SheetHeader>
+              <DetailLoadingState label="Loading finding detail" />
+            </>
           ) : selectedFinding ? (
             <AdminSecurityFindingDetail
               busyAction={busyAction}

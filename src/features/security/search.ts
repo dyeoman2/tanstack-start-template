@@ -12,6 +12,7 @@ import {
   REPORT_KIND_FILTER_VALUES,
   REPORT_REVIEW_STATUS_FILTER_VALUES,
   SECURITY_TABS,
+  VENDOR_REVIEW_STATUS_FILTER_VALUES,
 } from '~/features/security/constants';
 
 export const securityControlsSearchSchema = z.object({
@@ -46,6 +47,8 @@ export const securityFindingsSearchSchema = z.object({
 
 export const securityVendorsSearchSchema = z.object({
   selectedVendor: z.string().optional(),
+  vendorReviewStatus: z.enum(VENDOR_REVIEW_STATUS_FILTER_VALUES).default('all'),
+  vendorSearch: z.string().default(''),
 });
 
 export const securityReviewsSearchSchema = z.object({

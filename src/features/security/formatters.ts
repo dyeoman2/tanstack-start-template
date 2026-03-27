@@ -82,9 +82,9 @@ export function getResponsibilityBadgeVariant(
     case 'platform':
       return 'default';
     case 'shared-responsibility':
-      return 'secondary';
+      return 'outline';
     case 'customer':
-      return 'destructive';
+      return 'secondary';
     case null:
       return 'outline';
   }
@@ -92,10 +92,10 @@ export function getResponsibilityBadgeVariant(
 
 /**
  * Badge color convention used across the security module:
- * - `default` (green) = good / complete / resolved
- * - `secondary` (yellow) = needs attention / partial
- * - `destructive` (red) = action required / blocked / critical
- * - `outline` (gray) = neutral / pending / info
+ * - `default` (green) = done / healthy / no action needed — user can skip
+ * - `secondary` (yellow) = needs attention soon — user should plan to act
+ * - `destructive` (red) = action required now / blocked — user should act immediately
+ * - `outline` (gray) = informational / terminal / neutral — read if curious
  */
 export function getSupportBadgeVariant(
   support: SecurityControlWorkspace['support'],
@@ -180,7 +180,7 @@ export function getReviewRunStatusBadgeVariant(
     case 'needs_attention':
       return 'destructive';
     case 'ready':
-      return 'secondary';
+      return 'outline';
   }
 }
 
@@ -211,16 +211,19 @@ export function formatReviewTaskStatus(status: ReviewTaskDetail['status']) {
 export function getReviewTaskBadgeVariant(
   task: ReviewTaskDetail,
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
-  if (task.status === 'blocked' || task.status === 'exception') {
+  if (task.status === 'blocked') {
     return 'destructive';
+  }
+  if (task.status === 'exception') {
+    return 'secondary';
   }
   if (task.status === 'completed') {
     return 'default';
   }
   if (task.taskType === 'automated_check') {
-    return 'secondary';
+    return 'outline';
   }
-  return 'outline';
+  return 'secondary';
 }
 
 export function getReviewTaskStatusLabel(task: ReviewTaskDetail) {
@@ -318,7 +321,7 @@ export function getEvidenceReviewBadgeVariant(
     case 'reviewed':
       return 'default';
     case 'pending':
-      return 'outline';
+      return 'secondary';
   }
 }
 
@@ -327,9 +330,9 @@ export function getEvidenceLifecycleBadgeVariant(
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
   switch (lifecycleStatus) {
     case 'active':
-      return 'outline';
+      return 'default';
     case 'archived':
-      return 'secondary';
+      return 'outline';
     case 'superseded':
       return 'outline';
   }
@@ -412,7 +415,7 @@ export function getVendorGovernanceState(args: {
   variant: VendorBadgeVariant;
 } {
   if (args.hasDraftReview) {
-    return { label: 'Draft review', variant: 'outline' };
+    return { label: 'Draft review', variant: 'secondary' };
   }
 
   if (args.reviewStatus === 'overdue') {
@@ -428,10 +431,10 @@ export function getVendorGovernanceState(args: {
   }
 
   if (args.reviewStatus === 'due_soon') {
-    return { label: 'Review due soon', variant: 'outline' };
+    return { label: 'Review due soon', variant: 'secondary' };
   }
 
-  return { label: 'Current review', variant: 'secondary' };
+  return { label: 'Current review', variant: 'default' };
 }
 
 function formatVendorApprovalReason(
@@ -640,10 +643,10 @@ export function getFindingDispositionBadgeVariant(
   switch (disposition) {
     case 'resolved':
       return 'default';
+    case 'investigating':
+      return 'secondary';
     case 'accepted_risk':
     case 'false_positive':
-      return 'secondary';
-    case 'investigating':
       return 'outline';
     case 'pending_review':
       return 'destructive';
@@ -696,9 +699,9 @@ export function getFollowUpStatusBadgeVariant(
       return 'default';
     case 'blocked':
       return 'destructive';
-    case 'in_progress':
-      return 'secondary';
     case 'open':
+      return 'secondary';
+    case 'in_progress':
       return 'outline';
   }
 }
@@ -727,7 +730,7 @@ export function getEvidenceQueueReviewBadgeVariant(
     case 'needs_follow_up':
       return 'destructive';
     case 'pending':
-      return 'outline';
+      return 'secondary';
   }
 }
 

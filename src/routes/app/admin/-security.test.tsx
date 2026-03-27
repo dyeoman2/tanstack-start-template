@@ -178,6 +178,8 @@ type SearchState = {
   selectedReviewRun?: string;
   selectedVendor?: string;
   showAdvancedFilters?: boolean;
+  vendorReviewStatus?: 'all' | 'current' | 'due_soon' | 'overdue' | 'not_reviewed';
+  vendorSearch?: string;
 };
 
 const defaultSearch: SearchState = {
@@ -858,6 +860,8 @@ function renderRoute() {
         <AdminSecurityVendorsRoute
           search={{
             selectedVendor: search.selectedVendor,
+            vendorReviewStatus: search.vendorReviewStatus ?? 'all',
+            vendorSearch: search.vendorSearch ?? '',
           }}
         />
       ) : null}
@@ -1048,32 +1052,18 @@ describe('Admin security route', () => {
     });
     expect(screen.getAllByText('{"status":"ok"}').length).toBeGreaterThan(0);
 
-    await user.click(screen.getAllByText(/security_posture/i)[0]!);
-    const reportInternalNotesField = screen.getByPlaceholderText('Add reviewer-only notes');
-    await user.clear(reportInternalNotesField);
-    await user.type(reportInternalNotesField, '  needs deeper review  ');
-    await user.click(screen.getAllByRole('button', { name: /needs follow-up/i }).at(-1)!);
+    // Click "Mark reviewed" on the report card row (inline notes removed from card view)
+    await user.click(screen.getAllByRole('button', { name: /mark reviewed/i })[0]!);
 
     await waitFor(() => {
       expect(reviewEvidenceReportServerFnMock).toHaveBeenCalledWith({
         data: {
           id: 'report-1',
-          internalNotes: 'needs deeper review',
-          reviewStatus: 'needs_follow_up',
+          internalNotes: undefined,
+          reviewStatus: 'reviewed',
         },
       });
     });
-
-    await user.click(screen.getAllByRole('button', { name: /export bundle/i }).at(-1)!);
-
-    await waitFor(() => {
-      expect(exportEvidenceReportServerFnMock).toHaveBeenCalledWith({
-        data: {
-          id: 'report-1',
-        },
-      });
-    });
-    expect(screen.getAllByText('{"status":"exported"}').length).toBeGreaterThan(0);
   });
 
   it('does not offer approval for seeded evidence', async () => {
@@ -1441,33 +1431,21 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.click(screen.getByText('Audit integrity monitoring'));
-    await user.type(screen.getByPlaceholderText('Add reviewer-only notes'), 'triage in progress');
-    await user.click(
-      screen.getByRole('combobox', { name: /disposition for audit integrity monitoring/i }),
-    );
-    await user.click(await screen.findByText('Investigating'));
-    await user.click(screen.getAllByRole('button', { name: /save changes/i }).at(-1)!);
+    // Inline notes/disposition editing was removed from the card view;
+    // click "Save review" to submit with default disposition
+    await user.click(screen.getAllByRole('button', { name: /save review/i })[0]!);
 
     await waitFor(() => {
       expect(reviewSecurityFindingMock).toHaveBeenCalledWith({
-        disposition: 'investigating',
+        disposition: 'pending_review',
         findingKey: 'audit_integrity_failures',
-        internalNotes: 'triage in progress',
+        internalNotes: undefined,
       });
     });
   });
 
-  it('opens finding follow-up reviews directly from the findings route', async () => {
+  it('opens finding detail panel from the findings route', async () => {
     const user = userEvent.setup();
-    const openSecurityFindingFollowUpMock = vi.fn().mockResolvedValue(
-      buildReviewRunSummary({
-        id: 'triggered-review-1',
-        kind: 'triggered',
-        title: 'Audit integrity monitoring follow-up',
-        triggerType: 'security_finding_follow_up',
-      }),
-    );
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
@@ -1481,36 +1459,23 @@ describe('Admin security route', () => {
       findings: [buildSecurityFinding()],
     });
     mockSecurityActions({});
-    mockSecurityMutations({
-      'securityWorkspace:openSecurityFindingFollowUp': openSecurityFindingFollowUpMock,
-    });
+    mockSecurityMutations({});
 
     renderRoute();
 
+    // Clicking finding title navigates to the detail panel via onOpenFinding
     await user.click(screen.getByText('Audit integrity monitoring'));
-    await user.type(
-      screen.getByPlaceholderText('Add reviewer-only notes'),
-      'escalate to remediation',
+
+    expect(navigateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({
+          selectedFinding: 'audit_integrity_failures',
+        }),
+      }),
     );
-    await user.click(screen.getByRole('button', { name: /open follow-up/i }));
-
-    await waitFor(() => {
-      expect(openSecurityFindingFollowUpMock).toHaveBeenCalledWith({
-        findingKey: 'audit_integrity_failures',
-        note: 'escalate to remediation',
-      });
-    });
-
-    expect(navigateMock).toHaveBeenCalledWith({
-      search: {
-        selectedReviewRun: 'triggered-review-1',
-      },
-      to: '/app/admin/security/reviews',
-    });
   });
 
   it('shows tracked follow-up state on retained findings', async () => {
-    const user = userEvent.setup();
     useSearchMock.mockReturnValue({
       ...defaultSearch,
       tab: 'findings',
@@ -1560,12 +1525,9 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.click(screen.getByText('Audit integrity monitoring'));
-
-    expect(screen.getByText('Tracked follow-up:')).toBeInTheDocument();
-    expect(screen.getByText('(open)')).toBeInTheDocument();
+    // Follow-up metadata is now shown directly on the finding card (no accordion expansion needed)
+    expect(screen.getByText(/Follow-up: open/)).toBeInTheDocument();
     expect(screen.getAllByText('Overdue').length).toBeGreaterThan(0);
-    expect(screen.getByText('Active follow-up')).toBeInTheDocument();
   });
 
   it('lets admins record partial evidence sufficiency from the control workspace', async () => {
@@ -1598,7 +1560,7 @@ describe('Admin security route', () => {
       'Pending manager sign-off.',
     );
 
-    await user.click(screen.getByRole('button', { name: /more options/i }));
+    await user.click(screen.getByRole('button', { name: /adjust evidence metadata/i }));
     await user.click(screen.getByRole('combobox', { name: /source/i }));
     await user.click(await screen.findByRole('option', { name: 'Internal review' }));
     await user.click(screen.getByRole('combobox', { name: /sufficiency/i }));
@@ -1658,7 +1620,7 @@ describe('Admin security route', () => {
 
     expect(screen.getByText('Current Annual Review')).toBeInTheDocument();
     expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
-    expect(screen.getByText('Needs document upload')).toBeInTheDocument();
+    expect(screen.getByText('Review Tasks')).toBeInTheDocument();
 
     // Use the inline "Attest" button for the attestation task
     await user.click(screen.getAllByRole('button', { name: 'Attest' })[0]!);
@@ -1746,6 +1708,8 @@ describe('Admin security route', () => {
 
     renderRoute();
 
+    await user.click(screen.getByRole('button', { name: /start review/i }));
+
     const ownerField = screen.getByPlaceholderText('Assign a vendor owner');
     await user.clear(ownerField);
     await user.type(ownerField, 'Infra team');
@@ -1754,7 +1718,7 @@ describe('Admin security route', () => {
     );
     await user.clear(vendorSummaryField);
     await user.type(vendorSummaryField, 'Need updated DPA.');
-    await user.click(screen.getAllByRole('button', { name: /save changes/i }).at(-1)!);
+    await user.click(screen.getByRole('button', { name: /save review/i }));
 
     await waitFor(() => {
       expect(reviewSecurityVendorMock).toHaveBeenCalledWith({

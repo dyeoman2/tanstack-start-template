@@ -1163,6 +1163,11 @@ export default defineSchema({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
     vendorKey: v.union(
+      v.literal('aws'),
+      v.literal('cloudflare'),
+      v.literal('convex'),
+      v.literal('github'),
+      v.literal('netlify'),
       v.literal('openrouter'),
       v.literal('resend'),
       v.literal('sentry'),
@@ -1196,6 +1201,11 @@ export default defineSchema({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
     vendorKey: v.union(
+      v.literal('aws'),
+      v.literal('cloudflare'),
+      v.literal('convex'),
+      v.literal('github'),
+      v.literal('netlify'),
       v.literal('openrouter'),
       v.literal('resend'),
       v.literal('sentry'),
@@ -1280,6 +1290,11 @@ export default defineSchema({
     policyId: v.optional(v.string()),
     vendorKey: v.optional(
       v.union(
+        v.literal('aws'),
+        v.literal('cloudflare'),
+        v.literal('convex'),
+        v.literal('github'),
+        v.literal('netlify'),
         v.literal('openrouter'),
         v.literal('resend'),
         v.literal('sentry'),

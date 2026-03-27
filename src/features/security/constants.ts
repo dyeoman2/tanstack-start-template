@@ -81,6 +81,13 @@ export const REPORT_KIND_FILTER_VALUES = [
   'vendor_posture_snapshot',
   'control_workspace_snapshot',
 ] as const;
+export const VENDOR_REVIEW_STATUS_FILTER_VALUES = [
+  'all',
+  'current',
+  'due_soon',
+  'overdue',
+  'not_reviewed',
+] as const;
 export const EVIDENCE_REVIEW_DUE_OPTIONS = [3, 6, 12] as const;
 export const EVIDENCE_SOURCE_OPTIONS = [
   'manual_upload',

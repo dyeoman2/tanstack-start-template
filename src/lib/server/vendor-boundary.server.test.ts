@@ -38,6 +38,72 @@ describe('vendor-boundary.server', () => {
     );
   });
 
+  it('includes aws in the runtime snapshot as a default-approved vendor', () => {
+    expect(getVendorBoundarySnapshot()).toContainEqual(
+      expect.objectContaining({
+        allowedDataClasses: ['account_metadata', 'operational_metrics'],
+        approvalEnvVar: null,
+        approved: true,
+        approvedByDefault: true,
+        vendor: 'aws',
+      }),
+    );
+  });
+
+  it('includes cloudflare in the runtime snapshot as a default-approved vendor', () => {
+    expect(getVendorBoundarySnapshot()).toContainEqual(
+      expect.objectContaining({
+        allowedDataClasses: ['operational_metrics', 'public_web_metadata'],
+        approvalEnvVar: null,
+        approved: true,
+        approvedByDefault: true,
+        vendor: 'cloudflare',
+      }),
+    );
+  });
+
+  it('includes convex in the runtime snapshot as a default-approved vendor', () => {
+    expect(getVendorBoundarySnapshot()).toContainEqual(
+      expect.objectContaining({
+        allowedDataClasses: [
+          'account_metadata',
+          'chat_metadata',
+          'chat_prompt',
+          'email_address',
+          'operational_metrics',
+        ],
+        approvalEnvVar: null,
+        approved: true,
+        approvedByDefault: true,
+        vendor: 'convex',
+      }),
+    );
+  });
+
+  it('includes github in the runtime snapshot as a default-approved vendor', () => {
+    expect(getVendorBoundarySnapshot()).toContainEqual(
+      expect.objectContaining({
+        allowedDataClasses: ['operational_metrics'],
+        approvalEnvVar: null,
+        approved: true,
+        approvedByDefault: true,
+        vendor: 'github',
+      }),
+    );
+  });
+
+  it('includes netlify in the runtime snapshot as a default-approved vendor', () => {
+    expect(getVendorBoundarySnapshot()).toContainEqual(
+      expect.objectContaining({
+        allowedDataClasses: ['operational_metrics', 'public_web_metadata'],
+        approvalEnvVar: null,
+        approved: true,
+        approvedByDefault: true,
+        vendor: 'netlify',
+      }),
+    );
+  });
+
   it('includes google_workspace_oauth in the runtime snapshot and blocks it until credentials exist', () => {
     expect(getVendorBoundarySnapshot()).toContainEqual(
       expect.objectContaining({

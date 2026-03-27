@@ -15,7 +15,6 @@ import {
 import { useToast } from '~/components/ui/toast';
 import {
   AdminSecurityControlCell,
-  AdminSecurityFrameworkSummaryCell,
   AdminSecurityResponsibilityCell,
   AdminSecuritySupportCell,
 } from '~/features/security/components/AdminSecurityControlCells';
@@ -197,16 +196,6 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         header: createSortableHeader(
           'Support',
           'support',
-          controlSearchParams,
-          handleControlSorting,
-        ),
-      },
-      {
-        accessorKey: 'family',
-        cell: ({ row }) => <AdminSecurityFrameworkSummaryCell control={row.original} />,
-        header: createSortableHeader(
-          'Frameworks',
-          'family',
           controlSearchParams,
           handleControlSorting,
         ),

@@ -1,4 +1,9 @@
 export const VENDOR_KEYS = [
+  'aws',
+  'cloudflare',
+  'convex',
+  'github',
+  'netlify',
   'openrouter',
   'resend',
   'sentry',
@@ -28,6 +33,47 @@ export type VendorBoundaryPolicy = {
 };
 
 const VENDOR_BOUNDARY_REGISTRY: Record<VendorKey, VendorBoundaryPolicy> = {
+  aws: {
+    approvalEnvVar: null,
+    approvedByDefault: true,
+    allowedDataClasses: ['account_metadata', 'operational_metrics'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'AWS',
+  },
+  cloudflare: {
+    approvalEnvVar: null,
+    approvedByDefault: true,
+    allowedDataClasses: ['operational_metrics', 'public_web_metadata'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'Cloudflare',
+  },
+  convex: {
+    approvalEnvVar: null,
+    approvedByDefault: true,
+    allowedDataClasses: [
+      'account_metadata',
+      'chat_metadata',
+      'chat_prompt',
+      'email_address',
+      'operational_metrics',
+    ],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'Convex',
+  },
+  github: {
+    approvalEnvVar: null,
+    approvedByDefault: true,
+    allowedDataClasses: ['operational_metrics'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'GitHub',
+  },
+  netlify: {
+    approvalEnvVar: null,
+    approvedByDefault: true,
+    allowedDataClasses: ['operational_metrics', 'public_web_metadata'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'Netlify',
+  },
   openrouter: {
     approvalEnvVar: null,
     approvedByDefault: true,

@@ -39,6 +39,16 @@ export class VendorBoundaryError extends Error {
 
 function getConfiguredVendorValue(vendor: VendorKey) {
   switch (vendor) {
+    case 'aws':
+      return process.env.AWS_REGION ?? process.env.AWS_S3_FILES_BUCKET;
+    case 'cloudflare':
+      return process.env.AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME ?? process.env.AWS_DR_DOMAIN;
+    case 'convex':
+      return process.env.VITE_CONVEX_URL ?? process.env.CONVEX_SITE_URL;
+    case 'github':
+      return process.env.GITHUB_ACTIONS ?? process.env.GITHUB_REPOSITORY;
+    case 'netlify':
+      return process.env.NETLIFY_AUTH_TOKEN ?? process.env.NETLIFY_SITE_ID;
     case 'openrouter':
       return process.env.OPENROUTER_API_KEY;
     case 'resend':

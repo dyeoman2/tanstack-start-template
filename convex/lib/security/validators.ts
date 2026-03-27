@@ -17,6 +17,11 @@ const SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT = {
 };
 
 const vendorKeyValidator = v.union(
+  v.literal('aws'),
+  v.literal('cloudflare'),
+  v.literal('convex'),
+  v.literal('github'),
+  v.literal('netlify'),
   v.literal('openrouter'),
   v.literal('resend'),
   v.literal('sentry'),

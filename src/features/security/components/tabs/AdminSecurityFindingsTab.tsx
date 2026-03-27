@@ -1,32 +1,58 @@
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '~/components/ui/accordion';
+import { useMemo } from 'react';
+import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { Input } from '~/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
 import { Spinner } from '~/components/ui/spinner';
-import { Textarea } from '~/components/ui/textarea';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
+import { HelpTip } from '~/features/security/components/HelpTip';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
   formatFindingDisposition,
   formatFindingSeverity,
-  formatFindingStatus,
   formatFindingType,
   getFindingDispositionBadgeVariant,
   getFindingSeverityBadgeVariant,
 } from '~/features/security/formatters';
 import type { SecurityFindingListItem } from '~/features/security/types';
+
+const DISPOSITION_OPTIONS: Array<
+  TableFilterOption<'all' | SecurityFindingListItem['disposition']>
+> = [
+  { label: 'All dispositions', value: 'all' },
+  { label: 'Pending review', value: 'pending_review' },
+  { label: 'Investigating', value: 'investigating' },
+  { label: 'Accepted risk', value: 'accepted_risk' },
+  { label: 'False positive', value: 'false_positive' },
+  { label: 'Resolved', value: 'resolved' },
+];
+
+const SEVERITY_OPTIONS: Array<TableFilterOption<'all' | SecurityFindingListItem['severity']>> = [
+  { label: 'All severities', value: 'all' },
+  { label: 'Critical', value: 'critical' },
+  { label: 'Warning', value: 'warning' },
+  { label: 'Info', value: 'info' },
+];
+
+const FOLLOW_UP_OPTIONS: Array<
+  TableFilterOption<'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up'>
+> = [
+  { label: 'All follow-up states', value: 'all' },
+  { label: 'Has follow-up', value: 'has_follow_up' },
+  { label: 'No follow-up', value: 'no_follow_up' },
+  { label: 'Overdue follow-up', value: 'overdue_follow_up' },
+];
+
+const FINDING_TYPE_OPTIONS: Array<
+  TableFilterOption<'all' | SecurityFindingListItem['findingType']>
+> = [
+  { label: 'All finding types', value: 'all' },
+  { label: 'Archive health', value: 'audit_archive_health' },
+  { label: 'Request context gaps', value: 'audit_request_context_gaps' },
+  { label: 'Audit integrity', value: 'audit_integrity_failures' },
+  { label: 'Scan quarantines', value: 'document_scan_quarantines' },
+  { label: 'Scan rejections', value: 'document_scan_rejections' },
+  { label: 'Release validation', value: 'release_security_validation' },
+];
 
 export function AdminSecurityFindingsTab(props: {
   busyAction: string | null;
@@ -74,12 +100,15 @@ export function AdminSecurityFindingsTab(props: {
   >;
   setFindingNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
-  const advancedFilterCount = [
-    props.findingDispositionFilter !== 'all',
-    props.findingSeverityFilter !== 'all',
-    props.findingFollowUpFilter !== 'all',
-    props.findingTypeFilter !== 'all',
-  ].filter(Boolean).length;
+  const advancedFilterCount = useMemo(
+    () =>
+      [
+        props.findingSeverityFilter !== 'all',
+        props.findingFollowUpFilter !== 'all',
+        props.findingTypeFilter !== 'all',
+      ].filter(Boolean).length,
+    [props.findingSeverityFilter, props.findingFollowUpFilter, props.findingTypeFilter],
+  );
 
   return (
     <>
@@ -88,151 +117,121 @@ export function AdminSecurityFindingsTab(props: {
         description="Open gaps, disposition notes, and review follow-up entry points for provider security posture."
       />
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <AdminSecuritySummaryCard
           title="Tracked findings"
           description="Items currently in review scope."
           value={renderCardStatValue(props.summary.totalCount)}
+          footer={
+            props.summary.totalCount !== undefined
+              ? `${props.summary.openCount ?? 0} open findings`
+              : undefined
+          }
         />
         <AdminSecuritySummaryCard
           title="Open findings"
           description="Findings still awaiting provider action."
           value={renderCardStatValue(props.summary.openCount)}
+          footer={
+            props.summary.openCount !== undefined
+              ? `${props.summary.reviewPendingCount ?? 0} pending disposition`
+              : undefined
+          }
         />
         <AdminSecuritySummaryCard
-          title="Pending disposition"
+          title={
+            <>
+              Pending disposition
+              <HelpTip term="disposition" />
+            </>
+          }
           description="Findings without a recorded decision."
           value={renderCardStatValue(props.summary.reviewPendingCount)}
+          footer={
+            props.summary.reviewPendingCount !== undefined
+              ? `${props.summary.overdueFollowUpCount ?? 0} overdue follow-ups`
+              : undefined
+          }
         />
         <AdminSecuritySummaryCard
           title="Active follow-up"
           description="Findings with tracked remediation."
           value={renderCardStatValue(props.summary.activeFollowUpCount)}
+          footer={
+            props.summary.activeFollowUpCount !== undefined
+              ? `${props.summary.overdueFollowUpCount ?? 0} overdue`
+              : undefined
+          }
         />
       </div>
 
-      <div className="space-y-3 rounded-xl border bg-muted/20 p-3">
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.7fr)_auto]">
-          <Input
-            value={props.findingSearch}
-            onChange={(event) => {
-              props.onChangeFindingSearch(event.target.value);
-            }}
-            placeholder="Search findings by title, source, notes, or summary"
-            aria-label="Search findings"
-            className="bg-background"
-          />
-          <Select
-            value={props.findingStatusFilter}
-            onValueChange={(value: 'all' | SecurityFindingListItem['status']) => {
-              props.onChangeFindingStatusFilter(value);
-            }}
-          >
-            <SelectTrigger aria-label="Filter findings by status" className="bg-background">
-              <SelectValue placeholder="All statuses" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="resolved">Resolved</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              props.onChangeShowAdvancedFilters(!props.showAdvancedFilters);
-            }}
-          >
-            {props.showAdvancedFilters
-              ? 'Fewer filters'
-              : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
-          </Button>
-        </div>
-        {props.showAdvancedFilters && (
-          <div className="grid gap-3 lg:grid-cols-4">
-            <Select
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">
+          <p className="text-sm text-muted-foreground whitespace-nowrap">
+            {props.findings?.length ?? 0} matches
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableFilter<'all' | SecurityFindingListItem['disposition']>
               value={props.findingDispositionFilter}
-              onValueChange={(value: 'all' | SecurityFindingListItem['disposition']) => {
-                props.onChangeFindingDispositionFilter(value);
+              options={DISPOSITION_OPTIONS}
+              onValueChange={props.onChangeFindingDispositionFilter}
+              className="shrink-0"
+              ariaLabel="Filter findings by disposition"
+            />
+            {props.showAdvancedFilters && (
+              <>
+                <TableFilter<'all' | SecurityFindingListItem['severity']>
+                  value={props.findingSeverityFilter}
+                  options={SEVERITY_OPTIONS}
+                  onValueChange={props.onChangeFindingSeverityFilter}
+                  className="shrink-0"
+                  ariaLabel="Filter findings by severity"
+                />
+                <TableFilter<'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up'>
+                  value={props.findingFollowUpFilter}
+                  options={FOLLOW_UP_OPTIONS}
+                  onValueChange={props.onChangeFindingFollowUpFilter}
+                  className="shrink-0"
+                  ariaLabel="Filter findings by follow-up"
+                />
+                <TableFilter<'all' | SecurityFindingListItem['findingType']>
+                  value={props.findingTypeFilter}
+                  options={FINDING_TYPE_OPTIONS}
+                  onValueChange={props.onChangeFindingTypeFilter}
+                  className="shrink-0"
+                  ariaLabel="Filter findings by type"
+                />
+              </>
+            )}
+            <Button
+              type="button"
+              variant={advancedFilterCount > 0 && !props.showAdvancedFilters ? 'outline' : 'ghost'}
+              size="sm"
+              onClick={() => {
+                props.onChangeShowAdvancedFilters(!props.showAdvancedFilters);
               }}
             >
-              <SelectTrigger aria-label="Filter findings by disposition" className="bg-background">
-                <SelectValue placeholder="All dispositions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All dispositions</SelectItem>
-                <SelectItem value="pending_review">Pending review</SelectItem>
-                <SelectItem value="investigating">Investigating</SelectItem>
-                <SelectItem value="accepted_risk">Accepted risk</SelectItem>
-                <SelectItem value="false_positive">False positive</SelectItem>
-                <SelectItem value="resolved">Resolved</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={props.findingSeverityFilter}
-              onValueChange={(value: 'all' | SecurityFindingListItem['severity']) => {
-                props.onChangeFindingSeverityFilter(value);
-              }}
-            >
-              <SelectTrigger aria-label="Filter findings by severity" className="bg-background">
-                <SelectValue placeholder="All severities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All severities</SelectItem>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="warning">Warning</SelectItem>
-                <SelectItem value="info">Info</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={props.findingFollowUpFilter}
-              onValueChange={(
-                value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
-              ) => {
-                props.onChangeFindingFollowUpFilter(value);
-              }}
-            >
-              <SelectTrigger
-                aria-label="Filter findings by tracked follow-up"
-                className="bg-background"
-              >
-                <SelectValue placeholder="All follow-up states" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All follow-up states</SelectItem>
-                <SelectItem value="has_follow_up">Has follow-up</SelectItem>
-                <SelectItem value="no_follow_up">No follow-up</SelectItem>
-                <SelectItem value="overdue_follow_up">Overdue follow-up</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={props.findingTypeFilter}
-              onValueChange={(value: 'all' | SecurityFindingListItem['findingType']) => {
-                props.onChangeFindingTypeFilter(value);
-              }}
-            >
-              <SelectTrigger aria-label="Filter findings by type" className="bg-background">
-                <SelectValue placeholder="All finding types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All finding types</SelectItem>
-                <SelectItem value="audit_archive_health">Archive health</SelectItem>
-                <SelectItem value="audit_request_context_gaps">Request context gaps</SelectItem>
-                <SelectItem value="audit_integrity_failures">Audit integrity</SelectItem>
-                <SelectItem value="document_scan_quarantines">Scan quarantines</SelectItem>
-                <SelectItem value="document_scan_rejections">Scan rejections</SelectItem>
-                <SelectItem value="release_security_validation">Release validation</SelectItem>
-              </SelectContent>
-            </Select>
+              {props.showAdvancedFilters
+                ? 'Fewer filters'
+                : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
+            </Button>
           </div>
-        )}
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
+          <TableSearch
+            initialValue={props.findingSearch}
+            onSearch={props.onChangeFindingSearch}
+            placeholder="Search findings by title, source, notes, or summary"
+            isSearching={false}
+            className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
+            ariaLabel="Search findings"
+          />
+        </div>
       </div>
 
       <div className="space-y-4">
         {props.findings?.length ? (
-          <Accordion type="multiple" className="space-y-3">
+          <div className="space-y-3">
             {props.findings.map((finding) => {
               const currentDisposition =
                 props.findingDispositions[finding.findingKey] ?? finding.disposition;
@@ -246,295 +245,74 @@ export function AdminSecurityFindingsTab(props: {
                 currentCustomerSummary !== (finding.customerSummary ?? '');
 
               return (
-                <AccordionItem
+                <div
                   key={finding.findingKey}
-                  value={finding.findingKey}
-                  className="overflow-hidden rounded-xl border bg-background"
+                  className="flex flex-col gap-3 rounded-xl border bg-background p-4 lg:flex-row lg:items-start lg:justify-between"
                 >
-                  <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
-                    <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                      <div className="grid w-full gap-4 text-left lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,0.9fr)] lg:items-start">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-base font-semibold">{finding.title}</p>
-                            <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
-                              {formatFindingSeverity(finding.severity)}
-                            </Badge>
-                            <Badge variant={getFindingDispositionBadgeVariant(currentDisposition)}>
-                              {formatFindingDisposition(currentDisposition)}
-                            </Badge>
-                          </div>
-                          <p className="max-w-3xl text-sm text-muted-foreground">
-                            {finding.description}
-                          </p>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <p>
-                              {formatFindingType(finding.findingType)} ·{' '}
-                              {formatFindingStatus(finding.status)}
-                            </p>
-                            <p>Source: {finding.sourceLabel}</p>
-                            <p>Last observed {new Date(finding.lastObservedAt).toLocaleString()}</p>
-                            {finding.reviewedAt ? (
-                              <p>Reviewed {new Date(finding.reviewedAt).toLocaleString()}</p>
-                            ) : null}
-                            {finding.reviewedByDisplay ? <p>{finding.reviewedByDisplay}</p> : null}
-                          </div>
-                        </div>
-                        <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Controls
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {finding.relatedControls.length > 0
-                                ? `${finding.relatedControls.length} linked`
-                                : 'No control links'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Review state
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {isDirty ? 'Unsaved edits' : 'Saved'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Follow-up
-                            </p>
-                            {finding.activeFollowUp ? (
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className="text-foreground">
-                                  {finding.activeFollowUp.status.replaceAll('_', ' ')}
-                                </span>
-                                {finding.activeFollowUp.assigneeDisplay ? (
-                                  <Badge variant="secondary" className="text-[11px]">
-                                    {finding.activeFollowUp.assigneeDisplay}
-                                  </Badge>
-                                ) : null}
-                                {finding.activeFollowUp.dueAt ? (
-                                  <span className="text-xs text-muted-foreground">
-                                    Due{' '}
-                                    {new Date(finding.activeFollowUp.dueAt).toLocaleDateString()}
-                                  </span>
-                                ) : null}
-                                {finding.followUpOverdue ? (
-                                  <Badge variant="destructive" className="text-[11px]">
-                                    Overdue
-                                  </Badge>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <p className="mt-1 text-foreground">Not tracked</p>
-                            )}
-                          </div>
-                        </div>
+                  <button
+                    type="button"
+                    className="flex-1 text-left"
+                    onClick={() => {
+                      props.onOpenFinding(finding.findingKey);
+                    }}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold">{finding.title}</p>
+                        <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
+                          {formatFindingSeverity(finding.severity)}
+                        </Badge>
+                        <Badge variant={getFindingDispositionBadgeVariant(currentDisposition)}>
+                          {formatFindingDisposition(currentDisposition)}
+                        </Badge>
+                        {finding.followUpOverdue && <Badge variant="destructive">Overdue</Badge>}
                       </div>
-                    </AccordionTrigger>
-                    <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={props.busyFindingKey !== null}
-                        onClick={() => {
-                          void props.onReviewFinding(finding.findingKey);
-                        }}
-                      >
-                        {props.busyFindingKey === finding.findingKey
-                          ? 'Saving…'
-                          : isDirty
-                            ? 'Save changes'
-                            : 'Save review'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          props.onOpenFinding(finding.findingKey);
-                        }}
-                      >
-                        View details
-                      </Button>
+                      <p className="max-w-3xl text-sm text-muted-foreground">
+                        {finding.description}
+                      </p>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <p>{formatFindingType(finding.findingType)}</p>
+                        <p>Source: {finding.sourceLabel}</p>
+                        <p>Last observed {new Date(finding.lastObservedAt).toLocaleString()}</p>
+                        {finding.relatedControls.length > 0 && (
+                          <p>{finding.relatedControls.length} linked controls</p>
+                        )}
+                        {finding.activeFollowUp && (
+                          <p>Follow-up: {finding.activeFollowUp.status.replaceAll('_', ' ')}</p>
+                        )}
+                      </div>
                     </div>
+                  </button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={props.busyFindingKey !== null}
+                      onClick={() => {
+                        void props.onReviewFinding(finding.findingKey);
+                      }}
+                    >
+                      {props.busyFindingKey === finding.findingKey
+                        ? 'Saving…'
+                        : isDirty
+                          ? 'Save changes'
+                          : 'Save review'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        props.onOpenFinding(finding.findingKey);
+                      }}
+                    >
+                      View details
+                    </Button>
                   </div>
-                  <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
-                    <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                      <div className="space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Internal notes
-                            </p>
-                            <Textarea
-                              value={currentNotes}
-                              onChange={(event) => {
-                                props.setFindingNotes((current) => ({
-                                  ...current,
-                                  [finding.findingKey]: event.target.value,
-                                }));
-                              }}
-                              placeholder="Add reviewer-only notes"
-                              className="min-h-28 bg-background"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Customer summary
-                            </p>
-                            <Textarea
-                              value={currentCustomerSummary}
-                              onChange={(event) => {
-                                props.setFindingCustomerSummaries((current) => ({
-                                  ...current,
-                                  [finding.findingKey]: event.target.value,
-                                }));
-                              }}
-                              placeholder="Summarize the finding for customer-facing review"
-                              className="min-h-28 bg-background"
-                            />
-                          </div>
-                        </div>
-                        {finding.relatedControls.length ? (
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Related controls
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {finding.relatedControls.map((control) => (
-                                <Button
-                                  key={`${finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    props.navigateToControl(control.internalControlId);
-                                  }}
-                                >
-                                  {control.nist80053Id} · {control.title}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="space-y-4 rounded-lg border bg-background p-4">
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Disposition
-                          </p>
-                          <Select
-                            value={currentDisposition}
-                            onValueChange={(value: SecurityFindingListItem['disposition']) => {
-                              props.setFindingDispositions((current) => ({
-                                ...current,
-                                [finding.findingKey]: value,
-                              }));
-                            }}
-                          >
-                            <SelectTrigger aria-label={`Disposition for ${finding.title}`}>
-                              <SelectValue placeholder="Select disposition" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending_review">Pending review</SelectItem>
-                              <SelectItem value="investigating">Investigating</SelectItem>
-                              <SelectItem value="accepted_risk">Accepted risk</SelectItem>
-                              <SelectItem value="false_positive">False positive</SelectItem>
-                              <SelectItem value="resolved">Resolved</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Actions
-                          </p>
-                          {finding.activeFollowUp ? (
-                            <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span>Tracked follow-up:</span>
-                                <span className="font-medium text-foreground">
-                                  {finding.activeFollowUp.title}
-                                </span>
-                                <span>({finding.activeFollowUp.status.replaceAll('_', ' ')})</span>
-                                {finding.activeFollowUp.assigneeDisplay ? (
-                                  <Badge variant="secondary" className="text-[11px]">
-                                    {finding.activeFollowUp.assigneeDisplay}
-                                  </Badge>
-                                ) : null}
-                                {finding.activeFollowUp.dueAt ? (
-                                  <span className="text-xs">
-                                    Due{' '}
-                                    {new Date(finding.activeFollowUp.dueAt).toLocaleDateString()}
-                                  </span>
-                                ) : null}
-                                {finding.followUpOverdue ? (
-                                  <Badge variant="destructive" className="text-[11px]">
-                                    Overdue
-                                  </Badge>
-                                ) : null}
-                              </div>
-                            </div>
-                          ) : null}
-                          {finding.latestLinkedReviewRun ? (
-                            <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                              Linked review run:{' '}
-                              <span className="font-medium text-foreground">
-                                {finding.latestLinkedReviewRun.title}
-                              </span>{' '}
-                              ({finding.latestLinkedReviewRun.status})
-                            </div>
-                          ) : null}
-                          <div className="flex flex-col gap-2">
-                            <Button
-                              type="button"
-                              disabled={props.busyFindingKey !== null}
-                              onClick={() => {
-                                void props.onReviewFinding(finding.findingKey);
-                              }}
-                            >
-                              {props.busyFindingKey === finding.findingKey
-                                ? 'Saving…'
-                                : isDirty
-                                  ? 'Save changes'
-                                  : 'Save review'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              disabled={props.busyFindingKey !== null || props.busyAction !== null}
-                              onClick={() => {
-                                if (finding.latestLinkedReviewRun) {
-                                  props.navigateToReviews(finding.latestLinkedReviewRun.id);
-                                  return;
-                                }
-                                void props.onOpenFindingFollowUp(finding);
-                              }}
-                            >
-                              {props.busyFindingKey === finding.findingKey
-                                ? 'Opening…'
-                                : finding.latestLinkedReviewRun
-                                  ? 'Open linked review run'
-                                  : 'Open follow-up in reviews'}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                props.navigateToReviews();
-                              }}
-                            >
-                              Open reviews
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
+                </div>
               );
             })}
-          </Accordion>
+          </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             No retained findings are available for review yet.

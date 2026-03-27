@@ -34,6 +34,9 @@ import type {
 } from '~/features/security/types';
 
 export function AdminSecurityPolicyDetail(props: {
+  children?: React.ReactNode;
+  hideReviewLinkage?: boolean;
+  hideSourceActions?: boolean;
   onOpenControl: (internalControlId: string) => void;
   policy: SecurityPolicyDetail;
 }) {
@@ -98,7 +101,7 @@ export function AdminSecurityPolicyDetail(props: {
             <Badge variant={getSupportBadgeVariant(policy.support)}>
               {formatSupportStatus(policy.support)}
             </Badge>
-            {hasSourceMarkdown ? (
+            {hasSourceMarkdown && !props.hideSourceActions ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" variant="outline" size="icon" className="size-8">
@@ -154,18 +157,22 @@ export function AdminSecurityPolicyDetail(props: {
           </dl>
         </DetailSection>
 
-        <DetailSection title="Annual review linkage">
-          {policy.linkedAnnualReviewTask ? (
-            <div className="space-y-1">
-              <p className="text-sm text-foreground">{policy.linkedAnnualReviewTask.title}</p>
-              <p className="text-sm text-muted-foreground">
-                Status: {policy.linkedAnnualReviewTask.status.replaceAll('_', ' ')}
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No annual review task is linked yet.</p>
-          )}
-        </DetailSection>
+        {!props.hideReviewLinkage ? (
+          <DetailSection title="Annual review linkage">
+            {policy.linkedAnnualReviewTask ? (
+              <div className="space-y-1">
+                <p className="text-sm text-foreground">{policy.linkedAnnualReviewTask.title}</p>
+                <p className="text-sm text-muted-foreground">
+                  Status: {policy.linkedAnnualReviewTask.status.replaceAll('_', ' ')}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No annual review task is linked yet.</p>
+            )}
+          </DetailSection>
+        ) : null}
+
+        {props.children}
 
         <DetailSection title="Mapped controls">
           <p className="text-sm text-muted-foreground">
@@ -250,7 +257,7 @@ export function AdminSecurityPolicyDetail(props: {
   );
 }
 
-function getPolicyPdfFileName(title: string) {
+export function getPolicyPdfFileName(title: string) {
   const sanitizedTitle = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -259,7 +266,7 @@ function getPolicyPdfFileName(title: string) {
   return `${sanitizedTitle || 'policy-document'}-${date}.pdf`;
 }
 
-function getFileNameFromDisposition(
+export function getFileNameFromDisposition(
   contentDispositionHeader: string | null,
   fallbackFileName: string,
 ) {

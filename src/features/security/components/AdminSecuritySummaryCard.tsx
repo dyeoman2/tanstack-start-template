@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/com
 export function AdminSecuritySummaryCard(props: {
   description: string;
   footer?: string;
-  title: string;
+  title: ReactNode;
   value: ReactNode;
 }) {
   return (

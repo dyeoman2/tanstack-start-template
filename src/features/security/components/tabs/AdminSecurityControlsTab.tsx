@@ -101,7 +101,7 @@ export function AdminSecurityControlsTab(props: {
             )}
             <Button
               type="button"
-              variant="ghost"
+              variant={advancedFilterCount > 0 && !props.showAdvancedFilters ? 'outline' : 'ghost'}
               size="sm"
               onClick={() => {
                 props.updateControlSearch({ showAdvancedFilters: !props.showAdvancedFilters });

@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { AdminSecurityBatchReview } from '~/features/security/components/AdminSecurityBatchReview';
-import { AdminSecurityReviewTaskGroup } from '~/features/security/components/AdminSecurityReviewTaskGroup';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
@@ -19,6 +18,8 @@ import {
   formatReviewTaskEvidenceSourceType,
   formatReviewTaskStatus,
   getReviewRunStatusBadgeVariant,
+  getReviewTaskBadgeVariant,
+  getReviewTaskStatusLabel,
 } from '~/features/security/formatters';
 import type { ReviewRunSummary, ReviewTaskDetail } from '~/features/security/types';
 
@@ -44,10 +45,12 @@ export type ReviewTaskGroups = {
 };
 
 export type AutoCollectedEvidenceLink = {
+  reviewTaskId: string;
   link: {
     freshAt: number | null;
     id: string;
     linkedAt: number;
+    sourceId: string;
     sourceLabel: string;
     sourceType:
       | 'security_control_evidence'
@@ -92,6 +95,8 @@ export function AdminSecurityReviewsTab(props: {
     value: string,
   ) => void;
   onChangeNote: (taskId: string, value: string) => void;
+  onViewEvidenceLink: (link: AutoCollectedEvidenceLink['link']) => void;
+  onViewTaskSource: (task: ReviewTaskDetail) => void;
   setNewTriggeredReviewTitle: Dispatch<SetStateAction<string>>;
   setNewTriggeredReviewType: Dispatch<SetStateAction<string>>;
 }) {
@@ -100,8 +105,18 @@ export function AdminSecurityReviewsTab(props: {
       <AdminSecurityTabHeader
         title="Reviews"
         description="Annual revalidation status, triggered follow-up runs, and evidence collection for the security program."
-        actions={
-          <>
+      />
+
+      <Card>
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1.5">
+            <CardTitle>Current Annual Review</CardTitle>
+            <CardDescription>
+              Revalidate the current evidence base, complete the required attestations and document
+              links, and finalize the annual review record for this cycle.
+            </CardDescription>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
             <Button
               type="button"
               variant="outline"
@@ -110,7 +125,7 @@ export function AdminSecurityReviewsTab(props: {
                 void props.handleRefreshAnnualReview();
               }}
             >
-              {props.busyReviewRunAction === 'refresh' ? 'Refreshing...' : 'Refresh automation'}
+              {props.busyReviewRunAction === 'refresh' ? 'Refreshing...' : 'Refresh evidence'}
             </Button>
             <Button
               type="button"
@@ -127,17 +142,7 @@ export function AdminSecurityReviewsTab(props: {
                 ? 'Finalizing...'
                 : 'Finalize annual review'}
             </Button>
-          </>
-        }
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Current Annual Review</CardTitle>
-          <CardDescription>
-            Revalidate the current evidence base, complete the required attestations and document
-            links, and finalize the annual review record for this cycle.
-          </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {props.currentAnnualReviewRun ? (
@@ -175,10 +180,6 @@ export function AdminSecurityReviewsTab(props: {
                   props.reviewTaskGroups.needsAttestation.length +
                   props.reviewTaskGroups.needsDocumentUpload.length;
                 const blockedCount = props.reviewTaskGroups.blocked.length;
-                const allPendingTasks = [
-                  ...props.reviewTaskGroups.needsAttestation,
-                  ...props.reviewTaskGroups.needsDocumentUpload,
-                ];
                 return (
                   <div className="space-y-3">
                     <div className="space-y-1">
@@ -196,17 +197,6 @@ export function AdminSecurityReviewsTab(props: {
                         {blockedCount > 0 ? `, ${blockedCount} blocked` : ''}
                       </p>
                     </div>
-                    {allPendingTasks.length > 0 ? (
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          props.onOpenBatchReview(allPendingTasks);
-                        }}
-                      >
-                        Start review ({allPendingTasks.length} task
-                        {allPendingTasks.length === 1 ? '' : 's'})
-                      </Button>
-                    ) : null}
                   </div>
                 );
               })()}
@@ -255,103 +245,112 @@ export function AdminSecurityReviewsTab(props: {
                 </div>
               )}
 
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                description="Tasks that require a human attestation to renew support for the current cycle."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onBatchReview={() => {
-                  props.onOpenBatchReview(props.reviewTaskGroups.needsAttestation);
-                }}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.needsAttestation}
-                title="Needs attestation"
-              />
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                description="Tasks that require a linked document so the annual review can materialize fresh support evidence."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.needsDocumentUpload}
-                title="Needs document upload"
-              />
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                description="Grouped findings review for annual governance posture. Critical open findings must be resolved or dispositioned before attestation."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.findingsReview}
-                title="Findings review"
-              />
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                description="Vendor governance reviews that renew the vendor assessment cadence without affecting support rollups."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onBatchReview={() => {
-                  props.onOpenBatchReview(props.reviewTaskGroups.vendorReviews);
-                }}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.vendorReviews}
-                title="Vendor reviews"
-              />
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                description="Tasks that remain blocked or have documented exceptions needing follow-up."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.blocked}
-                title="Blocked by open issue"
-              />
-              <AdminSecurityReviewTaskGroup
-                busyAction={props.busyReviewTaskAction}
-                defaultCollapsed
-                description="Tasks the system generated or linked automatically for the current run."
-                documents={props.reviewTaskDocuments}
-                notes={props.reviewTaskNotes}
-                onAttestTask={props.handleAttestTask}
-                onChangeDocumentField={props.onChangeDocumentField}
-                onChangeNote={props.onChangeNote}
-                onExceptionTask={props.handleExceptionTask}
-                onOpenControl={props.navigateToControl}
-                onOpenFollowUp={props.handleOpenReviewFollowUp}
-                tasks={props.reviewTaskGroups.autoCollected}
-                title="Auto-collected"
-              />
+              {(() => {
+                const allPendingTasks = [
+                  ...props.reviewTaskGroups.needsAttestation,
+                  ...props.reviewTaskGroups.needsDocumentUpload,
+                ];
+                const flatTaskListRaw = [
+                  ...props.reviewTaskGroups.blocked,
+                  ...props.reviewTaskGroups.needsAttestation,
+                  ...props.reviewTaskGroups.needsDocumentUpload,
+                  ...props.reviewTaskGroups.findingsReview,
+                  ...props.reviewTaskGroups.vendorReviews,
+                  ...props.reviewTaskGroups.autoCollected,
+                ];
+                const flatTaskList = Array.from(
+                  new Map(flatTaskListRaw.map((task) => [task.id, task])).values(),
+                );
+                return (
+                  <Card>
+                    <CardHeader>
+                      <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                        <CardTitle>Review Tasks</CardTitle>
+                        {allPendingTasks.length > 0 && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => props.onOpenBatchReview(allPendingTasks)}
+                          >
+                            Start batch review ({allPendingTasks.length})
+                          </Button>
+                        )}
+                      </div>
+                      <CardDescription>
+                        All tasks for the current annual review, sorted by priority.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {flatTaskList.length ? (
+                        flatTaskList.map((task, index) => (
+                          <div
+                            key={`annual-review-task-${task.id}-${index}`}
+                            className="flex items-start justify-between gap-3 rounded-lg border p-3"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="font-medium">{task.title}</p>
+                                <Badge variant={getReviewTaskBadgeVariant(task)}>
+                                  {getReviewTaskStatusLabel(task)}
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {task.taskType === 'automated_check'
+                                    ? 'Auto'
+                                    : task.taskType === 'document_upload'
+                                      ? 'Document'
+                                      : task.taskType === 'follow_up'
+                                        ? 'Follow-up'
+                                        : 'Attestation'}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">{task.description}</p>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {task.policy || task.vendor || task.findingsSummary ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => props.onViewTaskSource(task)}
+                                >
+                                  View
+                                </Button>
+                              ) : null}
+                              {task.taskType !== 'follow_up' &&
+                              task.taskType !== 'automated_check' &&
+                              task.status !== 'completed' &&
+                              task.status !== 'exception' ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={props.busyReviewTaskAction !== null}
+                                  onClick={() => void props.handleAttestTask(task)}
+                                >
+                                  {props.busyReviewTaskAction === `${task.id}:attest`
+                                    ? 'Saving\u2026'
+                                    : task.taskType === 'document_upload'
+                                      ? 'Upload'
+                                      : 'Attest'}
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No tasks in the current review.
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })()}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">
               {props.isPreparingAnnualReview
                 ? 'Preparing the current annual review...'
-                : 'Annual review is not ready yet. Refresh automation to try again.'}
+                : 'Annual review is not ready yet. Refresh evidence to try again.'}
             </p>
           )}
         </CardContent>
@@ -366,17 +365,30 @@ export function AdminSecurityReviewsTab(props: {
         </CardHeader>
         <CardContent className="space-y-3">
           {props.autoCollectedEvidenceLinks.length ? (
-            props.autoCollectedEvidenceLinks.map(({ link, taskTitle }) => (
-              <div key={link.id} className="rounded-lg border p-4">
-                <p className="font-medium">{link.sourceLabel}</p>
-                {link.sourceLabel !== taskTitle ? (
-                  <p className="text-sm text-muted-foreground">{taskTitle}</p>
-                ) : null}
-                <p className="text-sm text-muted-foreground">
-                  {formatReviewTaskEvidenceSourceType(link.sourceType)} · Linked{' '}
-                  {new Date(link.linkedAt).toLocaleString()}
-                  {link.freshAt ? ` · Fresh ${new Date(link.freshAt).toLocaleString()}` : ''}
-                </p>
+            props.autoCollectedEvidenceLinks.map(({ link, reviewTaskId, taskTitle }) => (
+              <div
+                key={`${reviewTaskId}:${link.id}`}
+                className="flex items-start justify-between gap-3 rounded-lg border p-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{link.sourceLabel}</p>
+                  {link.sourceLabel !== taskTitle ? (
+                    <p className="text-sm text-muted-foreground">{taskTitle}</p>
+                  ) : null}
+                  <p className="text-sm text-muted-foreground">
+                    {formatReviewTaskEvidenceSourceType(link.sourceType)} · Linked{' '}
+                    {new Date(link.linkedAt).toLocaleString()}
+                    {link.freshAt ? ` · Fresh ${new Date(link.freshAt).toLocaleString()}` : ''}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => props.onViewEvidenceLink(link)}
+                >
+                  View
+                </Button>
               </div>
             ))
           ) : (
@@ -463,8 +475,8 @@ export function AdminSecurityReviewsTab(props: {
         </CardHeader>
         <CardContent className="space-y-3">
           {props.reviewExceptionTasks.length ? (
-            props.reviewExceptionTasks.map((task) => (
-              <div key={task.id} className="rounded-lg border p-4">
+            props.reviewExceptionTasks.map((task, index) => (
+              <div key={`review-exception-${task.id}-${index}`} className="rounded-lg border p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="font-medium">{task.title}</p>

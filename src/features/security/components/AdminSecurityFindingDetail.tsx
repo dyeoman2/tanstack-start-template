@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
+import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
 import { Textarea } from '~/components/ui/textarea';
 import { AddEvidenceDialog } from '~/features/security/components/AddEvidenceDialog';
 import {
@@ -192,479 +193,507 @@ export function AdminSecurityFindingDetail(props: {
   );
 
   return (
-    <div className="space-y-6 p-1">
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-2xl font-semibold">{props.finding.title}</h2>
-          <Badge variant={getFindingSeverityBadgeVariant(props.finding.severity)}>
-            {formatFindingSeverity(props.finding.severity)}
-          </Badge>
-          <Badge variant={props.finding.status === 'open' ? 'destructive' : 'secondary'}>
-            {formatFindingStatus(props.finding.status)}
-          </Badge>
-          {activeFollowUp ? (
-            <Badge variant={getFollowUpStatusBadgeVariant(activeFollowUp.status)}>
-              Follow-up {formatFollowUpStatus(activeFollowUp.status)}
+    <>
+      <SheetHeader className="border-b">
+        <div className="flex items-start justify-between gap-4 pr-12">
+          <div className="space-y-1">
+            <SheetTitle>{props.finding.title}</SheetTitle>
+            <SheetDescription>{props.finding.description}</SheetDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant={getFindingSeverityBadgeVariant(props.finding.severity)}>
+              {formatFindingSeverity(props.finding.severity)}
             </Badge>
-          ) : null}
-        </div>
-        <p className="text-sm text-muted-foreground">{props.finding.description}</p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <div className="space-y-3 rounded-lg border p-4">
-          <p className="text-sm font-medium text-muted-foreground">Finding state</p>
-          <p>{formatFindingDisposition(props.finding.disposition)}</p>
-          <p className="text-sm text-muted-foreground">Source: {props.finding.sourceLabel}</p>
-          <p className="text-sm text-muted-foreground">
-            First observed {new Date(props.finding.firstObservedAt).toLocaleString()}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Last observed {new Date(props.finding.lastObservedAt).toLocaleString()}
-          </p>
-          {props.finding.reviewedAt ? (
-            <p className="text-sm text-muted-foreground">
-              Reviewed {new Date(props.finding.reviewedAt).toLocaleString()}
-              {props.finding.reviewedByDisplay ? ` by ${props.finding.reviewedByDisplay}` : ''}
-            </p>
-          ) : null}
-        </div>
-        <div className="space-y-3 rounded-lg border p-4">
-          <p className="text-sm font-medium text-muted-foreground">Review notes</p>
-          <p className="text-sm">{props.finding.internalNotes ?? 'No internal notes recorded.'}</p>
-          <p className="text-sm font-medium text-muted-foreground">Customer summary</p>
-          <p className="text-sm">
-            {props.finding.customerSummary ?? 'No customer summary recorded.'}
-          </p>
-          <p className="text-sm font-medium text-muted-foreground">Linked review run</p>
-          <p className="text-sm">
-            {props.finding.latestLinkedReviewRun
-              ? `${props.finding.latestLinkedReviewRun.title} (${props.finding.latestLinkedReviewRun.status})`
-              : 'No linked follow-up review run.'}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-muted-foreground">Linked controls</p>
-        {props.finding.relatedControls.length ? (
-          <div className="flex flex-wrap gap-2">
-            {props.finding.relatedControls.map((control) => (
-              <Button
-                key={`${props.finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  props.onOpenControl(control.internalControlId);
-                }}
-              >
-                {control.nist80053Id} · {control.title}
-              </Button>
-            ))}
+            <Badge variant={props.finding.status === 'open' ? 'destructive' : 'secondary'}>
+              {formatFindingStatus(props.finding.status)}
+            </Badge>
+            {activeFollowUp ? (
+              <Badge variant={getFollowUpStatusBadgeVariant(activeFollowUp.status)}>
+                Follow-up {formatFollowUpStatus(activeFollowUp.status)}
+              </Badge>
+            ) : null}
           </div>
-        ) : (
-          <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-            No linked controls.
-          </div>
-        )}
-      </div>
+        </div>
+      </SheetHeader>
 
-      {activeFollowUp ? (
-        <div className="space-y-4 rounded-lg border p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">Update follow-up</p>
+      <div className="space-y-6 p-4">
+        <DetailSection title="Finding state">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <DetailItem
+              label="Disposition"
+              value={formatFindingDisposition(props.finding.disposition)}
+            />
+            <DetailItem label="Source" value={props.finding.sourceLabel} />
+            <DetailItem
+              label="First observed"
+              value={new Date(props.finding.firstObservedAt).toLocaleString()}
+            />
+            <DetailItem
+              label="Last observed"
+              value={new Date(props.finding.lastObservedAt).toLocaleString()}
+            />
+            {props.finding.reviewedAt ? (
+              <DetailItem
+                label="Reviewed"
+                value={`${new Date(props.finding.reviewedAt).toLocaleString()}${props.finding.reviewedByDisplay ? ` by ${props.finding.reviewedByDisplay}` : ''}`}
+              />
+            ) : null}
+          </dl>
+        </DetailSection>
+
+        <DetailSection title="Review notes">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <DetailItem
+              label="Internal notes"
+              value={props.finding.internalNotes ?? 'No internal notes recorded.'}
+            />
+            <DetailItem
+              label="Customer summary"
+              value={props.finding.customerSummary ?? 'No customer summary recorded.'}
+            />
+            <DetailItem
+              label="Linked review run"
+              value={
+                props.finding.latestLinkedReviewRun
+                  ? `${props.finding.latestLinkedReviewRun.title} (${props.finding.latestLinkedReviewRun.status})`
+                  : 'No linked follow-up review run.'
+              }
+            />
+          </dl>
+        </DetailSection>
+
+        <DetailSection title="Linked controls">
+          {props.finding.relatedControls.length ? (
+            <div className="flex flex-wrap gap-2">
+              {props.finding.relatedControls.map((control) => (
+                <Button
+                  key={`${props.finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    props.onOpenControl(control.internalControlId);
+                  }}
+                >
+                  {control.nist80053Id} · {control.title}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No linked controls.</p>
+          )}
+        </DetailSection>
+
+        {activeFollowUp ? (
+          <DetailSection title="Update follow-up">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted-foreground">
                 {activeFollowUp.reviewedEvidenceCount} reviewed evidence item
                 {activeFollowUp.reviewedEvidenceCount === 1 ? '' : 's'} linked for closure
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  props.onAssignFollowUpToCurrentUser(activeFollowUp.id);
-                }}
-                disabled={props.busyAction !== null}
-              >
-                Assign to me
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  props.onClearFollowUpAssignee(activeFollowUp.id);
-                }}
-                disabled={props.busyAction !== null}
-              >
-                Clear assignee
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-summary`}>
-                Summary
-              </label>
-              <Textarea
-                id={`${fieldId}-fu-summary`}
-                value={followUpSummary}
-                onChange={(event) => setFollowUpSummary(event.target.value)}
-                placeholder="What remediation work is being tracked"
-                className="min-h-24"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-latest-note`}>
-                Latest work note
-              </label>
-              <Textarea
-                id={`${fieldId}-fu-latest-note`}
-                value={followUpLatestNote}
-                onChange={(event) => setFollowUpLatestNote(event.target.value)}
-                placeholder="Latest operator update"
-                className="min-h-24"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-status`}>
-                Status
-              </label>
-              <Select
-                value={followUpStatus}
-                onValueChange={(value: 'blocked' | 'in_progress' | 'open') => {
-                  setFollowUpStatus(value);
-                }}
-              >
-                <SelectTrigger id={`${fieldId}-fu-status`}>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="in_progress">In progress</SelectItem>
-                  <SelectItem value="blocked">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-due`}>
-                Due date
-              </label>
-              <Input
-                id={`${fieldId}-fu-due`}
-                type="date"
-                value={followUpDueDateInput}
-                onChange={(event) => setFollowUpDueDateInput(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
-              <p className="font-medium text-muted-foreground">Assignment</p>
-              <p>{activeFollowUp.assigneeDisplay ?? 'Unassigned'}</p>
-              <p className="mt-2 text-muted-foreground">
-                Updated {new Date(activeFollowUp.updatedAt).toLocaleString()}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              disabled={props.busyAction !== null}
-              onClick={() => {
-                void props.onUpdateFollowUpAction({
-                  dueAt:
-                    followUpDueDateInput.trim().length > 0
-                      ? parseEvidenceDateInput(followUpDueDateInput)
-                      : null,
-                  followUpActionId: activeFollowUp.id,
-                  latestNote: followUpLatestNote,
-                  status: followUpStatus,
-                  summary: followUpSummary,
-                });
-              }}
-            >
-              {props.busyAction === `follow-up:update:${activeFollowUp.id}`
-                ? 'Saving…'
-                : 'Save follow-up'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={props.busyAction !== null || activeFollowUp.reviewedEvidenceCount === 0}
-              onClick={() => {
-                void props.onResolveFollowUpAction({
-                  followUpActionId: activeFollowUp.id,
-                  resolutionNote,
-                });
-              }}
-            >
-              {props.busyAction === `follow-up:resolve:${activeFollowUp.id}`
-                ? 'Resolving…'
-                : 'Resolve follow-up'}
-            </Button>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-resolution`}>
-              Resolution note
-            </label>
-            <Textarea
-              id={`${fieldId}-fu-resolution`}
-              value={resolutionNote}
-              onChange={(event) => setResolutionNote(event.target.value)}
-              placeholder="What closed the remediation item"
-              className="min-h-24"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Tracked checklist items</p>
-            <div className="flex flex-wrap gap-2">
-              {activeFollowUp.controlLinks.map((controlLink) => (
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  key={`${activeFollowUp.id}:${controlLink.internalControlId}:${controlLink.itemId}`}
                   type="button"
-                  variant="outline"
                   size="sm"
+                  variant="outline"
                   onClick={() => {
-                    props.onOpenControl(controlLink.internalControlId);
+                    props.onAssignFollowUpToCurrentUser(activeFollowUp.id);
                   }}
+                  disabled={props.busyAction !== null}
                 >
-                  {formatControlLinkLabel(controlLink)}
+                  Assign to me
                 </Button>
-              ))}
-            </div>
-          </div>
-
-          <Collapsible open={evidenceExpanded} onOpenChange={setEvidenceExpanded}>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">
-                {activeFollowUp.reviewedEvidence.length} evidence item
-                {activeFollowUp.reviewedEvidence.length === 1 ? '' : 's'} (
-                {activeFollowUp.reviewedEvidenceCount} reviewed)
-              </span>
-              <CollapsibleTrigger asChild>
-                <Button variant="ghost" size="sm">
-                  {evidenceExpanded ? 'Hide evidence details' : 'Show evidence details'}
-                </Button>
-              </CollapsibleTrigger>
-            </div>
-            <CollapsibleContent className="space-y-3 pt-3">
-              <p className="text-sm font-medium">Closure evidence</p>
-              {activeFollowUp.reviewedEvidence.length ? (
-                <div className="space-y-2">
-                  {activeFollowUp.reviewedEvidence.map((evidence) => (
-                    <div
-                      key={evidence.id}
-                      className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
-                    >
-                      <p className="font-medium text-foreground">{evidence.title}</p>
-                      <p>
-                        {evidence.internalControlId} · {evidence.itemId}
-                      </p>
-                      <p>
-                        Reviewed{' '}
-                        {evidence.reviewedAt
-                          ? new Date(evidence.reviewedAt).toLocaleString()
-                          : 'pending timestamp'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                  No reviewed closure evidence is linked yet. Add proof below, then review it from
-                  the controls workspace before resolving this follow-up.
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-checklist`}>
-                    Checklist item
-                  </label>
-                  <Select value={evidenceControlKey} onValueChange={setEvidenceControlKey}>
-                    <SelectTrigger id={`${fieldId}-fu-ev-checklist`}>
-                      <SelectValue placeholder="Select checklist item" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeFollowUp.controlLinks.map((controlLink) => (
-                        <SelectItem
-                          key={`${controlLink.internalControlId}:${controlLink.itemId}`}
-                          value={`${controlLink.internalControlId}:${controlLink.itemId}`}
-                        >
-                          {formatControlLinkLabel(controlLink)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
-                  disabled={!selectedEvidenceControlLink}
-                  onClick={() => setEvidenceDialogOpen(true)}
+                  variant="outline"
+                  onClick={() => {
+                    props.onClearFollowUpAssignee(activeFollowUp.id);
+                  }}
+                  disabled={props.busyAction !== null}
                 >
-                  Add evidence
+                  Clear assignee
                 </Button>
               </div>
+            </div>
 
-              {activeFollowUp && selectedEvidenceControlLink ? (
-                <AddEvidenceDialog
-                  busyKey={props.busyAction}
-                  description={`Evidence for ${formatControlLinkLabel(selectedEvidenceControlLink)}`}
-                  linkBusyKey={`follow-up:evidence-link:${activeFollowUp.id}`}
-                  noteBusyKey={`follow-up:evidence-note:${activeFollowUp.id}`}
-                  onAddLink={async (payload) => {
-                    await props.onAddFollowUpEvidenceLink({
-                      ...payload,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                    });
-                  }}
-                  onAddNote={async (payload) => {
-                    await props.onAddFollowUpEvidenceNote({
-                      ...payload,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                    });
-                  }}
-                  onUploadFile={async (payload) => {
-                    await props.onUploadFollowUpEvidenceFile({
-                      ...payload,
-                      followUpActionId: activeFollowUp.id,
-                      internalControlId: selectedEvidenceControlLink.internalControlId,
-                      itemId: selectedEvidenceControlLink.itemId,
-                    });
-                  }}
-                  open={evidenceDialogOpen}
-                  onOpenChange={setEvidenceDialogOpen}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-summary`}>
+                  Summary
+                </label>
+                <Textarea
+                  id={`${fieldId}-fu-summary`}
+                  value={followUpSummary}
+                  onChange={(event) => setFollowUpSummary(event.target.value)}
+                  placeholder="What remediation work is being tracked"
+                  className="min-h-24"
                 />
-              ) : null}
-            </CollapsibleContent>
-          </Collapsible>
-        </div>
-      ) : (
-        <div className="space-y-4 rounded-lg border p-4">
-          <div>
-            <p className="text-sm font-medium">Create follow-up</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-latest-note`}>
+                  Latest work note
+                </label>
+                <Textarea
+                  id={`${fieldId}-fu-latest-note`}
+                  value={followUpLatestNote}
+                  onChange={(event) => setFollowUpLatestNote(event.target.value)}
+                  placeholder="Latest operator update"
+                  className="min-h-24"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-status`}>
+                  Status
+                </label>
+                <Select
+                  value={followUpStatus}
+                  onValueChange={(value: 'blocked' | 'in_progress' | 'open') => {
+                    setFollowUpStatus(value);
+                  }}
+                >
+                  <SelectTrigger id={`${fieldId}-fu-status`}>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="in_progress">In progress</SelectItem>
+                    <SelectItem value="blocked">Blocked</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-due`}>
+                  Due date
+                </label>
+                <Input
+                  id={`${fieldId}-fu-due`}
+                  type="date"
+                  value={followUpDueDateInput}
+                  onChange={(event) => setFollowUpDueDateInput(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
+                <p className="font-medium text-muted-foreground">Assignment</p>
+                <p>{activeFollowUp.assigneeDisplay ?? 'Unassigned'}</p>
+                <p className="mt-2 text-muted-foreground">
+                  Updated {new Date(activeFollowUp.updatedAt).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                disabled={props.busyAction !== null}
+                onClick={() => {
+                  void props.onUpdateFollowUpAction({
+                    dueAt:
+                      followUpDueDateInput.trim().length > 0
+                        ? parseEvidenceDateInput(followUpDueDateInput)
+                        : null,
+                    followUpActionId: activeFollowUp.id,
+                    latestNote: followUpLatestNote,
+                    status: followUpStatus,
+                    summary: followUpSummary,
+                  });
+                }}
+              >
+                {props.busyAction === `follow-up:update:${activeFollowUp.id}`
+                  ? 'Saving…'
+                  : 'Save follow-up'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={props.busyAction !== null || activeFollowUp.reviewedEvidenceCount === 0}
+                onClick={() => {
+                  void props.onResolveFollowUpAction({
+                    followUpActionId: activeFollowUp.id,
+                    resolutionNote,
+                  });
+                }}
+              >
+                {props.busyAction === `follow-up:resolve:${activeFollowUp.id}`
+                  ? 'Resolving…'
+                  : 'Resolve follow-up'}
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-resolution`}>
+                Resolution note
+              </label>
+              <Textarea
+                id={`${fieldId}-fu-resolution`}
+                value={resolutionNote}
+                onChange={(event) => setResolutionNote(event.target.value)}
+                placeholder="What closed the remediation item"
+                className="min-h-24"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Tracked checklist items</h3>
+              <div className="flex flex-wrap gap-2">
+                {activeFollowUp.controlLinks.map((controlLink) => (
+                  <Button
+                    key={`${activeFollowUp.id}:${controlLink.internalControlId}:${controlLink.itemId}`}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      props.onOpenControl(controlLink.internalControlId);
+                    }}
+                  >
+                    {formatControlLinkLabel(controlLink)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <Collapsible open={evidenceExpanded} onOpenChange={setEvidenceExpanded}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  {activeFollowUp.reviewedEvidence.length} evidence item
+                  {activeFollowUp.reviewedEvidence.length === 1 ? '' : 's'} (
+                  {activeFollowUp.reviewedEvidenceCount} reviewed)
+                </span>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm">
+                    {evidenceExpanded ? 'Hide evidence details' : 'Show evidence details'}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
+              <CollapsibleContent className="space-y-3 pt-3">
+                <h3 className="text-sm font-semibold">Closure evidence</h3>
+                {activeFollowUp.reviewedEvidence.length ? (
+                  <div className="space-y-2">
+                    {activeFollowUp.reviewedEvidence.map((evidence) => (
+                      <div
+                        key={evidence.id}
+                        className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
+                      >
+                        <p className="font-medium text-foreground">{evidence.title}</p>
+                        <p>
+                          {evidence.internalControlId} · {evidence.itemId}
+                        </p>
+                        <p>
+                          Reviewed{' '}
+                          {evidence.reviewedAt
+                            ? new Date(evidence.reviewedAt).toLocaleString()
+                            : 'pending timestamp'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    No reviewed closure evidence is linked yet. Add proof below, then review it from
+                    the controls workspace before resolving this follow-up.
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium" htmlFor={`${fieldId}-fu-ev-checklist`}>
+                      Checklist item
+                    </label>
+                    <Select value={evidenceControlKey} onValueChange={setEvidenceControlKey}>
+                      <SelectTrigger id={`${fieldId}-fu-ev-checklist`}>
+                        <SelectValue placeholder="Select checklist item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {activeFollowUp.controlLinks.map((controlLink) => (
+                          <SelectItem
+                            key={`${controlLink.internalControlId}:${controlLink.itemId}`}
+                            value={`${controlLink.internalControlId}:${controlLink.itemId}`}
+                          >
+                            {formatControlLinkLabel(controlLink)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!selectedEvidenceControlLink}
+                    onClick={() => setEvidenceDialogOpen(true)}
+                  >
+                    Add evidence
+                  </Button>
+                </div>
+
+                {activeFollowUp && selectedEvidenceControlLink ? (
+                  <AddEvidenceDialog
+                    busyKey={props.busyAction}
+                    description={`Evidence for ${formatControlLinkLabel(selectedEvidenceControlLink)}`}
+                    linkBusyKey={`follow-up:evidence-link:${activeFollowUp.id}`}
+                    noteBusyKey={`follow-up:evidence-note:${activeFollowUp.id}`}
+                    onAddLink={async (payload) => {
+                      await props.onAddFollowUpEvidenceLink({
+                        ...payload,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                      });
+                    }}
+                    onAddNote={async (payload) => {
+                      await props.onAddFollowUpEvidenceNote({
+                        ...payload,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                      });
+                    }}
+                    onUploadFile={async (payload) => {
+                      await props.onUploadFollowUpEvidenceFile({
+                        ...payload,
+                        followUpActionId: activeFollowUp.id,
+                        internalControlId: selectedEvidenceControlLink.internalControlId,
+                        itemId: selectedEvidenceControlLink.itemId,
+                      });
+                    }}
+                    open={evidenceDialogOpen}
+                    onOpenChange={setEvidenceDialogOpen}
+                  />
+                ) : null}
+              </CollapsibleContent>
+            </Collapsible>
+          </DetailSection>
+        ) : (
+          <DetailSection title="Create follow-up">
             <p className="text-sm text-muted-foreground">
               Select the checklist items this remediation work should support, then set the scope
               and due date.
             </p>
-          </div>
-          <div className="space-y-2">
-            {selectableControlLinks.map((control) => {
-              const controlKey = `${control.internalControlId}:${control.itemId}`;
-              const checked = selectedControlKeys.includes(controlKey);
-              return (
-                <label
-                  key={controlKey}
-                  className="flex items-start gap-3 rounded-md border p-3 text-sm"
-                >
-                  <Checkbox
-                    checked={checked}
-                    onCheckedChange={(nextChecked) => {
-                      setSelectedControlKeys((current) => {
-                        if (nextChecked) {
-                          return Array.from(new Set([...current, controlKey]));
-                        }
-                        return current.filter((entry) => entry !== controlKey);
-                      });
-                    }}
-                  />
-                  <span>
-                    <span className="font-medium">
-                      {control.nist80053Id} · {control.title}
+            <div className="space-y-2">
+              {selectableControlLinks.map((control) => {
+                const controlKey = `${control.internalControlId}:${control.itemId}`;
+                const checked = selectedControlKeys.includes(controlKey);
+                return (
+                  <label
+                    key={controlKey}
+                    className="flex items-start gap-3 rounded-md border p-3 text-sm"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(nextChecked) => {
+                        setSelectedControlKeys((current) => {
+                          if (nextChecked) {
+                            return Array.from(new Set([...current, controlKey]));
+                          }
+                          return current.filter((entry) => entry !== controlKey);
+                        });
+                      }}
+                    />
+                    <span>
+                      <span className="font-medium">
+                        {control.nist80053Id} · {control.title}
+                      </span>
+                      {control.itemLabel ? (
+                        <span className="block text-muted-foreground">{control.itemLabel}</span>
+                      ) : null}
                     </span>
-                    {control.itemLabel ? (
-                      <span className="block text-muted-foreground">{control.itemLabel}</span>
-                    ) : null}
-                  </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-cr-summary`}>
+                  Summary
                 </label>
-              );
-            })}
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-cr-summary`}>
-                Summary
-              </label>
-              <Textarea
-                id={`${fieldId}-cr-summary`}
-                value={createSummary}
-                onChange={(event) => setCreateSummary(event.target.value)}
-                placeholder="Describe the remediation work that will be tracked"
-                className="min-h-24"
-              />
+                <Textarea
+                  id={`${fieldId}-cr-summary`}
+                  value={createSummary}
+                  onChange={(event) => setCreateSummary(event.target.value)}
+                  placeholder="Describe the remediation work that will be tracked"
+                  className="min-h-24"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${fieldId}-cr-due`}>
+                  Due date
+                </label>
+                <Input
+                  id={`${fieldId}-cr-due`}
+                  type="date"
+                  value={createDueDateInput}
+                  onChange={(event) => setCreateDueDateInput(event.target.value)}
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${fieldId}-cr-due`}>
-                Due date
-              </label>
-              <Input
-                id={`${fieldId}-cr-due`}
-                type="date"
-                value={createDueDateInput}
-                onChange={(event) => setCreateDueDateInput(event.target.value)}
-              />
-            </div>
-          </div>
-          <Button
-            type="button"
-            disabled={props.busyAction !== null || selectedCreateControlLinks.length === 0}
-            onClick={() => {
-              void props.onCreateFollowUpAction({
-                controlLinks: selectedCreateControlLinks,
-                dueAt:
-                  createDueDateInput.trim().length > 0
-                    ? parseEvidenceDateInput(createDueDateInput)
-                    : null,
-                findingKey: props.finding.findingKey,
-                summary: createSummary,
-              });
-            }}
-          >
-            {props.busyAction === `follow-up:create:${props.finding.findingKey}`
-              ? 'Starting…'
-              : 'Start tracked follow-up'}
-          </Button>
-        </div>
-      )}
+            <Button
+              type="button"
+              disabled={props.busyAction !== null || selectedCreateControlLinks.length === 0}
+              onClick={() => {
+                void props.onCreateFollowUpAction({
+                  controlLinks: selectedCreateControlLinks,
+                  dueAt:
+                    createDueDateInput.trim().length > 0
+                      ? parseEvidenceDateInput(createDueDateInput)
+                      : null,
+                  findingKey: props.finding.findingKey,
+                  summary: createSummary,
+                });
+              }}
+            >
+              {props.busyAction === `follow-up:create:${props.finding.findingKey}`
+                ? 'Starting…'
+                : 'Start tracked follow-up'}
+            </Button>
+          </DetailSection>
+        )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            props.onOpenReviews(props.finding.latestLinkedReviewRun?.id);
-          }}
-        >
-          {props.finding.latestLinkedReviewRun ? 'Open linked review run' : 'Open reviews'}
-        </Button>
-        {props.finding.latestLinkedReviewRun ? (
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             onClick={() => {
-              props.onOpenReviews();
+              props.onOpenReviews(props.finding.latestLinkedReviewRun?.id);
             }}
           >
-            Open all reviews
+            {props.finding.latestLinkedReviewRun ? 'Open linked review run' : 'Open reviews'}
           </Button>
-        ) : null}
+          {props.finding.latestLinkedReviewRun ? (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                props.onOpenReviews();
+              }}
+            >
+              Open all reviews
+            </Button>
+          ) : null}
+        </div>
       </div>
+    </>
+  );
+}
+
+function DetailSection(props: { children: React.ReactNode; title: string }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold">{props.title}</h3>
+      {props.children}
+    </section>
+  );
+}
+
+function DetailItem(props: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {props.label}
+      </dt>
+      <dd className="text-sm text-foreground">{props.value}</dd>
     </div>
   );
 }

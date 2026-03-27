@@ -1,23 +1,10 @@
 import type { Id } from '@convex/_generated/dataModel';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '~/components/ui/accordion';
+import { useMemo } from 'react';
+import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Input } from '~/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
 import { Spinner } from '~/components/ui/spinner';
-import { Textarea } from '~/components/ui/textarea';
 import { formatTableDate } from '~/components/data-table';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
@@ -27,6 +14,27 @@ import {
   truncateHash,
 } from '~/features/security/formatters';
 import type { AuditReadinessOverview, EvidenceReportListItem } from '~/features/security/types';
+
+const REVIEW_STATUS_OPTIONS: Array<
+  TableFilterOption<'all' | EvidenceReportListItem['reviewStatus']>
+> = [
+  { label: 'All review states', value: 'all' },
+  { label: 'Pending review', value: 'pending' },
+  { label: 'Reviewed', value: 'reviewed' },
+  { label: 'Needs follow-up', value: 'needs_follow_up' },
+];
+
+const REPORT_KIND_OPTIONS: Array<TableFilterOption<'all' | EvidenceReportListItem['reportKind']>> =
+  [
+    { label: 'All report kinds', value: 'all' },
+    { label: 'Security posture', value: 'security_posture' },
+    { label: 'Audit integrity', value: 'audit_integrity' },
+    { label: 'Audit readiness', value: 'audit_readiness' },
+    { label: 'Annual review', value: 'annual_review' },
+    { label: 'Findings snapshot', value: 'findings_snapshot' },
+    { label: 'Vendor posture', value: 'vendor_posture_snapshot' },
+    { label: 'Control workspace', value: 'control_workspace_snapshot' },
+  ];
 
 export function AdminSecurityReportsTab(props: {
   auditReadiness: AuditReadinessOverview | undefined;
@@ -76,6 +84,18 @@ export function AdminSecurityReportsTab(props: {
     latestSealEndSequence: null,
     required: false,
   };
+
+  const reviewQueueCounts = useMemo(() => {
+    if (!props.evidenceReports) {
+      return { pending: undefined, needsFollowUp: undefined, exported: undefined };
+    }
+    return {
+      pending: props.evidenceReports.filter((item) => item.reviewStatus === 'pending').length,
+      needsFollowUp: props.evidenceReports.filter((item) => item.reviewStatus === 'needs_follow_up')
+        .length,
+      exported: props.evidenceReports.filter((item) => item.latestExport !== null).length,
+    };
+  }, [props.evidenceReports]);
 
   return (
     <>
@@ -323,302 +343,132 @@ export function AdminSecurityReportsTab(props: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.8fr))]">
-            <Input
-              value={props.reportSearch}
-              onChange={(event) => {
-                props.onChangeReportSearch(event.target.value);
-              }}
-              placeholder="Search reports by kind, notes, or customer summary"
-              aria-label="Search reports"
-              className="bg-background"
+          <div className="grid gap-4 md:grid-cols-3">
+            <AdminSecuritySummaryCard
+              title="Pending review"
+              description="Reports waiting for first pass."
+              value={renderCardStatValue(reviewQueueCounts.pending)}
+              footer={
+                reviewQueueCounts.pending !== undefined
+                  ? `${reviewQueueCounts.needsFollowUp ?? 0} need follow-up`
+                  : undefined
+              }
             />
-            <Select
-              value={props.reportReviewStatusFilter}
-              onValueChange={(value: 'all' | EvidenceReportListItem['reviewStatus']) => {
-                props.onChangeReportReviewStatus(value);
-              }}
-            >
-              <SelectTrigger aria-label="Filter reports by review status" className="bg-background">
-                <SelectValue placeholder="All review states" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All review states</SelectItem>
-                <SelectItem value="pending">Pending review</SelectItem>
-                <SelectItem value="reviewed">Reviewed</SelectItem>
-                <SelectItem value="needs_follow_up">Needs follow-up</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={props.reportKindFilter}
-              onValueChange={(value: 'all' | EvidenceReportListItem['reportKind']) => {
-                props.onChangeReportKind(value);
-              }}
-            >
-              <SelectTrigger aria-label="Filter reports by kind" className="bg-background">
-                <SelectValue placeholder="All report kinds" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All report kinds</SelectItem>
-                <SelectItem value="security_posture">Security posture</SelectItem>
-                <SelectItem value="audit_integrity">Audit integrity</SelectItem>
-                <SelectItem value="audit_readiness">Audit readiness</SelectItem>
-                <SelectItem value="annual_review">Annual review</SelectItem>
-                <SelectItem value="findings_snapshot">Findings snapshot</SelectItem>
-                <SelectItem value="vendor_posture_snapshot">Vendor posture snapshot</SelectItem>
-                <SelectItem value="control_workspace_snapshot">
-                  Control workspace snapshot
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <AdminSecuritySummaryCard
+              title="Needs follow-up"
+              description="Reports requiring more evidence."
+              value={renderCardStatValue(reviewQueueCounts.needsFollowUp)}
+              footer={
+                reviewQueueCounts.needsFollowUp !== undefined
+                  ? `${reviewQueueCounts.exported ?? 0} already exported`
+                  : undefined
+              }
+            />
+            <AdminSecuritySummaryCard
+              title="Exported bundles"
+              description="Reports already packaged."
+              value={renderCardStatValue(reviewQueueCounts.exported)}
+              footer={
+                reviewQueueCounts.exported !== undefined
+                  ? `${props.evidenceReports?.length ?? 0} total reports`
+                  : undefined
+              }
+            />
           </div>
 
-          <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 md:grid-cols-3">
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Pending review
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">
+              <p className="text-sm text-muted-foreground whitespace-nowrap">
+                {props.evidenceReports?.length ?? 0} matches
               </p>
-              <div className="mt-2 flex min-h-8 items-center text-2xl font-semibold">
-                {renderCardStatValue(
-                  props.evidenceReports?.filter((item) => item.reviewStatus === 'pending').length,
-                )}
+              <div className="flex flex-wrap items-center gap-2">
+                <TableFilter<'all' | EvidenceReportListItem['reviewStatus']>
+                  value={props.reportReviewStatusFilter}
+                  options={REVIEW_STATUS_OPTIONS}
+                  onValueChange={props.onChangeReportReviewStatus}
+                  className="shrink-0"
+                  ariaLabel="Filter reports by review status"
+                />
+                <TableFilter<'all' | EvidenceReportListItem['reportKind']>
+                  value={props.reportKindFilter}
+                  options={REPORT_KIND_OPTIONS}
+                  onValueChange={props.onChangeReportKind}
+                  className="shrink-0"
+                  ariaLabel="Filter reports by kind"
+                />
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">Reports waiting for first pass</p>
             </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Needs follow-up
-              </p>
-              <div className="mt-2 flex min-h-8 items-center text-2xl font-semibold">
-                {renderCardStatValue(
-                  props.evidenceReports?.filter((item) => item.reviewStatus === 'needs_follow_up')
-                    .length,
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">Reports requiring more evidence</p>
-            </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Exported bundles
-              </p>
-              <div className="mt-2 flex min-h-8 items-center text-2xl font-semibold">
-                {renderCardStatValue(
-                  props.evidenceReports?.filter((item) => item.latestExport !== null).length,
-                )}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">Reports already packaged</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
+              <TableSearch
+                initialValue={props.reportSearch}
+                onSearch={props.onChangeReportSearch}
+                placeholder="Search reports by kind, notes, or customer summary"
+                isSearching={false}
+                className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
+                ariaLabel="Search reports"
+              />
             </div>
           </div>
 
           {props.evidenceReports?.length ? (
-            <Accordion type="multiple" className="space-y-3">
-              {props.evidenceReports.map((item) => {
-                const currentNotes = props.reportNotes[item.id] ?? item.internalNotes ?? '';
-                const currentCustomerSummary =
-                  props.reportCustomerSummaries[item.id] ?? item.customerSummary ?? '';
-                const isDirty =
-                  currentNotes !== (item.internalNotes ?? '') ||
-                  currentCustomerSummary !== (item.customerSummary ?? '');
-
-                return (
-                  <AccordionItem
-                    key={item.id}
-                    value={item.id}
-                    className="overflow-hidden rounded-xl border bg-background"
+            <div className="space-y-3">
+              {props.evidenceReports.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-col gap-3 rounded-xl border bg-background p-4 lg:flex-row lg:items-start lg:justify-between"
+                >
+                  <button
+                    type="button"
+                    className="flex-1 text-left"
+                    onClick={() => {
+                      props.handleOpenReportDetail(item.id);
+                    }}
                   >
-                    <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
-                      <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                        <div className="grid w-full gap-4 text-left lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)] lg:items-start">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-base font-semibold">{item.reportKind}</p>
-                              <Badge
-                                variant={getEvidenceQueueReviewBadgeVariant(item.reviewStatus)}
-                              >
-                                {formatEvidenceQueueReviewStatus(item.reviewStatus)}
-                              </Badge>
-                              {item.latestExport ? (
-                                <Badge variant="secondary">Exported</Badge>
-                              ) : null}
-                            </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                              <p>Created {new Date(item.createdAt).toLocaleString()}</p>
-                              <p>Content hash {truncateHash(item.contentHash)}</p>
-                              {item.reviewedAt ? (
-                                <p>Reviewed {new Date(item.reviewedAt).toLocaleString()}</p>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Export bundle
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {item.latestExport
-                                  ? truncateHash(item.latestExport.exportHash)
-                                  : 'Not exported'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Notes
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {isDirty ? 'Unsaved edits' : 'Saved'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </AccordionTrigger>
-                      <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={item.reviewStatus === 'reviewed' ? 'outline' : 'default'}
-                          disabled={props.busyReportAction !== null}
-                          onClick={() => {
-                            void props.handleReviewReport(item.id, 'reviewed');
-                          }}
-                        >
-                          {props.busyReportAction === `${item.id}:reviewed`
-                            ? 'Saving…'
-                            : 'Mark reviewed'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            props.handleOpenReportDetail(item.id);
-                          }}
-                        >
-                          View details
-                        </Button>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-base font-semibold">{item.reportKind}</p>
+                        <Badge variant={getEvidenceQueueReviewBadgeVariant(item.reviewStatus)}>
+                          {formatEvidenceQueueReviewStatus(item.reviewStatus)}
+                        </Badge>
+                        {item.latestExport ? <Badge variant="secondary">Exported</Badge> : null}
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                        <p>Created {new Date(item.createdAt).toLocaleString()}</p>
+                        <p>Content hash {truncateHash(item.contentHash)}</p>
+                        {item.reviewedAt ? (
+                          <p>Reviewed {new Date(item.reviewedAt).toLocaleString()}</p>
+                        ) : null}
                       </div>
                     </div>
-                    <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
-                      <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                        <div className="space-y-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Internal notes
-                              </p>
-                              <Textarea
-                                value={currentNotes}
-                                onChange={(event) => {
-                                  props.setReportNotes((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Add reviewer-only notes"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Customer summary
-                              </p>
-                              <Textarea
-                                value={currentCustomerSummary}
-                                onChange={(event) => {
-                                  props.setReportCustomerSummaries((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Summarize the evidence package for customers"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <div className="rounded-lg border bg-background p-3">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Content hash
-                              </p>
-                              <p className="mt-2 break-all font-mono text-xs">{item.contentHash}</p>
-                            </div>
-                            <div className="rounded-lg border bg-background p-3">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Manifest hash
-                              </p>
-                              <p className="mt-2 break-all font-mono text-xs">
-                                {item.latestExport?.manifestHash ?? 'Not recorded yet'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-4 rounded-lg border bg-background p-4">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Review actions
-                            </p>
-                            <div className="flex flex-col gap-2">
-                              <Button
-                                type="button"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleReviewReport(item.id, 'reviewed');
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:reviewed`
-                                  ? 'Saving…'
-                                  : 'Mark reviewed'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleReviewReport(item.id, 'needs_follow_up');
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:needs_follow_up`
-                                  ? 'Saving…'
-                                  : 'Needs follow-up'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleExportReport(item.id);
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:export`
-                                  ? 'Exporting…'
-                                  : 'Export bundle'}
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-2 text-sm text-muted-foreground">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Export status
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {item.latestExport ? 'Bundle recorded' : 'Not exported yet'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Manifest
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {item.latestExport ? 'Recorded' : 'Not recorded yet'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
+                  </button>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={item.reviewStatus === 'reviewed' ? 'outline' : 'default'}
+                      disabled={props.busyReportAction !== null}
+                      onClick={() => {
+                        void props.handleReviewReport(item.id, 'reviewed');
+                      }}
+                    >
+                      {props.busyReportAction === `${item.id}:reviewed`
+                        ? 'Saving…'
+                        : 'Mark reviewed'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        props.handleOpenReportDetail(item.id);
+                      }}
+                    >
+                      View details
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
           )}

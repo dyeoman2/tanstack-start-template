@@ -2,9 +2,22 @@ import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
+import { Check, ChevronDown, Download } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '~/components/ui/alert-dialog';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import {
   Sheet,
   SheetContent,
@@ -13,19 +26,35 @@ import {
   SheetTitle,
 } from '~/components/ui/sheet';
 import { useToast } from '~/components/ui/toast';
+import {
+  AdminSecurityPolicyDetail,
+  getFileNameFromDisposition,
+  getPolicyPdfFileName,
+} from '~/features/security/components/AdminSecurityPolicyDetail';
+import { AdminSecurityReportDetail } from '~/features/security/components/AdminSecurityReportDetail';
+import { SecurityPolicyMarkdownRenderer } from '~/features/security/components/SecurityPolicyMarkdownRenderer';
 import { DetailLoadingState } from '~/features/security/components/routes/AdminSecurityRouteShared';
 import {
   getSecurityPath,
   useSecurityNavigation,
 } from '~/features/security/components/routes/securityRouteUtils';
-import { AdminSecurityReviewsTab } from '~/features/security/components/tabs/AdminSecurityReviewsTab';
-import { mergeReviewRunSummaryWithDetail } from '~/features/security/formatters';
+import {
+  AdminSecurityReviewsTab,
+  type AutoCollectedEvidenceLink,
+} from '~/features/security/components/tabs/AdminSecurityReviewsTab';
+import {
+  getReviewTaskBadgeVariant,
+  getReviewTaskStatusLabel,
+  mergeReviewRunSummaryWithDetail,
+} from '~/features/security/formatters';
 import type { SecurityReviewsSearch } from '~/features/security/search';
 import { finalizeReviewRunServerFn } from '~/features/security/server/security-reviews';
 import type {
+  EvidenceReportDetail,
   ReviewRunDetail,
   ReviewRunSummary,
   ReviewTaskDetail,
+  SecurityPolicyDetail,
 } from '~/features/security/types';
 
 export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch }) {
@@ -85,6 +114,24 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
   const [newTriggeredReviewType, setNewTriggeredReviewType] = useState('manual_follow_up');
   const [batchReviewTasks, setBatchReviewTasks] = useState<ReviewTaskDetail[]>([]);
   const [isBatchReviewOpen, setIsBatchReviewOpen] = useState(false);
+  const [viewingTask, setViewingTask] = useState<ReviewTaskDetail | null>(null);
+  const [viewingEvidenceLink, setViewingEvidenceLink] = useState<
+    AutoCollectedEvidenceLink['link'] | null
+  >(null);
+
+  const viewingPolicyDetail = useQuery(
+    api.securityPolicies.getSecurityPolicyDetail,
+    viewingTask?.policy ? { policyId: viewingTask.policy.policyId } : 'skip',
+  ) as SecurityPolicyDetail | null | undefined;
+
+  const viewingReportDetail = useQuery(
+    api.securityReports.getEvidenceReportDetail,
+    viewingEvidenceLink?.sourceType === 'evidence_report' ||
+      viewingEvidenceLink?.sourceType === 'backup_verification_report'
+      ? { id: viewingEvidenceLink.sourceId as Id<'evidenceReports'> }
+      : 'skip',
+  ) as EvidenceReportDetail | null | undefined;
+
   const reviewsInitializedRef = useRef(false);
   const reviewsRefreshedForRunRef = useRef<string | null>(null);
 
@@ -164,7 +211,7 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
       .catch((error: unknown) => {
         reviewsRefreshedForRunRef.current = null;
         showToast(
-          error instanceof Error ? error.message : 'Failed to refresh review automation.',
+          error instanceof Error ? error.message : 'Failed to refresh review evidence.',
           'error',
         );
       });
@@ -206,7 +253,15 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         return latestLink
           ? [
               {
-                link: latestLink,
+                reviewTaskId: task.id,
+                link: {
+                  freshAt: latestLink.freshAt,
+                  id: latestLink.id,
+                  linkedAt: latestLink.linkedAt,
+                  sourceId: latestLink.sourceId,
+                  sourceLabel: latestLink.sourceLabel,
+                  sourceType: latestLink.sourceType,
+                },
                 taskTitle: task.title,
               },
             ]
@@ -264,10 +319,10 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         setLocalAnnualReviewDetail(detail);
         setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
       }
-      showToast('Annual review automation refreshed.', 'success');
+      showToast('Annual review evidence refreshed.', 'success');
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : 'Failed to refresh annual review automation.',
+        error instanceof Error ? error.message : 'Failed to refresh annual review evidence.',
         'error',
       );
     } finally {
@@ -407,6 +462,14 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
     setIsBatchReviewOpen(true);
   }, []);
 
+  const handleViewTaskSource = useCallback((task: ReviewTaskDetail) => {
+    setViewingTask(task);
+  }, []);
+
+  const handleViewEvidenceLink = useCallback((link: AutoCollectedEvidenceLink['link']) => {
+    setViewingEvidenceLink(link);
+  }, []);
+
   return (
     <>
       <AdminSecurityReviewsTab
@@ -426,6 +489,8 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
         handleRefreshAnnualReview={handleRefreshAnnualReview}
         isPreparingAnnualReview={isPreparingAnnualReview}
         navigateToControl={navigateToControl}
+        onViewEvidenceLink={handleViewEvidenceLink}
+        onViewTaskSource={handleViewTaskSource}
         newTriggeredReviewTitle={newTriggeredReviewTitle}
         newTriggeredReviewType={newTriggeredReviewType}
         onChangeDocumentField={(taskId, field, value) => {
@@ -507,8 +572,11 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
               <div className="space-y-3">
                 <p className="text-sm font-medium">Tasks</p>
                 {selectedReviewRunDetail.tasks.length ? (
-                  selectedReviewRunDetail.tasks.map((task) => (
-                    <div key={task.id} className="rounded-lg border p-4">
+                  selectedReviewRunDetail.tasks.map((task, index) => (
+                    <div
+                      key={`${selectedReviewRunDetail.id}:${task.id}:${index}`}
+                      className="rounded-lg border p-4"
+                    >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-medium">{task.title}</p>
@@ -553,6 +621,264 @@ export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch
           ) : null}
         </SheetContent>
       </Sheet>
+
+      {/* Task source detail sheet (policy / vendor / findings) */}
+      <Sheet
+        open={viewingTask !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingTask(null);
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {viewingTask?.policy ? (
+            viewingPolicyDetail === undefined ? (
+              <DetailLoadingState label="Loading policy detail" />
+            ) : viewingPolicyDetail ? (
+              <>
+                <AdminSecurityPolicyDetail
+                  hideReviewLinkage
+                  hideSourceActions
+                  onOpenControl={navigateToControl}
+                  policy={viewingPolicyDetail}
+                >
+                  {viewingPolicyDetail.sourceMarkdown ? (
+                    <PolicySourceCollapsible policy={viewingPolicyDetail} />
+                  ) : null}
+                </AdminSecurityPolicyDetail>
+                <PolicyReviewStatus
+                  task={viewingTask}
+                  onAttest={handleAttestTask}
+                  busyAction={busyReviewTaskAction}
+                />
+              </>
+            ) : (
+              <SheetHeader>
+                <SheetTitle>Policy not found</SheetTitle>
+                <SheetDescription>The linked policy could not be loaded.</SheetDescription>
+              </SheetHeader>
+            )
+          ) : viewingTask ? (
+            <SheetHeader>
+              <SheetTitle>{viewingTask.title}</SheetTitle>
+              <SheetDescription>{viewingTask.description}</SheetDescription>
+            </SheetHeader>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      {/* Evidence link detail sheet */}
+      <Sheet
+        open={viewingEvidenceLink !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingEvidenceLink(null);
+          }
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {viewingReportDetail === undefined && viewingEvidenceLink ? (
+            <DetailLoadingState label="Loading evidence report" />
+          ) : viewingReportDetail ? (
+            <AdminSecurityReportDetail
+              generatedReport={viewingReportDetail.contentJson ?? null}
+              onOpenControl={navigateToControl}
+              onOpenReviewRun={(reviewRunId) => {
+                setViewingEvidenceLink(null);
+                void navigate({
+                  search: {
+                    ...props.search,
+                    selectedReviewRun: reviewRunId,
+                  },
+                  to: getSecurityPath('reviews'),
+                });
+              }}
+              report={viewingReportDetail}
+            />
+          ) : viewingEvidenceLink ? (
+            <SheetHeader>
+              <SheetTitle>{viewingEvidenceLink.sourceLabel}</SheetTitle>
+              <SheetDescription>
+                Details for this evidence type are not available inline.
+              </SheetDescription>
+            </SheetHeader>
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </>
+  );
+}
+
+function PolicyReviewStatus(props: {
+  busyAction: string | null;
+  onAttest: (task: ReviewTaskDetail) => Promise<void>;
+  task: ReviewTaskDetail;
+}) {
+  const { task, busyAction } = props;
+  const isBusy = busyAction === `${task.id}:attest`;
+  const canAttest =
+    task.status === 'ready' && task.taskType !== 'automated_check' && task.taskType !== 'follow_up';
+
+  const attestationHistory = useQuery(api.securityReviews.getReviewTaskAttestationHistory, {
+    reviewTaskId: task.id as Id<'reviewTasks'>,
+  });
+
+  return (
+    <div className="space-y-3 px-4">
+      <h3 className="text-sm font-semibold">Review status</h3>
+
+      <dl className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Review cycle
+          </dt>
+          <dd className="text-sm text-foreground">Annual</dd>
+        </div>
+        <div className="space-y-1">
+          <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Status
+          </dt>
+          <dd>
+            <Badge variant={getReviewTaskBadgeVariant(task)}>
+              {getReviewTaskStatusLabel(task)}
+            </Badge>
+          </dd>
+        </div>
+      </dl>
+
+      {task.status === 'completed' && task.latestAttestation ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Check className="size-4 text-green-600" />
+          <span>
+            Attested by {task.latestAttestation.attestedByDisplay ?? 'Unknown'} on{' '}
+            {new Date(task.latestAttestation.attestedAt).toLocaleDateString()}
+          </span>
+        </div>
+      ) : canAttest ? (
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button type="button" variant="outline" size="sm" disabled={isBusy}>
+              {isBusy ? 'Saving…' : 'Attest to review'}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Confirm attestation</AlertDialogTitle>
+              <AlertDialogDescription>
+                You are attesting that you have reviewed{' '}
+                <strong>{task.policy?.title ?? task.title}</strong> and it remains current.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isBusy}
+                onClick={() => {
+                  void props.onAttest(task);
+                }}
+              >
+                {isBusy ? 'Saving…' : 'Confirm'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
+
+      {attestationHistory && attestationHistory.length > 0 ? (
+        <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Past attestations
+          </p>
+          <div className="space-y-1">
+            {attestationHistory.map(
+              (entry: { attestedAt: number; attestedByDisplay: string | null }, index: number) => (
+                <div
+                  key={`attestation-${index}`}
+                  className="flex items-center justify-between text-sm"
+                >
+                  <span className="text-muted-foreground">
+                    {entry.attestedByDisplay ?? 'Unknown'}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {new Date(entry.attestedAt).toLocaleDateString()}
+                  </span>
+                </div>
+              ),
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PolicySourceCollapsible(props: { policy: SecurityPolicyDetail }) {
+  const { policy } = props;
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  async function handleDownloadPdf(e: React.MouseEvent) {
+    e.stopPropagation();
+    const sourceMarkdown = policy.sourceMarkdown;
+    if (typeof sourceMarkdown !== 'string' || sourceMarkdown.length === 0) return;
+
+    setIsDownloading(true);
+    try {
+      const response = await fetch('/api/security-policy-pdf', {
+        body: JSON.stringify({
+          fileName: getPolicyPdfFileName(policy.title),
+          markdownContent: sourceMarkdown,
+          sourcePath: policy.sourcePath,
+          title: policy.title,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error((await response.text()) || 'Failed to generate policy PDF');
+      }
+      const blob = await response.blob();
+      const resolvedFileName = getFileNameFromDisposition(
+        response.headers.get('Content-Disposition'),
+        getPolicyPdfFileName(policy.title),
+      );
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = resolvedFileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Policy source</h3>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isDownloading}
+          onClick={(e) => void handleDownloadPdf(e)}
+        >
+          <Download className="size-4" />
+          {isDownloading ? 'Generating PDF…' : 'Download PDF'}
+        </Button>
+      </div>
+      <Collapsible className="rounded-md border">
+        <CollapsibleTrigger className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-medium hover:bg-muted/20 focus-visible:border-transparent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/70 [&[data-state=open]>svg]:rotate-180">
+          View policy document
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-t px-4 pb-4 pt-4">
+          <SecurityPolicyMarkdownRenderer bare content={policy.sourceMarkdown!} />
+        </CollapsibleContent>
+      </Collapsible>
+    </section>
   );
 }

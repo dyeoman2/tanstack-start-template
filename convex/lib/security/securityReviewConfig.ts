@@ -6,6 +6,56 @@ export const REVIEW_RUN_SOURCE_SURFACE = 'admin.security.reviews';
 export const ANNUAL_REVIEW_TASK_FRESHNESS_DAYS = 365;
 
 export const VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR = {
+  aws: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
+  cloudflare: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
+  convex: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
+  github: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
+  netlify: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
   openrouter: [
     {
       internalControlId: 'CTRL-SA-009',

@@ -138,7 +138,7 @@ export function AdminSecurityReviewTaskGroup(props: {
                       <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
                         {task.status === 'completed'
                           ? 'This task is already satisfied by auto-collected evidence. Review the linked evidence or open follow-up only if something changed.'
-                          : 'This task depends on automated evidence collection. Refresh automation or open follow-up if the result looks incorrect.'}
+                          : 'This task depends on automated evidence collection. Refresh evidence or open follow-up if the result looks incorrect.'}
                       </div>
                     ) : null}
 
