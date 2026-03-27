@@ -27,13 +27,40 @@ const normalizeStatusCode = (status: string | number | undefined): number => {
 };
 
 /**
+ * Build a sanitized representation of an error for structured logging.
+ * Strips properties that could contain request bodies, headers, cookies,
+ * or other user-submitted content that may include PHI.
+ */
+function sanitizeErrorForLogging(error: unknown): Record<string, unknown> {
+  if (error instanceof APIError) {
+    return { name: 'APIError', message: error.message, status: error.status };
+  }
+
+  if (error instanceof ServerError) {
+    return { name: error.name, message: error.message, code: error.code };
+  }
+
+  if (error instanceof Error) {
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    return {
+      name: error.name,
+      message: error.message,
+      ...(statusCode !== undefined ? { statusCode } : {}),
+      stack: error.stack?.split('\n').slice(0, 5).join('\n'),
+    };
+  }
+
+  return { type: typeof error, message: String(error).slice(0, 200) };
+}
+
+/**
  * Standard error handler for server functions
  * Logs errors consistently and returns formatted error information
  */
 export const handleServerError = (error: unknown, context?: string): ServerError => {
   const contextPrefix = context ? `[${context}] ` : '';
 
-  console.error(`${contextPrefix}Server function error:`, error);
+  console.error(`${contextPrefix}Server function error:`, sanitizeErrorForLogging(error));
 
   // Handle APIError from better-auth
   if (error instanceof APIError) {

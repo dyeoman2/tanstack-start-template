@@ -398,8 +398,9 @@ function ChecklistItemActions(props: {
   const [evidenceDateInput, setEvidenceDateInput] = useState(() => getTodayDateInputValue());
   const [reviewDueIntervalMonths, setReviewDueIntervalMonths] =
     useState<EvidenceReviewDueIntervalMonths>(12);
-  const [source, setSource] = useState<EvidenceSource | ''>('');
+  const [source, setSource] = useState<EvidenceSource | ''>('internal_review');
   const [sufficiency, setSufficiency] = useState<EvidenceSufficiency>('sufficient');
+  const [showEvidenceAdvanced, setShowEvidenceAdvanced] = useState(false);
   const linkKey = `${control.internalControlId}:${item.itemId}:link`;
   const noteKey = `${control.internalControlId}:${item.itemId}:note`;
   const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
@@ -422,8 +423,9 @@ function ChecklistItemActions(props: {
     setNoteDescription('');
     setEvidenceDateInput(getTodayDateInputValue());
     setReviewDueIntervalMonths(12);
-    setSource('');
+    setSource('internal_review');
     setSufficiency('sufficient');
+    setShowEvidenceAdvanced(false);
     setProofComposerTab('link');
   }, []);
 
@@ -529,81 +531,92 @@ function ChecklistItemActions(props: {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${item.itemId}-evidence-date`}>
-                  Evidence date
-                </label>
-                <Input
-                  id={`${item.itemId}-evidence-date`}
-                  type="date"
-                  value={evidenceDateInput}
-                  onChange={(event) => setEvidenceDateInput(event.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${item.itemId}-review-due`}>
-                  Review due
-                </label>
-                <Select
-                  value={String(reviewDueIntervalMonths)}
-                  onValueChange={(value) =>
-                    setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
-                  }
-                >
-                  <SelectTrigger id={`${item.itemId}-review-due`} className="w-full">
-                    <SelectValue placeholder="Select interval" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={String(option)}>
-                        {formatEvidenceReviewDueInterval(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${item.itemId}-source`}>
-                  Source
-                </label>
-                <Select
-                  value={source}
-                  onValueChange={(value) => setSource(value as EvidenceSource)}
-                >
-                  <SelectTrigger id={`${item.itemId}-source`} className="w-full">
-                    <SelectValue placeholder="Select source" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_SOURCE_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {formatEvidenceSource(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium" htmlFor={`${item.itemId}-sufficiency`}>
-                  Sufficiency
-                </label>
-                <Select
-                  value={sufficiency}
-                  onValueChange={(value) => setSufficiency(value as EvidenceSufficiency)}
-                >
-                  <SelectTrigger id={`${item.itemId}-sufficiency`} className="w-full">
-                    <SelectValue placeholder="Select sufficiency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {EVIDENCE_SUFFICIENCY_OPTIONS.map((option) => (
-                      <SelectItem key={option} value={option}>
-                        {formatEvidenceSufficiency(option)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor={`${item.itemId}-evidence-date`}>
+                Evidence date
+              </label>
+              <Input
+                id={`${item.itemId}-evidence-date`}
+                type="date"
+                value={evidenceDateInput}
+                onChange={(event) => setEvidenceDateInput(event.target.value)}
+              />
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowEvidenceAdvanced((prev) => !prev)}
+              className="text-xs"
+            >
+              {showEvidenceAdvanced ? 'Hide options' : 'More options'}
+            </Button>
+            {showEvidenceAdvanced && (
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-review-due`}>
+                    Review due
+                  </label>
+                  <Select
+                    value={String(reviewDueIntervalMonths)}
+                    onValueChange={(value) =>
+                      setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
+                    }
+                  >
+                    <SelectTrigger id={`${item.itemId}-review-due`} className="w-full">
+                      <SelectValue placeholder="Select interval" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={String(option)}>
+                          {formatEvidenceReviewDueInterval(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-source`}>
+                    Source
+                  </label>
+                  <Select
+                    value={source}
+                    onValueChange={(value) => setSource(value as EvidenceSource)}
+                  >
+                    <SelectTrigger id={`${item.itemId}-source`} className="w-full">
+                      <SelectValue placeholder="Select source" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVIDENCE_SOURCE_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {formatEvidenceSource(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-sufficiency`}>
+                    Sufficiency
+                  </label>
+                  <Select
+                    value={sufficiency}
+                    onValueChange={(value) => setSufficiency(value as EvidenceSufficiency)}
+                  >
+                    <SelectTrigger id={`${item.itemId}-sufficiency`} className="w-full">
+                      <SelectValue placeholder="Select sufficiency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EVIDENCE_SUFFICIENCY_OPTIONS.map((option) => (
+                        <SelectItem key={option} value={option}>
+                          {formatEvidenceSufficiency(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
             <Tabs
               value={proofComposerTab}
               onValueChange={(value) => setProofComposerTab(value as 'link' | 'note' | 'file')}

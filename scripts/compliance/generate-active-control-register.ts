@@ -2578,6 +2578,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               'Session transport configuration',
               'Session transport configuration showing secure cookies for HTTPS origins together with session-expiry, freshness-window, and temporary-link lifetime settings used for controlled transport handling.',
             ),
+            seededEvidence(
+              'File serve referrer leakage prevention',
+              'All file serve HTTP responses in convex/fileServeHttp.ts include Referrer-Policy: no-referrer to prevent ticket parameters and presigned URL fragments from leaking via referrer headers during authenticated file downloads.',
+            ),
           ],
           'Infrastructure and Platform Security',
         ),
@@ -2803,6 +2807,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               'Evidence and audit hashing',
               'Evidence export and audit record workflows compute content, export, and event hashes so integrity-linked records can be reviewed later.',
             ),
+            seededEvidence(
+              'Timing-safe comparison hardening',
+              'Service authentication in internal-service-auth.ts uses padded byte-length comparison to prevent timing side-channels in the Convex edge runtime where native crypto.timingSafeEqual is unavailable. HMAC-output comparisons in webhook signature and file ticket verification are documented as constant-length and not vulnerable to length-leak timing.',
+            ),
           ],
           'Infrastructure and Platform Security',
         ),
@@ -2921,11 +2929,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, and security posture summaries.',
+          'Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, security posture summaries, and CSP violation telemetry. API error responses return generic messages to clients while detailed error context is retained server-side for authorized review.',
           [
             seededEvidence(
               'Security monitoring summary',
               'Administrative monitoring summary and related records showing document scan status, audit-integrity failure signals, and security posture indicators available for authorized review.',
+            ),
+            seededEvidence(
+              'API error disclosure controls',
+              'src/routes/api/parse-pdf.ts returns generic client-facing error messages and retains detailed internal error context only in server-side audit records and logs, preventing information disclosure through API error responses.',
             ),
           ],
           'Security Monitoring',
@@ -3131,7 +3143,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Audit log access is restricted, audit writes are append-only, and CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths.',
+          'Audit log access is restricted, audit writes are append-only, CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths, and server error objects are sanitized before logging to prevent PHI leakage into cloud log sinks.',
           [
             seededEvidence(
               'Restricted audit query access',
@@ -3146,6 +3158,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Audit log immutability guardrail',
               'Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.',
+              { sufficiency: 'sufficient' },
+            ),
+            seededEvidence(
+              'Server error sanitization before logging',
+              'src/lib/server/error-utils.server.ts sanitizes error objects before console.error logging, stripping request bodies, headers, cookies, and other properties that could contain PHI, and emitting only safe metadata (name, message, status code, truncated stack trace).',
               { sufficiency: 'sufficient' },
             ),
           ],
@@ -3335,6 +3352,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               'src/lib/server/vendor-boundary.server.ts exposes vendor approval status, allowed data classes, and environment posture for review surfaces.',
               { sufficiency: 'sufficient' },
             ),
+            seededEvidence(
+              'Vendor contract status tracking',
+              'The securityVendors schema includes a contractStatus field tracking BAA/DPA execution state per vendor (baa_executed, dpa_executed, not_required, pending) for contract posture visibility.',
+              { sufficiency: 'sufficient' },
+            ),
           ],
           'Vendor Risk Management',
         ),
@@ -3349,11 +3371,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy. Environment resolution supports APP_DEPLOYMENT_ENV for finer-grained control over preview and staging deployments.',
+          'Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy. Environment resolution supports APP_DEPLOYMENT_ENV for finer-grained control over preview and staging deployments. Runtime validation rejects unknown vendor keys as defense-in-depth against type-system bypasses.',
           [
             seededEvidence(
               'Vendor boundary enforcement helper',
               'src/lib/server/vendor-boundary.server.ts rejects outbound access when vendor approval, environment, or data-class policy is not satisfied. Environment is resolved using APP_DEPLOYMENT_ENV (when set) for finer-grained preview/staging separation from production.',
+            ),
+            seededEvidence(
+              'Runtime vendor key validation',
+              'src/lib/shared/vendor-boundary.ts validates vendor keys against the VENDOR_KEYS registry at runtime in getVendorBoundaryPolicy(), rejecting unknown vendor strings that bypass TypeScript compile-time constraints via dynamic casts or untyped inputs.',
             ),
             seededEvidence(
               'OpenRouter privacy and vendor guardrails',
@@ -3362,6 +3388,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Outbound service call boundary checks',
               'All OpenRouter paths — chat runtime, embeddings, and admin model imports — invoke vendor-boundary enforcement via assertVendorBoundary before outbound vendor access proceeds.',
+            ),
+            seededEvidence(
+              'Web search vendor boundary enforcement',
+              'When web search is active, buildChatRequestConfig invokes assertVendorBoundary with the external_search_terms data class, ensuring search egress passes the same vendor gate as chat prompts.',
             ),
           ],
           'Vendor Risk Management',
@@ -3565,7 +3595,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.',
+          'The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling. Private observability endpoints support HMAC-signed requests with timestamp replay protection.',
           [
             seededEvidence(
               'Trusted-origin validation helpers',
@@ -3578,6 +3608,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Redirect target boundary normalization',
               'Authentication redirect handling limits post-authentication destinations to approved in-app routes and rejects agent-auth redirects that are not same-origin relative paths.',
+            ),
+            seededEvidence(
+              'HMAC-signed observability endpoint authentication',
+              'src/lib/server/private-observability.server.ts authenticates private observability endpoints (/api/readiness, /api/metrics) using HMAC-SHA256 signatures with 60-second timestamp replay protection, preventing replay attacks when requests traverse a network boundary.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -3761,7 +3795,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Central regulated baseline defaults',
-              'src/lib/shared/security-baseline.ts defines always-on baseline requirements, retention defaults, and organization policy defaults for the hosted service baseline.',
+              'src/lib/shared/security-baseline.ts defines always-on baseline requirements, retention defaults, and organization policy defaults for the hosted service baseline. The regulated baseline includes webSearchAllowed: false, requiring explicit org-owner opt-in for web search egress.',
             ),
             seededEvidence(
               'Retention baseline config defaults',
@@ -3943,6 +3977,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Deployment environment separation for vendor boundaries',
               'src/lib/shared/vendor-boundary.ts resolves vendor environment from APP_DEPLOYMENT_ENV when set, so preview and staging deployments running NODE_ENV=production can be separately controlled from true production vendor policies.',
+            ),
+            seededEvidence(
+              'E2E test auth production safety assertion',
+              'Module-scope startup assertion in src/lib/server/env.server.ts throws a FATAL error if ENABLE_E2E_TEST_AUTH is true when APP_DEPLOYMENT_ENV is production, preventing test-only auth bypasses from reaching production.',
             ),
           ],
           'Secure Configuration',

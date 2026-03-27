@@ -2,12 +2,14 @@
 
 import { OpenRouter } from '@openrouter/sdk';
 import { getOpenRouterConfig } from '../src/lib/server/openrouter';
+import { type VendorDataClass, type VendorKey } from '../src/lib/server/vendor-boundary.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
 import { siteAdminAction } from './auth/authorized';
 import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
 import { importedModelsResultValidator } from './lib/returnValidators';
+import { executeVendorOperation, type VendorAuditTarget } from './lib/vendorAudit';
 
 const TOP_FREE_MODEL_IDS = [
   'stepfun/step-3.5-flash:free',
@@ -25,6 +27,43 @@ const TOP_PAID_MODEL_NAME_RANKING = [
   'Claude Opus 4.6',
 ] as const;
 
+const MODEL_IMPORT_VENDOR: VendorKey = 'openrouter';
+const MODEL_IMPORT_DATA_CLASSES: VendorDataClass[] = ['chat_metadata'];
+
+type ModelImportAuditTarget =
+  | {
+      actorUserId: string;
+      emitter: string;
+      kind: 'site_admin';
+      sourceSurface: string;
+    }
+  | {
+      emitter: string;
+      initiatedByUserId?: string;
+      kind: 'system';
+      sourceSurface: string;
+    };
+
+function toModelImportVendorAuditTarget(audit: ModelImportAuditTarget): VendorAuditTarget {
+  if (audit.kind === 'site_admin') {
+    return {
+      actorUserId: audit.actorUserId,
+      emitter: audit.emitter,
+      kind: 'site_admin',
+      sourceSurface: audit.sourceSurface,
+      userId: audit.actorUserId,
+    };
+  }
+
+  return {
+    emitter: audit.emitter,
+    initiatedByUserId: audit.initiatedByUserId,
+    kind: 'system',
+    sourceSurface: audit.sourceSurface,
+    userId: audit.initiatedByUserId,
+  };
+}
+
 /**
  * Creates an OpenRouter SDK client sourced through the shared vendor boundary.
  * This ensures `assertVendorBoundary()` runs before any outbound OpenRouter request.
@@ -39,17 +78,30 @@ function getOpenRouterSdkClient() {
   });
 }
 
-async function listZdrModelsForCurrentUser() {
-  const config = getOpenRouterConfig();
-  const client = getOpenRouterSdkClient();
-
-  return await client.models.listForUser(
-    { bearer: config.apiKey },
-    {
-      ...(config.headers?.['HTTP-Referer'] ? { httpReferer: config.headers['HTTP-Referer'] } : {}),
-      ...(config.headers?.['X-Title'] ? { xTitle: config.headers['X-Title'] } : {}),
+async function listZdrModelsForCurrentUser(
+  ctx: ActionCtx,
+  audit: ModelImportAuditTarget,
+  context: Record<string, boolean | number | string | null>,
+) {
+  return await executeVendorOperation(ctx, toModelImportVendorAuditTarget(audit), {
+    context,
+    dataClasses: MODEL_IMPORT_DATA_CLASSES,
+    operation: 'model_catalog_import',
+    vendor: MODEL_IMPORT_VENDOR,
+    execute: async () => {
+      const config = getOpenRouterConfig();
+      const client = getOpenRouterSdkClient();
+      return await client.models.listForUser(
+        { bearer: config.apiKey },
+        {
+          ...(config.headers?.['HTTP-Referer']
+            ? { httpReferer: config.headers['HTTP-Referer'] }
+            : {}),
+          ...(config.headers?.['X-Title'] ? { xTitle: config.headers['X-Title'] } : {}),
+        },
+      );
     },
-  );
+  });
 }
 
 function dedupeByModelId<T extends { modelId: string }>(entries: T[]) {
@@ -130,8 +182,11 @@ function formatPriceLabel(promptPrice: number | undefined, completionPrice: numb
 
 async function importTopFreeModelsInternal(
   ctx: ActionCtx,
+  audit: ModelImportAuditTarget,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await listZdrModelsForCurrentUser();
+  const response = await listZdrModelsForCurrentUser(ctx, audit, {
+    catalogType: 'free',
+  });
   const models = response.data.filter((model) =>
     TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]),
   );
@@ -191,8 +246,11 @@ async function importTopFreeModelsInternal(
 
 async function importTopPaidModelsInternal(
   ctx: ActionCtx,
+  audit: ModelImportAuditTarget,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await listZdrModelsForCurrentUser();
+  const response = await listZdrModelsForCurrentUser(ctx, audit, {
+    catalogType: 'paid',
+  });
 
   const rankedModels = dedupeByModelId(
     TOP_PAID_MODEL_NAME_RANKING.flatMap((name) => {
@@ -272,7 +330,12 @@ export const importTopFreeModels = siteAdminAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    const result = await importTopFreeModelsInternal(ctx);
+    const result = await importTopFreeModelsInternal(ctx, {
+      kind: 'site_admin',
+      actorUserId: ctx.user.authUserId,
+      emitter: 'adminModelImports.importTopFreeModels',
+      sourceSurface: 'admin_model_imports',
+    });
 
     await recordSiteAdminAuditEvent(ctx, {
       actorUserId: ctx.user.authUserId,
@@ -297,7 +360,11 @@ export const importTopFreeModelsForSetup = internalAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    return await importTopFreeModelsInternal(ctx);
+    return await importTopFreeModelsInternal(ctx, {
+      kind: 'system',
+      emitter: 'adminModelImports.importTopFreeModelsForSetup',
+      sourceSurface: 'admin_model_imports.setup',
+    });
   },
 });
 
@@ -305,7 +372,12 @@ export const importTopPaidModels = siteAdminAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    const result = await importTopPaidModelsInternal(ctx);
+    const result = await importTopPaidModelsInternal(ctx, {
+      kind: 'site_admin',
+      actorUserId: ctx.user.authUserId,
+      emitter: 'adminModelImports.importTopPaidModels',
+      sourceSurface: 'admin_model_imports',
+    });
 
     await recordSiteAdminAuditEvent(ctx, {
       actorUserId: ctx.user.authUserId,
@@ -330,6 +402,10 @@ export const importTopPaidModelsForSetup = internalAction({
   args: {},
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    return await importTopPaidModelsInternal(ctx);
+    return await importTopPaidModelsInternal(ctx, {
+      kind: 'system',
+      emitter: 'adminModelImports.importTopPaidModelsForSetup',
+      sourceSurface: 'admin_model_imports.setup',
+    });
   },
 });

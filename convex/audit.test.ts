@@ -150,10 +150,36 @@ describe('regulated audit validation', () => {
     [
       'outbound_vendor_access_used',
       buildSystemRecord('outbound_vendor_access_used', {
-        runId: 'run-1',
-        useWebSearch: false,
         vendor: 'openrouter',
+        operation: 'chat_generation',
+        sourceSurface: 'chat.run_generation',
+        dataClasses: ['chat_metadata'],
+        context: {
+          runId: 'run-1',
+          useWebSearch: false,
+        },
       }),
+    ],
+    [
+      'outbound_vendor_access_denied',
+      buildSystemRecord(
+        'outbound_vendor_access_denied',
+        {
+          vendor: 'google_favicons',
+          operation: 'source_favicon_fetch',
+          sourceSurface: 'chat.source_favicon_proxy',
+          dataClasses: ['public_web_metadata'],
+          context: {
+            hostname: 'example.com',
+            reason: 'blocked',
+            violation: 'approval',
+          },
+        },
+        {
+          outcome: 'failure',
+          severity: 'warning',
+        },
+      ),
     ],
     [
       'retention_purge_completed',
@@ -235,10 +261,36 @@ describe('regulated audit validation', () => {
     [
       'outbound_vendor_access_used',
       buildSystemRecord('outbound_vendor_access_used', {
-        runId: 'run-1',
         vendor: 'openrouter',
+        operation: 'chat_generation',
+        sourceSurface: 'chat.run_generation',
+        dataClasses: 'chat_metadata',
+        context: {
+          runId: 'run-1',
+          useWebSearch: 'yes',
+        },
       }),
-      /useWebSearch/,
+      /dataClasses/,
+    ],
+    [
+      'outbound_vendor_access_denied',
+      buildSystemRecord(
+        'outbound_vendor_access_denied',
+        {
+          vendor: 'google_favicons',
+          operation: 'source_favicon_fetch',
+          sourceSurface: 'chat.source_favicon_proxy',
+          dataClasses: 'public_web_metadata',
+          context: {
+            hostname: 'example.com',
+          },
+        },
+        {
+          outcome: 'failure',
+          severity: 'warning',
+        },
+      ),
+      /dataClasses/,
     ],
     [
       'retention_purge_completed',

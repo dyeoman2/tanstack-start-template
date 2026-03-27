@@ -20,6 +20,8 @@ const vendorKeyValidator = v.union(
   v.literal('openrouter'),
   v.literal('resend'),
   v.literal('sentry'),
+  v.literal('google_favicons'),
+  v.literal('google_workspace_oauth'),
 );
 const vendorRuntimePostureValidator = v.object({
   allowedDataClasses: v.array(v.string()),
@@ -394,6 +396,10 @@ function validateSecurityEvidenceUploadInput(args: {
   }
 }
 
+function buildSecurityEvidenceUploadRateLimitKey(args: { organizationId: string; userId: string }) {
+  return `security:evidence-upload:${args.organizationId}:${args.userId}`;
+}
+
 async function enforceSecurityEvidenceUploadRateLimit(
   ctx:
     | Pick<MutationCtx, 'runMutation'>
@@ -402,11 +408,14 @@ async function enforceSecurityEvidenceUploadRateLimit(
           ...args: Parameters<MutationCtx['runMutation']>
         ) => ReturnType<MutationCtx['runMutation']>;
       },
-  actorUserId: string,
+  args: {
+    organizationId: string;
+    userId: string;
+  },
 ) {
   const result = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
     name: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.bucket,
-    key: actorUserId,
+    key: buildSecurityEvidenceUploadRateLimitKey(args),
     config: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.config,
   });
 

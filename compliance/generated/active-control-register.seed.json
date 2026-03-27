@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-26T23:23:35.586Z",
+  "generatedAt": "2026-03-27T04:57:49.284Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -877,7 +877,7 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Audit log access is restricted, audit writes are append-only, and CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths.",
+            "notes": "Audit log access is restricted, audit writes are append-only, CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths, and server error objects are sanitized before logging to prevent PHI leakage into cloud log sinks.",
             "evidence": [
               {
                 "title": "Restricted audit query access",
@@ -896,6 +896,13 @@
               {
                 "title": "Audit log immutability guardrail",
                 "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Server error sanitization before logging",
+                "description": "Server error sanitization before logging sanitizes error objects before console.error logging, stripping request bodies, headers, cookies, and other properties that could contain PHI, and emitting only safe metadata (name, message, status code, truncated stack trace).",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1115,6 +1122,13 @@
               {
                 "title": "Deployment environment separation for vendor boundaries",
                 "description": "Deployment environment separation for vendor boundaries resolves vendor environment from APP_DEPLOYMENT_ENV when set, so preview and staging deployments running NODE_ENV=production can be separately controlled from true production vendor policies.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "E2E test auth production safety assertion",
+                "description": "E2E test auth production safety assertion Module-scope startup assertion in src/lib/server/env.server.ts throws a FATAL error if ENABLE_E2E_TEST_AUTH is true when APP_DEPLOYMENT_ENV is production, preventing test-only auth bypasses from reaching production.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1498,7 +1512,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.",
+            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling. Private observability endpoints support HMAC-signed requests with timestamp replay protection.",
             "evidence": [
               {
                 "title": "Trusted-origin validation helpers",
@@ -1517,6 +1531,13 @@
               {
                 "title": "Redirect target boundary normalization",
                 "description": "Redirect target boundary normalization Authentication redirect handling limits post-authentication destinations to approved in-app routes and rejects agent-auth redirects that are not same-origin relative paths.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "HMAC-signed observability endpoint authentication",
+                "description": "HMAC-signed observability endpoint authentication authenticates private observability endpoints (/api/readiness, /api/metrics) using HMAC-SHA256 signatures with 60-second timestamp replay protection, preventing replay attacks when requests traverse a network boundary.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1868,6 +1889,13 @@
               {
                 "title": "Audit chain verification action",
                 "description": "Audit integrity verification action that recomputes hash chains and records integrity failures for later review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Offline audit archive integrity verification",
+                "description": "scripts/verify-audit-archive.ts provides an offline CLI tool that downloads archived audit batches from S3 and re-verifies hash chains independently of the running service, supporting air-gapped integrity verification.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2526,6 +2554,13 @@
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
+              },
+              {
+                "title": "Vendor contract status tracking",
+                "description": "Vendor contract status tracking The securityVendors schema includes a contractStatus field tracking BAA/DPA execution state per vendor (baa_executed, dpa_executed, not_required, pending) for contract posture visibility.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
               }
             ]
           }
@@ -2543,11 +2578,18 @@
           "seed": {
             "status": "done",
             "owner": "Vendor Risk Management",
-            "notes": "Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy. Environment resolution supports APP_DEPLOYMENT_ENV for finer-grained control over preview and staging deployments.",
+            "notes": "Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy. Environment resolution supports APP_DEPLOYMENT_ENV for finer-grained control over preview and staging deployments. Runtime validation rejects unknown vendor keys as defense-in-depth against type-system bypasses.",
             "evidence": [
               {
                 "title": "Vendor boundary enforcement helper",
                 "description": "Vendor boundary enforcement helper rejecting outbound access when vendor approval, environment, or data-class policy is not satisfied. Environment is resolved using APP_DEPLOYMENT_ENV (when set) for finer-grained preview/staging separation from production.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Runtime vendor key validation",
+                "description": "Runtime vendor key validation validating vendor keys against the VENDOR_KEYS registry at runtime in getVendorBoundaryPolicy(), rejecting unknown vendor strings that bypass TypeScript compile-time constraints via dynamic casts or untyped inputs.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2562,6 +2604,13 @@
               {
                 "title": "Outbound service call boundary checks",
                 "description": "Outbound service call boundary checks All OpenRouter paths — chat runtime, embeddings, and admin model imports — invoke vendor-boundary enforcement via assertVendorBoundary before outbound vendor access proceeds.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Web search vendor boundary enforcement",
+                "description": "Web search vendor boundary enforcement When web search is active, buildChatRequestConfig invokes assertVendorBoundary with the external_search_terms data class, ensuring search egress passes the same vendor gate as chat prompts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2733,6 +2782,13 @@
               {
                 "title": "Session transport configuration",
                 "description": "Session transport configuration showing secure cookie settings, session expiry values, fresh-session windows, and related transport protections.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "File serve referrer leakage prevention",
+                "description": "Event inventory All file serve HTTP responses in convex/fileServeHttp.ts include Referrer-Policy: no-referrer to prevent ticket parameters and presigned URL fragments from leaking via referrer headers during authenticated file downloads.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3927,11 +3983,18 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, and security posture summaries.",
+            "notes": "Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, security posture summaries, and CSP violation telemetry. API error responses return generic messages to clients while detailed error context is retained server-side for authorized review.",
             "evidence": [
               {
                 "title": "Security monitoring summary",
                 "description": "Summary Administrative monitoring summary and related records showing document scan status, audit-integrity failure signals, and security posture indicators available for authorized review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "API error disclosure controls",
+                "description": "API error disclosure controls returns generic client-facing error messages and retains detailed internal error context only in server-side audit records and logs, preventing information disclosure through API error responses.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4526,7 +4589,7 @@
             "evidence": [
               {
                 "title": "Central regulated baseline defaults",
-                "description": "Central regulated baseline defaults describing always-on baseline requirements, retention defaults, and organization policy defaults for the hosted service baseline.",
+                "description": "Central regulated baseline defaults describing always-on baseline requirements, retention defaults, and organization policy defaults for the hosted service baseline. The regulated baseline includes webSearchAllowed: false, requiring explicit org-owner opt-in for web search egress.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -6637,6 +6700,13 @@
               {
                 "title": "Evidence and audit hashing",
                 "description": "Evidence and audit hashing Evidence export and audit record workflows compute content, export, and event hashes so integrity-linked records can be reviewed later.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Timing-safe comparison hardening",
+                "description": "Timing-safe comparison hardening Service authentication in internal-service-auth.ts uses padded byte-length comparison to prevent timing side-channels in the Convex edge runtime where native crypto.timingSafeEqual is unavailable. HMAC-output comparisons in webhook signature and file ticket verification are documented as constant-length and not vulnerable to length-leak timing.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

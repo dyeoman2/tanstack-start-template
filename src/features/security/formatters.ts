@@ -446,14 +446,14 @@ function formatVendorApprovalReason(
       return `Approved because ${vendor.approvalEnvVar} is enabled`;
     }
 
-    return `Approved for ${environmentScope}`;
+    return 'Approved because required configuration is present';
   }
 
   if (vendor.approvalEnvVar) {
     return `Blocked because ${vendor.approvalEnvVar} is not enabled`;
   }
 
-  return 'Blocked pending approval';
+  return 'Blocked until required configuration is present';
 }
 
 export function formatVendorRuntimePosture(

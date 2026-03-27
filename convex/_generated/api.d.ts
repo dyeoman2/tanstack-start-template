@@ -74,6 +74,7 @@ import type * as lib_security_workspace from "../lib/security/workspace.js";
 import type * as lib_storageBrokerClient from "../lib/storageBrokerClient.js";
 import type * as lib_storageS3 from "../lib/storageS3.js";
 import type * as lib_storageS3Control from "../lib/storageS3Control.js";
+import type * as lib_vendorAudit from "../lib/vendorAudit.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as passwordHistory from "../passwordHistory.js";
@@ -177,6 +178,7 @@ declare const fullApi: ApiFromModules<{
   "lib/storageBrokerClient": typeof lib_storageBrokerClient;
   "lib/storageS3": typeof lib_storageS3;
   "lib/storageS3Control": typeof lib_storageS3Control;
+  "lib/vendorAudit": typeof lib_vendorAudit;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
   passwordHistory: typeof passwordHistory;

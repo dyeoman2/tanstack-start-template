@@ -91,6 +91,7 @@ const organizationPoliciesSchema = z.object({
     .max(15)
     .default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.temporaryLinkTtlMinutes),
   webSearchAllowed: z.boolean().default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.webSearchAllowed),
+  aiChatEnabled: z.boolean().default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.aiChatEnabled),
 });
 
 const organizationEnterpriseProviderSchema = z.object({

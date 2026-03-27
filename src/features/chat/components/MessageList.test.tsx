@@ -283,4 +283,36 @@ describe('MessageList', () => {
     expect(screen.getByText('Casey')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit message' })).not.toBeInTheDocument();
   });
+
+  it('uses the same-origin favicon proxy for URL sources', () => {
+    const { container } = render(
+      <MessageList
+        messages={[
+          {
+            _id: 'assistant-1',
+            threadId: 'thread-1',
+            order: 1,
+            stepOrder: 0,
+            role: 'assistant',
+            parts: [
+              { type: 'text', text: 'Answer with sources' },
+              {
+                type: 'source-url',
+                sourceId: 'source-1',
+                title: 'Example',
+                url: 'https://www.example.com/articles/1',
+              },
+            ],
+            status: 'complete',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ]}
+      />,
+    );
+
+    const favicon = container.querySelector('img');
+    expect(favicon).not.toBeNull();
+    expect(favicon).toHaveAttribute('src', '/api/chat/source-favicon?hostname=www.example.com');
+  });
 });

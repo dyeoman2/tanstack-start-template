@@ -1,5 +1,6 @@
 import type { Doc, Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
+import type { VendorKey } from '../../../src/lib/shared/vendor-boundary';
 import { listSecurityPolicyGovernanceContexts } from './governance_context';
 import type { ReviewTaskBlueprint } from './securityReviewConfig';
 import {
@@ -139,7 +140,7 @@ export async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'revie
     if (!task.vendorKey) {
       return null;
     }
-    const vendor = vendorWorkspaceByKey.get(task.vendorKey as 'openrouter' | 'resend' | 'sentry');
+    const vendor = vendorWorkspaceByKey.get(task.vendorKey as VendorKey);
     if (!vendor) {
       return null;
     }

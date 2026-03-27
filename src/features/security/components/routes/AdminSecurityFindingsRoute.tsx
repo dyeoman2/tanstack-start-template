@@ -377,6 +377,7 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
       <AdminSecurityFindingsTab
         busyAction={busyAction}
         busyFindingKey={busyFindingKey}
+        showAdvancedFilters={props.search.showAdvancedFilters}
         findingDispositionFilter={props.search.findingDisposition}
         findingFollowUpFilter={props.search.findingFollowUp}
         findingSearch={props.search.findingSearch}
@@ -389,6 +390,9 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
         findings={findings}
         navigateToControl={navigateToControl}
         navigateToReviews={navigateToReviews}
+        onChangeShowAdvancedFilters={(showAdvancedFilters) => {
+          updateFindingSearch({ showAdvancedFilters });
+        }}
         onChangeFindingDispositionFilter={(findingDisposition) => {
           updateFindingSearch({ findingDisposition });
         }}

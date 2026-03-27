@@ -560,7 +560,10 @@ export const createSecurityControlEvidenceUploadTarget = action({
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
     await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.organizationAdmin);
     validateSecurityEvidenceUploadInput(args);
-    await enforceSecurityEvidenceUploadRateLimit(ctx, currentUser.authUserId);
+    await enforceSecurityEvidenceUploadRateLimit(ctx, {
+      organizationId: currentUser.activeOrganizationId ?? 'global',
+      userId: currentUser.authUserId,
+    });
     const target = await createUploadTargetWithMode(ctx, {
       contentType: args.contentType,
       fileName: args.fileName,

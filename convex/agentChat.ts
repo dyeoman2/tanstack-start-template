@@ -7,6 +7,10 @@ import {
 } from '@convex-dev/agent';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
+import {
+  fetchSourceFaviconAsset,
+  type SourceFaviconFetchResult,
+} from '../src/lib/server/source-favicon.server';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
@@ -29,6 +33,7 @@ import {
   resolveThread,
 } from './agentChatActions';
 import {
+  getVerifiedCurrentUserFromActionOrThrow,
   getVerifiedCurrentUserOrThrow,
   requireOrganizationPermission,
   requireThreadPermission,
@@ -67,7 +72,9 @@ import {
 } from './lib/returnValidators';
 import { recordUserAuditEvent } from './lib/auditEmitters';
 import { getFullPhiRecordSetPurgeEligibleAt } from './lib/retention';
+import { executeVendorOperation } from './lib/vendorAudit';
 import { getOrganizationPolicies } from './organizationManagement';
+import { MAX_CHAT_ATTACHMENT_SIZE_BYTES } from './lib/chatAttachments';
 import { createUploadTargetWithMode } from './storagePlatform';
 import { uploadTargetResultValidator } from './storageTypes';
 
@@ -102,6 +109,37 @@ const PERSONA_THREAD_CLEANUP_BATCH_SIZE = 128;
 
 function createChatAttachmentUploadToken() {
   return crypto.randomUUID();
+}
+
+function normalizeSourceFaviconHostname(hostname: string) {
+  const trimmed = hostname.trim().toLowerCase();
+  if (!trimmed || trimmed.length > 255 || trimmed === 'localhost') {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(`https://${trimmed}`);
+    const normalizedHostname = parsed.hostname.toLowerCase();
+    if (
+      parsed.username ||
+      parsed.password ||
+      parsed.port ||
+      parsed.pathname !== '/' ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    if (normalizedHostname !== trimmed || !normalizedHostname.includes('.')) {
+      return null;
+    }
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(normalizedHostname)) {
+      return null;
+    }
+    return normalizedHostname;
+  } catch {
+    return null;
+  }
 }
 
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
@@ -1563,6 +1601,10 @@ async function assertOrganizationChatPolicies(
 ) {
   const policies = await getOrganizationPolicies(ctx, args.organizationId);
 
+  if (!policies.aiChatEnabled) {
+    throw new ConvexError('AI chat is disabled by organization policy.');
+  }
+
   if (args.useWebSearch && !policies.webSearchAllowed) {
     throw new ConvexError('Web search is disabled by organization policy.');
   }
@@ -2211,6 +2253,13 @@ export const generateChatAttachmentUploadTarget = action({
       organizationId: viewer.organizationId,
       userId: viewer.userId,
     });
+
+    if (args.sizeBytes > MAX_CHAT_ATTACHMENT_SIZE_BYTES) {
+      throw new ConvexError(
+        `File exceeds maximum allowed size of ${MAX_CHAT_ATTACHMENT_SIZE_BYTES / (1024 * 1024)} MB.`,
+      );
+    }
+
     const token = createChatAttachmentUploadToken();
     const now = Date.now();
     const uploadTarget = await createUploadTargetWithMode(ctx, {
@@ -2580,5 +2629,76 @@ export const deletePersona = action({
       personaId: args.personaId,
     });
     return null;
+  },
+});
+
+const sourceFaviconResultValidator = v.union(
+  v.object({
+    ok: v.literal(true),
+    bodyBase64: v.string(),
+    cacheControl: v.string(),
+    contentType: v.string(),
+  }),
+  v.object({
+    ok: v.literal(false),
+  }),
+);
+
+export const fetchSourceFavicon = action({
+  args: {
+    hostname: v.string(),
+  },
+  returns: sourceFaviconResultValidator,
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const hostname = normalizeSourceFaviconHostname(args.hostname);
+    if (!hostname) {
+      return { ok: false } as const;
+    }
+
+    const organizationId = user.activeOrganizationId ?? undefined;
+    const auditTarget = {
+      actorUserId: user.authUserId,
+      emitter: 'chat.fetch_source_favicon',
+      kind: 'user' as const,
+      organizationId,
+      sourceSurface: 'chat.source_favicon',
+      userId: user.authUserId,
+    };
+
+    try {
+      const result = await executeVendorOperation(ctx, auditTarget, {
+        context: {
+          hostname,
+        },
+        dataClasses: ['public_web_metadata'],
+        operation: 'source_favicon_fetch',
+        vendor: 'google_favicons',
+        execute: async () => await fetchSourceFaviconAsset({ hostname }),
+        resolveUsedAudit: (result: SourceFaviconFetchResult) => {
+          if (result.ok) {
+            return undefined;
+          }
+
+          return {
+            context: {
+              failureReason: result.reason,
+              hostname,
+              upstreamStatus: result.upstreamStatus ?? null,
+            },
+            outcome: 'failure',
+            severity: 'warning',
+          };
+        },
+      });
+
+      if (!result.ok) {
+        return { ok: false } as const;
+      }
+
+      return result;
+    } catch {
+      return { ok: false } as const;
+    }
   },
 });

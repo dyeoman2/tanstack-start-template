@@ -33,6 +33,8 @@ describe('csp.server', () => {
       "style-src 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='",
     );
     expect(policy).toContain("style-src-attr 'unsafe-inline'");
+    expect(policy).toContain("img-src 'self' data: blob:");
+    expect(policy).not.toContain('https://www.google.com');
     expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(policy).not.toContain("'unsafe-eval'");
     expect(policy).not.toContain('https: wss:');

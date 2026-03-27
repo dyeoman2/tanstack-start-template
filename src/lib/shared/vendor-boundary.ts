@@ -1,4 +1,10 @@
-export const VENDOR_KEYS = ['openrouter', 'resend', 'sentry'] as const;
+export const VENDOR_KEYS = [
+  'openrouter',
+  'resend',
+  'sentry',
+  'google_favicons',
+  'google_workspace_oauth',
+] as const;
 
 export type VendorKey = (typeof VENDOR_KEYS)[number];
 
@@ -10,7 +16,8 @@ export type VendorDataClass =
   | 'email_content'
   | 'error_metadata'
   | 'external_search_terms'
-  | 'operational_metrics';
+  | 'operational_metrics'
+  | 'public_web_metadata';
 
 export type VendorBoundaryPolicy = {
   approvalEnvVar: string | null;
@@ -41,6 +48,20 @@ const VENDOR_BOUNDARY_REGISTRY: Record<VendorKey, VendorBoundaryPolicy> = {
     allowedDataClasses: ['error_metadata', 'operational_metrics'],
     allowedEnvironments: ['development', 'production'],
     displayName: 'Sentry',
+  },
+  google_favicons: {
+    approvalEnvVar: 'ENABLE_GOOGLE_FAVICON_EGRESS',
+    approvedByDefault: false,
+    allowedDataClasses: ['public_web_metadata'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'Google Favicon Service',
+  },
+  google_workspace_oauth: {
+    approvalEnvVar: null,
+    approvedByDefault: false,
+    allowedDataClasses: ['account_metadata'],
+    allowedEnvironments: ['development', 'production', 'test'],
+    displayName: 'Google Workspace OAuth / JWKS',
   },
 };
 
@@ -83,7 +104,20 @@ function isTruthyConfigFlag(value: string | undefined) {
   return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
 }
 
+function isKnownVendorKey(vendor: string): vendor is VendorKey {
+  return (VENDOR_KEYS as readonly string[]).includes(vendor);
+}
+
 export function getVendorBoundaryPolicy(vendor: VendorKey) {
+  // Runtime defense-in-depth: reject unknown vendor keys even though
+  // TypeScript constrains VendorKey at compile time. This guards against
+  // dynamic strings or `as VendorKey` casts that bypass the type system.
+  if (!isKnownVendorKey(vendor)) {
+    throw new Error(
+      `Unknown vendor key "${String(vendor)}". All outbound vendor integrations must be registered in VENDOR_BOUNDARY_REGISTRY.`,
+    );
+  }
+
   return VENDOR_BOUNDARY_REGISTRY[vendor];
 }
 

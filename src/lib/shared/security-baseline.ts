@@ -13,6 +13,7 @@ export const ALWAYS_ON_REGULATED_BASELINE = {
   requireMfaOrPasskey: true,
   allowBreakGlassPasswordLogin: false,
   webSearchAllowed: false,
+  aiChatEnabled: true,
 } as const;
 
 export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
@@ -33,6 +34,7 @@ export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
   supportAccessApprovalModel: 'single_owner',
   supportAccessEnabled: true,
   webSearchAllowed: ALWAYS_ON_REGULATED_BASELINE.webSearchAllowed,
+  aiChatEnabled: ALWAYS_ON_REGULATED_BASELINE.aiChatEnabled,
 } as const;
 
 export type RegulatedOrganizationPolicies = {
@@ -53,6 +55,7 @@ export type RegulatedOrganizationPolicies = {
   temporaryLinkTtlMinutes: number;
   verifiedDomainsOnly: boolean;
   webSearchAllowed: boolean;
+  aiChatEnabled: boolean;
 };
 
 export function applyAlwaysOnRegulatedBaseline<T extends RegulatedOrganizationPolicies>(

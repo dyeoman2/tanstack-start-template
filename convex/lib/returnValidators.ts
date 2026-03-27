@@ -698,6 +698,7 @@ export const organizationSettingsValidator = v.object({
     allowBreakGlassPasswordLogin: v.boolean(),
     temporaryLinkTtlMinutes: v.number(),
     webSearchAllowed: v.boolean(),
+    aiChatEnabled: v.boolean(),
   }),
   enterpriseAuth: organizationEnterpriseAuthSummaryValidator,
   availableEnterpriseProviders: v.array(organizationEnterpriseProviderOptionValidator),
@@ -773,6 +774,7 @@ export const organizationDirectoryResponseValidator = v.object({
     allowBreakGlassPasswordLogin: v.boolean(),
     temporaryLinkTtlMinutes: v.number(),
     webSearchAllowed: v.boolean(),
+    aiChatEnabled: v.boolean(),
   }),
   capabilities: v.object({
     availableInviteRoles: v.array(organizationRoleValidator),

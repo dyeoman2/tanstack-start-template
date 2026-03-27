@@ -323,7 +323,11 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   ],
   [
     'outbound_vendor_access_used',
-    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'outbound_vendor_access_denied',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
   [
     'admin_step_up_challenged',
@@ -462,6 +466,31 @@ function requireMetadataNullableKey(
     throw new Error(
       `Audit event ${eventType} metadata is missing required number|null key: ${key}`,
     );
+  }
+}
+
+/**
+ * Validates a metadata key only when it is present. If the key is missing or
+ * undefined the check is silently skipped, making the field genuinely optional.
+ */
+function optionalMetadataKey(
+  eventType: string,
+  metadata: Record<string, unknown>,
+  key: string,
+  kind: 'number' | 'string',
+) {
+  const value = metadata[key];
+  if (value === undefined) {
+    return;
+  }
+  if (kind === 'string') {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`Audit event ${eventType} metadata has invalid optional string key: ${key}`);
+    }
+    return;
+  }
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    throw new Error(`Audit event ${eventType} metadata has invalid optional number key: ${key}`);
   }
 }
 
@@ -607,6 +636,7 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
     case 'organization_policy_updated': {
       const parsed = requireMetadataObject(record.eventType, metadata);
       requireMetadataKey(record.eventType, parsed, 'changedKeys', 'array');
+      requireMetadataKey(record.eventType, parsed, 'changes', 'object');
       return;
     }
     case 'enterprise_auth_mode_updated': {
@@ -641,9 +671,20 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
     }
     case 'outbound_vendor_access_used': {
       const parsed = requireMetadataObject(record.eventType, metadata);
-      requireMetadataKey(record.eventType, parsed, 'runId', 'string');
-      requireMetadataKey(record.eventType, parsed, 'useWebSearch', 'boolean');
       requireMetadataKey(record.eventType, parsed, 'vendor', 'string');
+      requireMetadataKey(record.eventType, parsed, 'operation', 'string');
+      requireMetadataKey(record.eventType, parsed, 'sourceSurface', 'string');
+      requireMetadataKey(record.eventType, parsed, 'dataClasses', 'array');
+      requireMetadataKey(record.eventType, parsed, 'context', 'object');
+      return;
+    }
+    case 'outbound_vendor_access_denied': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'vendor', 'string');
+      requireMetadataKey(record.eventType, parsed, 'operation', 'string');
+      requireMetadataKey(record.eventType, parsed, 'sourceSurface', 'string');
+      requireMetadataKey(record.eventType, parsed, 'dataClasses', 'array');
+      requireMetadataKey(record.eventType, parsed, 'context', 'object');
       return;
     }
     case 'retention_purge_completed': {
@@ -657,6 +698,7 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       const parsed = requireMetadataObject(record.eventType, metadata);
       requireMetadataKey(record.eventType, parsed, 'surface', 'string');
       requireMetadataKey(record.eventType, parsed, 'resultCount', 'number');
+      optionalMetadataKey(record.eventType, parsed, 'organizationId', 'string');
       return;
     }
     default:
@@ -1243,6 +1285,7 @@ export const recordAuditLedgerViewed = action({
       metadata: JSON.stringify({
         surface: args.surface,
         resultCount: args.resultCount,
+        ...(args.organizationId ? { organizationId: args.organizationId } : {}),
       }),
     });
 

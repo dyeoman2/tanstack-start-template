@@ -40,6 +40,26 @@ export const VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR = {
       itemId: 'evidence-report-from-monitoring-state',
     },
   ],
+  google_favicons: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
+  google_workspace_oauth: [
+    {
+      internalControlId: 'CTRL-SA-009',
+      itemId: 'external-service-approval-state-can-be-reviewed',
+    },
+    {
+      internalControlId: 'CTRL-CM-008',
+      itemId: 'component-posture-can-be-reviewed-in-site-admin',
+    },
+  ],
 } as const;
 
 export type ReviewTaskBlueprint = {

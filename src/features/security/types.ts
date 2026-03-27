@@ -3,6 +3,7 @@ import type {
   ActiveControlRecord,
   ControlChecklistEvidenceType,
 } from '~/lib/shared/compliance/control-register';
+import type { VendorKey } from '~/lib/shared/vendor-boundary';
 import type {
   EVIDENCE_REVIEW_DUE_OPTIONS,
   EVIDENCE_SOURCE_OPTIONS,
@@ -39,7 +40,6 @@ export type EvidenceReportKind =
   | 'findings_snapshot'
   | 'vendor_posture_snapshot'
   | 'control_workspace_snapshot';
-export type VendorKey = 'openrouter' | 'resend' | 'sentry';
 export type SecurityScopeType = 'provider_global';
 export type SecurityScope = {
   scopeId: string;

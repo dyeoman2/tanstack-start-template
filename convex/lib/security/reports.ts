@@ -2,6 +2,7 @@ import type { Id } from '../../_generated/dataModel';
 import type { ActionCtx } from '../../_generated/server';
 import { getRetentionPolicyConfig } from '../../../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
+import type { VendorKey } from '../../../src/lib/shared/vendor-boundary';
 import {
   ALWAYS_ON_REGULATED_BASELINE,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
@@ -315,7 +316,7 @@ export async function generateEvidenceReportHandler(
     nextReviewAt: number | null;
     scopeId: string;
     scopeType: 'provider_global';
-    vendor: 'openrouter' | 'resend' | 'sentry';
+    vendor: VendorKey;
     summary: string | null;
   }>;
   const currentFindings = (

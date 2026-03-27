@@ -241,6 +241,7 @@ type OrganizationPolicies = {
   supportAccessApprovalModel: 'single_owner';
   supportAccessEnabled: boolean;
   webSearchAllowed: boolean;
+  aiChatEnabled: boolean;
 };
 type OrganizationSupportAccessApprovalModel = 'single_owner';
 type OrganizationSupportAccessReasonCategory =
@@ -310,6 +311,7 @@ const organizationPoliciesValidator = v.object({
   supportAccessApprovalModel: v.literal('single_owner'),
   supportAccessEnabled: v.boolean(),
   webSearchAllowed: v.boolean(),
+  aiChatEnabled: v.boolean(),
 });
 const organizationSupportAccessReasonCategoryValidator = v.union(
   v.literal('incident_response'),
@@ -566,6 +568,7 @@ function toOrganizationPolicies(
     supportAccessEnabled:
       policy?.supportAccessEnabled ?? DEFAULT_ORGANIZATION_POLICIES.supportAccessEnabled,
     webSearchAllowed: policy?.webSearchAllowed ?? DEFAULT_ORGANIZATION_POLICIES.webSearchAllowed,
+    aiChatEnabled: policy?.aiChatEnabled ?? DEFAULT_ORGANIZATION_POLICIES.aiChatEnabled,
   });
 }
 
@@ -2067,6 +2070,7 @@ export const updateOrganizationPolicies = mutation({
     allowBreakGlassPasswordLogin: v.boolean(),
     temporaryLinkTtlMinutes: v.number(),
     webSearchAllowed: v.boolean(),
+    aiChatEnabled: v.boolean(),
     requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
@@ -2094,6 +2098,7 @@ export const updateOrganizationPolicies = mutation({
       supportAccessApprovalModel: v.literal('single_owner'),
       supportAccessEnabled: v.boolean(),
       webSearchAllowed: v.boolean(),
+      aiChatEnabled: v.boolean(),
     }),
   }),
   handler: async (ctx, args) => {
@@ -2192,10 +2197,31 @@ export const updateOrganizationPolicies = mutation({
       supportAccessApprovalModel: currentPolicies.supportAccessApprovalModel,
       supportAccessEnabled: currentPolicies.supportAccessEnabled,
       webSearchAllowed: args.webSearchAllowed,
+      aiChatEnabled: args.aiChatEnabled,
     }) satisfies OrganizationPolicies;
     const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
       (key) => currentPolicies[key] !== nextPolicies[key],
     );
+    const changes: Record<
+      string,
+      { old: string | number | boolean | null; new: string | number | boolean | null }
+    > = {};
+    for (const key of changedKeys) {
+      const oldVal = currentPolicies[key];
+      const newVal = nextPolicies[key];
+      if (
+        (oldVal === null ||
+          typeof oldVal === 'string' ||
+          typeof oldVal === 'number' ||
+          typeof oldVal === 'boolean') &&
+        (newVal === null ||
+          typeof newVal === 'string' ||
+          typeof newVal === 'number' ||
+          typeof newVal === 'boolean')
+      ) {
+        changes[key] = { old: oldVal, new: newVal };
+      }
+    }
     const existing = await ctx.db
       .query('organizationPolicies')
       .withIndex('by_organization_id', (q) => q.eq('organizationId', args.organizationId))
@@ -2222,6 +2248,7 @@ export const updateOrganizationPolicies = mutation({
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         changedKeys,
+        changes,
         previousPolicies: currentPolicies,
         nextPolicies,
       }),
@@ -2505,6 +2532,12 @@ export const updateOrganizationSupportAccessPolicy = mutation({
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         changedKeys: ['supportAccessEnabled'],
+        changes: {
+          supportAccessEnabled: {
+            old: currentPolicies.supportAccessEnabled,
+            new: nextPolicies.supportAccessEnabled,
+          },
+        },
         nextPolicies: {
           supportAccessApprovalModel: nextPolicies.supportAccessApprovalModel,
           supportAccessEnabled: nextPolicies.supportAccessEnabled,

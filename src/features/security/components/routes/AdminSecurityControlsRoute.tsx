@@ -57,6 +57,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
     selectedControl: selectedControlId,
     sortBy,
     sortOrder,
+    showAdvancedFilters,
     support: supportFilter,
   } = search;
   const workspaceOverview = useQuery(api.securityPosture.getSecurityWorkspaceOverview, {}) as
@@ -141,6 +142,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         responsibility: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
         search: string;
         selectedControl: string | undefined;
+        showAdvancedFilters: boolean;
         sortBy: (typeof CONTROL_TABLE_SORT_FIELDS)[number];
         sortOrder: 'asc' | 'desc';
         support: 'all' | SecurityControlWorkspaceSummary['support'];
@@ -459,6 +461,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         familyOptions={familyOptions}
         handleExportControls={handleExportControls}
         isExportingControls={isExportingControls}
+        showAdvancedFilters={showAdvancedFilters}
         responsibilityFilter={responsibilityFilter}
         responsibilityOptions={responsibilityOptions}
         sortedControls={sortedControls}

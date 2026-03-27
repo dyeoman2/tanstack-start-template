@@ -1,6 +1,7 @@
 import { generateObject } from 'ai';
 import { v } from 'convex/values';
 import { z } from 'zod';
+import { getDomainDnsResolverUrl } from '../src/lib/server/env.server';
 import type { OrganizationDomainVerificationResult } from '../src/features/organizations/lib/organization-management';
 import {
   canManageDomains,
@@ -21,9 +22,9 @@ import {
   resolveAuditRequestContext,
 } from './lib/requestAuditContext';
 import { organizationDomainVerificationResultValidator } from './lib/returnValidators';
+import { executeVendorOperation } from './lib/vendorAudit';
 
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
-const ORGANIZATION_DOMAIN_DNS_ENDPOINT = 'https://dns.google/resolve';
 const ORGANIZATION_DOMAIN_DNS_TIMEOUT_MS = 5_000;
 const ORGANIZATION_DOMAIN_PROVIDER_URLS = {
   cloudflare: 'https://dash.cloudflare.com/',
@@ -166,8 +167,12 @@ function inferDnsProviderFromNameservers(nameservers: string[]): DnsProviderHint
 }
 
 async function inferDnsProviderWithAi(args: {
+  actorUserId: string;
+  ctx: ActionCtx;
   domain: string;
+  domainId: Doc<'organizationDomains'>['_id'];
   nameservers: string[];
+  organizationId: string;
 }): Promise<DnsProviderHint> {
   if (args.nameservers.length === 0) {
     return {
@@ -178,23 +183,44 @@ async function inferDnsProviderWithAi(args: {
   }
 
   try {
-    const result = await generateObject({
-      model: getOpenRouterProvider().chat(DEFAULT_CHAT_MODEL_ID),
-      schema: dnsProviderDetectionSchema,
-      providerOptions: getOpenRouterProviderOptions({
-        modelId: DEFAULT_CHAT_MODEL_ID,
-        useWebSearch: false,
-        supportsWebSearch: false,
-      }),
-      prompt: [
-        'Classify the most likely DNS hosting provider from the domain and nameserver list.',
-        'Return a provider only if the nameservers strongly suggest a well-known DNS host.',
-        'If unsure, return providerName as null.',
-        'Only use one of these provider names when applicable: Cloudflare, Amazon Route 53, GoDaddy, Namecheap, Google Cloud DNS, Azure DNS, DNSimple, NS1, Vercel, Wix, Squarespace.',
-        `Domain: ${args.domain}`,
-        `Nameservers: ${args.nameservers.join(', ')}`,
-      ].join('\n'),
-    });
+    const result = await executeVendorOperation(
+      args.ctx,
+      {
+        actorUserId: args.actorUserId,
+        emitter: 'organization.domain_dns_provider_inference',
+        kind: 'user',
+        organizationId: args.organizationId,
+        sourceSurface: 'organization.domain_dns_provider_inference',
+        userId: args.actorUserId,
+      },
+      {
+        context: {
+          domainId: args.domainId,
+          nameserverCount: args.nameservers.length,
+        },
+        dataClasses: ['chat_metadata', 'chat_prompt'],
+        operation: 'dns_provider_inference',
+        vendor: 'openrouter',
+        execute: async () =>
+          await generateObject({
+            model: getOpenRouterProvider().chat(DEFAULT_CHAT_MODEL_ID),
+            schema: dnsProviderDetectionSchema,
+            providerOptions: getOpenRouterProviderOptions({
+              modelId: DEFAULT_CHAT_MODEL_ID,
+              useWebSearch: false,
+              supportsWebSearch: false,
+            }),
+            prompt: [
+              'Classify the most likely DNS hosting provider from the domain and nameserver list.',
+              'Return a provider only if the nameservers strongly suggest a well-known DNS host.',
+              'If unsure, return providerName as null.',
+              'Only use one of these provider names when applicable: Cloudflare, Amazon Route 53, GoDaddy, Namecheap, Google Cloud DNS, Azure DNS, DNSimple, NS1, Vercel, Wix, Squarespace.',
+              `Domain: ${args.domain}`,
+              `Nameservers: ${args.nameservers.join(', ')}`,
+            ].join('\n'),
+          }),
+      },
+    );
 
     const providerName = result.object.providerName?.trim() ?? null;
     const confidence = result.object.confidence;
@@ -244,14 +270,19 @@ async function resolveDnsAnswers(
   name: string,
   type: 'TXT' | 'NS',
 ): Promise<Array<{ data?: string }> | null> {
+  const resolverUrl = getDomainDnsResolverUrl();
+  if (!resolverUrl) {
+    throw new Error('DNS resolver is not configured.');
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ORGANIZATION_DOMAIN_DNS_TIMEOUT_MS);
 
   try {
-    const response = await fetch(
-      `${ORGANIZATION_DOMAIN_DNS_ENDPOINT}?name=${encodeURIComponent(name)}&type=${type}`,
-      { signal: controller.signal },
-    );
+    const target = new URL(resolverUrl);
+    target.searchParams.set('name', name);
+    target.searchParams.set('type', type);
+    const response = await fetch(target, { signal: controller.signal });
 
     if (!response.ok) {
       throw new Error(`Resolver responded with ${response.status}`);
@@ -507,8 +538,12 @@ export const detectOrganizationDomainDnsProvider = action({
       return {
         domainId: args.domainId,
         ...(await inferDnsProviderWithAi({
+          actorUserId: user.authUserId,
+          ctx,
           domain: domain.normalizedDomain,
+          domainId: args.domainId,
           nameservers,
+          organizationId: args.organizationId,
         })),
       };
     } catch {

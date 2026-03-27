@@ -10,7 +10,6 @@ import {
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
 import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
   formatPolicySupportProgress,
@@ -18,6 +17,7 @@ import {
   getSupportBadgeVariant,
 } from '~/features/security/formatters';
 import type { SecurityPolicySummary } from '~/features/security/types';
+import { cn } from '~/lib/utils';
 
 type PolicyTableSortField = 'title' | 'support' | 'owner' | 'mappedControlCount' | 'nextReviewAt';
 
@@ -39,17 +39,6 @@ export function AdminSecurityPoliciesTab(props: {
   }) => void;
 }) {
   const policies = useMemo(() => props.policies ?? [], [props.policies]);
-  const counts = policies.reduce(
-    (summary, policy) => {
-      summary[policy.support] += 1;
-      return summary;
-    },
-    {
-      complete: 0,
-      missing: 0,
-      partial: 0,
-    },
-  );
   const supportOptions = useMemo<
     Array<TableFilterOption<'all' | SecurityPolicySummary['support']>>
   >(
@@ -172,10 +161,23 @@ export function AdminSecurityPoliciesTab(props: {
         ),
         cell: ({ row }) => {
           const policy = row.original;
+          const now = Date.now();
+          const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+          const isOverdue = policy.nextReviewAt !== null && policy.nextReviewAt < now;
+          const isDueSoon =
+            policy.nextReviewAt !== null && !isOverdue && policy.nextReviewAt < now + thirtyDays;
 
           return (
-            <p className="py-1 text-sm font-medium">
-              {policy.nextReviewAt ? formatTableDate(policy.nextReviewAt) : 'Unscheduled'}
+            <p
+              className={cn(
+                'py-1 text-sm font-medium',
+                isOverdue && 'text-destructive',
+                isDueSoon && 'text-amber-600 dark:text-amber-400',
+              )}
+            >
+              {policy.nextReviewAt
+                ? `${isOverdue ? 'Overdue · ' : isDueSoon ? 'Due soon · ' : ''}${formatTableDate(policy.nextReviewAt)}`
+                : 'Unscheduled'}
             </p>
           );
         },
@@ -202,27 +204,6 @@ export function AdminSecurityPoliciesTab(props: {
           </Button>
         }
       />
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <AdminSecuritySummaryCard
-          title="Policy Support"
-          description="Policies fully supported by mapped controls."
-          value={`${counts.complete}`}
-          footer={`${policies.length} total policies`}
-        />
-        <AdminSecuritySummaryCard
-          title="Partial Policies"
-          description="Policies with mixed mapped-control support."
-          value={`${counts.partial}`}
-          footer="Review these before annual attestation"
-        />
-        <AdminSecuritySummaryCard
-          title="Missing Policies"
-          description="Policies with no currently complete mapped-control support."
-          value={`${counts.missing}`}
-          footer="These need control remediation or refreshed evidence"
-        />
-      </div>
 
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">

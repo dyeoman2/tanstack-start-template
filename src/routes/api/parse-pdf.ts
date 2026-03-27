@@ -2,9 +2,13 @@ import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 
-function getErrorMessage(error: unknown) {
+/** Extract the internal error message for audit logging (never sent to client). */
+function getInternalErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Failed to parse PDF';
 }
+
+/** Generic client-facing error message — never exposes internal details. */
+const CLIENT_PDF_ERROR = 'Document could not be processed. Please try again or contact support.';
 
 async function getPdfParseBackendMode() {
   return await convexAuthReactStart.fetchAuthAction(api.pdfParseActions.getPdfParseBackendMode, {});
@@ -69,9 +73,10 @@ export const Route = createFileRoute('/api/parse-pdf')({
           );
           return Response.json(status);
         } catch (error) {
+          console.error('[parse-pdf:GET]', getInternalErrorMessage(error));
           return Response.json(
             {
-              error: getErrorMessage(error),
+              error: CLIENT_PDF_ERROR,
             },
             { status: 500 },
           );
@@ -101,8 +106,11 @@ export const Route = createFileRoute('/api/parse-pdf')({
 
           try {
             await convexAuthReactStart.fetchAuthAction(api.auth.enforcePdfParseRateLimit, {});
-          } catch (error) {
-            return Response.json({ error: getErrorMessage(error) }, { status: 429 });
+          } catch {
+            return Response.json(
+              { error: 'Rate limit exceeded. Please try again later.' },
+              { status: 429 },
+            );
           }
 
           const backendMode = await getPdfParseBackendMode();
@@ -149,11 +157,14 @@ export const Route = createFileRoute('/api/parse-pdf')({
 
           return Response.json(queued, { status: 202 });
         } catch (error) {
+          const internalMessage = getInternalErrorMessage(error);
+          console.error('[parse-pdf:POST]', internalMessage);
+
           await convexAuthReactStart
             .fetchAuthAction(api.pdfParseActions.recordDirectPdfParseAuditEvent, {
               eventType: 'pdf_parse_failed',
               metadata: JSON.stringify({
-                error: getErrorMessage(error),
+                error: internalMessage,
               }),
               organizationId,
               outcome: 'failure',
@@ -167,7 +178,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           return Response.json(
             {
               success: false,
-              error: getErrorMessage(error),
+              error: CLIENT_PDF_ERROR,
             },
             { status: 500 },
           );

@@ -71,6 +71,15 @@ export function AdminSecurityReviewTaskGroup(props: {
                         <Badge variant={getReviewTaskBadgeVariant(task)}>
                           {getReviewTaskStatusLabel(task)}
                         </Badge>
+                        <Badge variant="outline" className="text-[10px]">
+                          {task.taskType === 'automated_check'
+                            ? 'Auto'
+                            : task.taskType === 'document_upload'
+                              ? 'Document'
+                              : task.taskType === 'follow_up'
+                                ? 'Follow-up'
+                                : 'Attestation'}
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">{task.description}</p>
                       {task.latestAttestation ? (
@@ -88,10 +97,28 @@ export function AdminSecurityReviewTaskGroup(props: {
                       ) : null}
                     </div>
                     <div className="flex items-center gap-3">
+                      {task.taskType !== 'follow_up' &&
+                      task.taskType !== 'automated_check' &&
+                      task.status !== 'completed' &&
+                      task.status !== 'exception' ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={props.busyAction !== null}
+                          onClick={() => {
+                            void props.onAttestTask(task);
+                          }}
+                        >
+                          {props.busyAction === `${task.id}:attest`
+                            ? 'Saving…'
+                            : task.taskType === 'document_upload'
+                              ? 'Upload'
+                              : 'Attest'}
+                        </Button>
+                      ) : null}
                       {task.evidenceLinks.length ? (
                         <p className="text-sm text-muted-foreground">
-                          {task.evidenceLinks.length} linked evidence item
-                          {task.evidenceLinks.length === 1 ? '' : 's'}
+                          {task.evidenceLinks.length} evidence
                         </p>
                       ) : null}
                       <AccordionTrigger className="py-0 text-sm">Details</AccordionTrigger>

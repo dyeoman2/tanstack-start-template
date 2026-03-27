@@ -8,6 +8,7 @@ import {
   getBetterAuthSecrets,
   getBetterAuthTrustedOrigins,
   getBetterAuthUrlForTooling,
+  getDomainDnsResolverUrl,
   getStorageRuntimeConfig,
   getRequiredBetterAuthUrl,
   isE2EPrincipalEmail,
@@ -375,6 +376,50 @@ describe('Better Auth env helpers', () => {
 
     expect(() => getAuditArchiveRuntimeConfig()).toThrow(
       'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required for audit archive operations.',
+    );
+  });
+});
+
+describe('domain DNS resolver env helper', () => {
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  it('returns null when DOMAIN_DNS_RESOLVER_URL is unset', () => {
+    delete process.env.DOMAIN_DNS_RESOLVER_URL;
+
+    expect(getDomainDnsResolverUrl()).toBeNull();
+  });
+
+  it('accepts canonical absolute https URLs', () => {
+    process.env.DOMAIN_DNS_RESOLVER_URL = 'https://dns.internal.example/resolve';
+
+    expect(getDomainDnsResolverUrl()).toBe('https://dns.internal.example/resolve');
+  });
+
+  it('rejects invalid or query-bearing resolver URLs', () => {
+    process.env.DOMAIN_DNS_RESOLVER_URL = 'dns.internal.example';
+
+    expect(() => getDomainDnsResolverUrl()).toThrow(
+      'DOMAIN_DNS_RESOLVER_URL must be a valid absolute URL.',
+    );
+
+    process.env.DOMAIN_DNS_RESOLVER_URL = 'https://dns.internal.example/resolve?name=example.com';
+
+    expect(() => getDomainDnsResolverUrl()).toThrow(
+      'DOMAIN_DNS_RESOLVER_URL must not include a query string or hash.',
+    );
+  });
+
+  it('requires https outside loopback runtimes', () => {
+    process.env.DOMAIN_DNS_RESOLVER_URL = 'http://dns.internal.example/resolve';
+
+    expect(() => getDomainDnsResolverUrl()).toThrow(
+      'DOMAIN_DNS_RESOLVER_URL must use https unless it points to a loopback host.',
     );
   });
 });

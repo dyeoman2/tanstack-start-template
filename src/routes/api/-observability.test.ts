@@ -72,6 +72,59 @@ describe('observability routes', () => {
     expect(response.status).toBe(404);
   });
 
+  it('surfaces readiness warnings for missing internal DNS resolver configuration', async () => {
+    process.env.INTERNAL_OBSERVABILITY_SHARED_SECRET = 'observability-secret';
+    delete process.env.DOMAIN_DNS_RESOLVER_URL;
+    const { Route } = await import('./readiness');
+    const serverHandlers = Route.options.server?.handlers as Record<string, RouteGetHandler>;
+    const getHandler = requireGetHandler(serverHandlers.GET);
+
+    const response = await getHandler({
+      request: new Request('http://127.0.0.1:3000/api/readiness', {
+        headers: {
+          authorization: 'Bearer observability-secret',
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        ready: false,
+        warnings: [
+          expect.objectContaining({
+            code: 'domain_dns_resolver_missing',
+            surface: 'organization_domains',
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('reports readiness as healthy when the internal DNS resolver is configured', async () => {
+    process.env.INTERNAL_OBSERVABILITY_SHARED_SECRET = 'observability-secret';
+    process.env.DOMAIN_DNS_RESOLVER_URL = 'https://dns.internal.example/resolve';
+    const { Route } = await import('./readiness');
+    const serverHandlers = Route.options.server?.handlers as Record<string, RouteGetHandler>;
+    const getHandler = requireGetHandler(serverHandlers.GET);
+
+    const response = await getHandler({
+      request: new Request('http://127.0.0.1:3000/api/readiness', {
+        headers: {
+          authorization: 'Bearer observability-secret',
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(
+      expect.objectContaining({
+        ready: true,
+        warnings: [],
+      }),
+    );
+  });
+
   it('sanitizes public health responses to status only', async () => {
     process.env.VITE_CONVEX_URL = 'https://demo.convex.site';
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

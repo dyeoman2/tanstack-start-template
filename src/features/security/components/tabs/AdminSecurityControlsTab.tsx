@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   DataTable,
@@ -30,6 +29,7 @@ export function AdminSecurityControlsTab(props: {
   familyFilter: string;
   familyOptions: TableFilterOption<string>[];
   isExportingControls: boolean;
+  showAdvancedFilters: boolean;
   responsibilityFilter: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
   responsibilityOptions: Array<
     TableFilterOption<'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>>
@@ -44,10 +44,9 @@ export function AdminSecurityControlsTab(props: {
     support?: 'all' | SecurityControlWorkspaceSummary['support'];
     family?: string;
     selectedControl?: string | undefined;
+    showAdvancedFilters?: boolean;
   }) => void;
 }) {
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-
   const advancedFilterCount = [
     props.familyFilter !== 'all',
     props.responsibilityFilter !== 'all',
@@ -78,7 +77,7 @@ export function AdminSecurityControlsTab(props: {
               className="shrink-0"
               ariaLabel="Filter controls by support"
             />
-            {showAdvancedFilters && (
+            {props.showAdvancedFilters && (
               <>
                 <TableFilter<string>
                   value={props.familyFilter}
@@ -105,10 +104,10 @@ export function AdminSecurityControlsTab(props: {
               variant="ghost"
               size="sm"
               onClick={() => {
-                setShowAdvancedFilters((prev) => !prev);
+                props.updateControlSearch({ showAdvancedFilters: !props.showAdvancedFilters });
               }}
             >
-              {showAdvancedFilters
+              {props.showAdvancedFilters
                 ? 'Fewer filters'
                 : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
             </Button>

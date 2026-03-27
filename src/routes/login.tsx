@@ -388,6 +388,8 @@ function LoginPage() {
             className="w-full justify-center text-sm"
             type="button"
             variant="ghost"
+            disabled={isSubmittingPasskey}
+            aria-busy={isSubmittingPasskey}
             onClick={handlePasskeySignIn}
           >
             {isSubmittingPasskey ? (
@@ -395,7 +397,7 @@ function LoginPage() {
             ) : (
               <Fingerprint className="size-4" />
             )}
-            Sign in with Passkey
+            {isSubmittingPasskey ? 'Signing in…' : 'Sign in with Passkey'}
           </Button>
         </CardContent>
         <CardFooter className="justify-center text-sm text-muted-foreground">

@@ -3,6 +3,7 @@ import type { QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
+import { VENDOR_KEYS, type VendorKey } from '../src/lib/shared/vendor-boundary';
 import { siteAdminAction } from './auth/authorized';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
 import { throwConvexError } from './auth/errors';
@@ -305,8 +306,8 @@ export const attestReviewTask = mutation({
       (entry) => entry.templateKey === task.templateKey,
     );
     const taskVendorKey =
-      task.vendorKey === 'openrouter' || task.vendorKey === 'resend' || task.vendorKey === 'sentry'
-        ? task.vendorKey
+      typeof task.vendorKey === 'string' && VENDOR_KEYS.includes(task.vendorKey as VendorKey)
+        ? (task.vendorKey as VendorKey)
         : null;
     const linkedVendor = taskVendorKey
       ? await ctx.db

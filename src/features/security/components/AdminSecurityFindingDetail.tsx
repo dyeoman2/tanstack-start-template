@@ -338,7 +338,7 @@ export function AdminSecurityFindingDetail(props: {
         <div className="space-y-4 rounded-lg border p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Tracked follow-up</p>
+              <p className="text-sm font-medium">Update follow-up</p>
               <p className="text-sm text-muted-foreground">
                 {activeFollowUp.reviewedEvidenceCount} reviewed evidence item
                 {activeFollowUp.reviewedEvidenceCount === 1 ? '' : 's'} linked for closure
@@ -818,7 +818,7 @@ export function AdminSecurityFindingDetail(props: {
       ) : (
         <div className="space-y-4 rounded-lg border p-4">
           <div>
-            <p className="text-sm font-medium">Start tracked follow-up</p>
+            <p className="text-sm font-medium">Create follow-up</p>
             <p className="text-sm text-muted-foreground">
               Select the checklist items this remediation work should support, then set the scope
               and due date.

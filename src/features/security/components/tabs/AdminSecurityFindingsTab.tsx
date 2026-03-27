@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -77,6 +76,7 @@ function getFindingDispositionBadgeVariant(
 export function AdminSecurityFindingsTab(props: {
   busyAction: string | null;
   busyFindingKey: string | null;
+  showAdvancedFilters: boolean;
   findingDispositionFilter: 'all' | SecurityFindingListItem['disposition'];
   findingFollowUpFilter: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up';
   findingSearch: string;
@@ -99,6 +99,7 @@ export function AdminSecurityFindingsTab(props: {
   };
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: (selectedReviewRun?: string) => void;
+  onChangeShowAdvancedFilters: (value: boolean) => void;
   onChangeFindingDispositionFilter: (value: 'all' | SecurityFindingListItem['disposition']) => void;
   onChangeFindingFollowUpFilter: (
     value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
@@ -118,8 +119,6 @@ export function AdminSecurityFindingsTab(props: {
   >;
   setFindingNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-
   const advancedFilterCount = [
     props.findingDispositionFilter !== 'all',
     props.findingSeverityFilter !== 'all',
@@ -188,15 +187,15 @@ export function AdminSecurityFindingsTab(props: {
             variant="ghost"
             size="sm"
             onClick={() => {
-              setShowAdvancedFilters((prev) => !prev);
+              props.onChangeShowAdvancedFilters(!props.showAdvancedFilters);
             }}
           >
-            {showAdvancedFilters
+            {props.showAdvancedFilters
               ? 'Fewer filters'
               : `More filters${advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ''}`}
           </Button>
         </div>
-        {showAdvancedFilters && (
+        {props.showAdvancedFilters && (
           <div className="grid gap-3 lg:grid-cols-4">
             <Select
               value={props.findingDispositionFilter}
@@ -303,16 +302,8 @@ export function AdminSecurityFindingsTab(props: {
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="text-base font-semibold">{finding.title}</p>
-                            <Badge variant="outline">
-                              {formatFindingType(finding.findingType)}
-                            </Badge>
                             <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
                               {formatFindingSeverity(finding.severity)}
-                            </Badge>
-                            <Badge
-                              variant={finding.status === 'open' ? 'destructive' : 'secondary'}
-                            >
-                              {formatFindingStatus(finding.status)}
                             </Badge>
                             <Badge variant={getFindingDispositionBadgeVariant(currentDisposition)}>
                               {formatFindingDisposition(currentDisposition)}
@@ -322,6 +313,10 @@ export function AdminSecurityFindingsTab(props: {
                             {finding.description}
                           </p>
                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <p>
+                              {formatFindingType(finding.findingType)} ·{' '}
+                              {formatFindingStatus(finding.status)}
+                            </p>
                             <p>Source: {finding.sourceLabel}</p>
                             <p>Last observed {new Date(finding.lastObservedAt).toLocaleString()}</p>
                             {finding.reviewedAt ? (

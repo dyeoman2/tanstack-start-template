@@ -88,7 +88,7 @@ export function buildDocumentContentSecurityPolicy({
     sentryOrigin,
   ]);
 
-  const imgSrc = unique(["'self'", 'data:', 'blob:', 'https://www.google.com']);
+  const imgSrc = unique(["'self'", 'data:', 'blob:']);
   const fontSrc = unique(["'self'", 'data:']);
   const scriptSrcParts = ["'self'", `'nonce-${nonce}'`];
   if (allowUnsafeEval) {
@@ -105,11 +105,17 @@ export function buildDocumentContentSecurityPolicy({
     // react-remove-scroll (Radix Dialog / Sheet / AlertDialog) injects a fixed <style> for scroll lock;
     // allow that exact stylesheet via hash without opening all inline styles.
     "style-src 'self' 'sha256-nzTgYzXYDNe6BAHiiI7NNlfK8n/auuOAhh2t92YvuXo='",
-    // Accepted residual risk: 'unsafe-inline' is required for style-src-attr because Tailwind CSS
-    // and shadcn/ui apply inline style attributes (e.g., style="--radix-*") that cannot be nonce-gated.
-    // CSS injection via style attributes is lower severity than script injection — it cannot execute
-    // JavaScript, but could theoretically enable data exfiltration via CSS selectors in a targeted
-    // attack. This is acceptable given the nonce-gated script-src and the framework dependency.
+    // ACCEPTED RESIDUAL RISK: style-src-attr 'unsafe-inline' is required for
+    // Tailwind CSS and shadcn/ui inline style attributes (e.g., data-[state=open]:...,
+    // style="--radix-*") that cannot be nonce-gated or hash-gated.
+    // Compensating controls:
+    //   1. script-src is nonce-locked — CSS cannot execute JavaScript
+    //   2. CSP violation reports are monitored via /api/csp-report
+    //   3. frame-ancestors 'none' prevents clickjacking-based CSS exfiltration
+    // CSS injection via style attributes is lower severity than script injection and could
+    // theoretically enable data exfiltration via CSS selectors in a targeted attack, but this
+    // is mitigated by the controls above. This is a known limitation tracked in the security
+    // control register.
     "style-src-attr 'unsafe-inline'",
     `img-src ${imgSrc.join(' ')}`,
     `font-src ${fontSrc.join(' ')}`,

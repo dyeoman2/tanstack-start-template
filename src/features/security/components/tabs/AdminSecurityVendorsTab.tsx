@@ -71,87 +71,58 @@ export function AdminSecurityVendorsTab(props: {
                 <div className="px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                      <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,0.9fr)] lg:items-start">
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="text-base font-semibold">{vendor.title}</p>
-                            <Badge variant={primaryStatus.variant}>{primaryStatus.label}</Badge>
-                            <Badge variant={governanceState.variant}>{governanceState.label}</Badge>
-                          </div>
-                          <p className="max-w-3xl text-sm text-foreground">{decisionSummary}</p>
-                          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm md:grid-cols-2">
-                            <div className="space-y-1">
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Runtime posture
-                              </p>
-                              <p className="text-foreground">{runtimePosture.decision}</p>
-                              <p className="text-muted-foreground">
-                                Environments: {runtimePosture.environments}
-                              </p>
-                              <p className="text-muted-foreground">
-                                Data classes: {runtimePosture.dataClasses}
-                              </p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Governance posture
-                              </p>
-                              <p className="text-foreground">
-                                {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
-                              </p>
-                              <p className="text-muted-foreground">
-                                {vendor.relatedControls.length > 0
-                                  ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
-                                  : 'No linked controls'}
-                              </p>
-                              <p className="text-muted-foreground">
-                                {vendor.lastReviewedAt
-                                  ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleDateString()}`
-                                  : 'No completed review recorded'}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                            <p>{vendor.allowedDataClasses.length} data classes</p>
-                            <p>{vendor.allowedEnvironments.length} environments</p>
-                            <p>
-                              {vendor.nextReviewAt
-                                ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
-                                : 'Next review not scheduled'}
+                      <div className="w-full space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-base font-semibold">{vendor.title}</p>
+                          <Badge variant={primaryStatus.variant}>{primaryStatus.label}</Badge>
+                          <Badge variant={governanceState.variant}>{governanceState.label}</Badge>
+                        </div>
+                        <p className="max-w-3xl text-sm text-foreground">{decisionSummary}</p>
+                        <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm md:grid-cols-2">
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                              Runtime posture
                             </p>
-                            <p>
-                              {vendor.linkedFollowUpRunId
-                                ? 'Follow-up review linked'
-                                : 'No follow-up run'}
+                            <p className="text-foreground">{runtimePosture.decision}</p>
+                            <p className="text-muted-foreground">
+                              Environments: {runtimePosture.environments}
+                            </p>
+                            <p className="text-muted-foreground">
+                              Data classes: {runtimePosture.dataClasses}
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                              Governance posture
+                            </p>
+                            <p className="text-foreground">
+                              {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {vendor.relatedControls.length > 0
+                                ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
+                                : 'No linked controls'}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {vendor.lastReviewedAt
+                                ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleDateString()}`
+                                : 'No completed review recorded'}
                             </p>
                           </div>
                         </div>
-                        <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Governance state
-                            </p>
-                            <p className="mt-1 text-foreground">{governanceState.label}</p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Annual review task
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {vendor.linkedAnnualReviewTask?.title ??
-                                'No linked annual review task'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Vendor notes
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {currentSummary.trim().length > 0
-                                ? 'Summary recorded'
-                                : 'No summary recorded'}
-                            </p>
-                          </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <p>{vendor.allowedDataClasses.length} data classes</p>
+                          <p>{vendor.allowedEnvironments.length} environments</p>
+                          <p>
+                            {vendor.nextReviewAt
+                              ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
+                              : 'Next review not scheduled'}
+                          </p>
+                          <p>
+                            {vendor.linkedFollowUpRunId
+                              ? 'Follow-up review linked'
+                              : 'No follow-up run'}
+                          </p>
                         </div>
                       </div>
                     </AccordionTrigger>
@@ -266,31 +237,7 @@ export function AdminSecurityVendorsTab(props: {
                       </div>
                     </div>
                     <div className="space-y-4 rounded-lg border bg-background p-4">
-                      <div className="space-y-2 text-sm text-muted-foreground">
-                        <div>
-                          <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                            Governance posture
-                          </p>
-                          <p className="mt-1 text-foreground">
-                            {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
-                          </p>
-                          <p className="mt-1 text-foreground">
-                            {vendor.relatedControls.length > 0
-                              ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
-                              : 'No linked controls'}
-                          </p>
-                          <p className="mt-1 text-foreground">
-                            {vendor.lastReviewedAt
-                              ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleString()}`
-                              : 'No completed review recorded'}
-                          </p>
-                          <p className="mt-1 text-foreground">
-                            {vendor.nextReviewAt
-                              ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
-                              : 'Next review date not set'}
-                          </p>
-                          <p className="mt-1 text-foreground">{governanceState.label}</p>
-                        </div>
+                      <div className="space-y-3 text-sm text-muted-foreground">
                         <div>
                           <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
                             Annual review task
@@ -308,42 +255,6 @@ export function AdminSecurityVendorsTab(props: {
                               ? 'Follow-up review linked'
                               : 'No follow-up run'}
                           </p>
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Actions
-                        </p>
-                        <div className="flex flex-col gap-2">
-                          <Button
-                            type="button"
-                            disabled={props.busyVendorKey !== null}
-                            onClick={() => {
-                              void props.handleReviewVendor(vendor);
-                            }}
-                          >
-                            {props.busyVendorKey === vendor.vendor ? 'Saving…' : primaryActionLabel}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              props.onOpenVendor(vendor.vendor);
-                            }}
-                          >
-                            View details
-                          </Button>
-                          {vendor.linkedFollowUpRunId ? (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                props.navigateToReviews();
-                              }}
-                            >
-                              Open reviews
-                            </Button>
-                          ) : null}
                         </div>
                       </div>
                     </div>

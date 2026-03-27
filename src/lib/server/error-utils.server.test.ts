@@ -13,7 +13,11 @@ describe('handleServerError', () => {
     expect(result.message).toBe('Auth failed');
     expect(result.code).toBe(401);
     expect(result.originalError).toBe(error);
-    expect(consoleSpy).toHaveBeenCalledWith('[Auth] Server function error:', error);
+    expect(consoleSpy).toHaveBeenCalledWith('[Auth] Server function error:', {
+      message: 'Auth failed',
+      name: 'APIError',
+      status: 401,
+    });
   });
 
   it('passes through existing ServerError instances', () => {
@@ -34,7 +38,14 @@ describe('handleServerError', () => {
     expect(result.message).toBe('Conflict');
     expect(result.code).toBe(409);
     expect(result.originalError).toBe(error);
-    expect(consoleSpy).toHaveBeenCalledWith('Server function error:', error);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Server function error:',
+      expect.objectContaining({
+        message: 'Conflict',
+        name: 'Error',
+        statusCode: 409,
+      }),
+    );
   });
 
   it('falls back to a generic server error for unknown values', () => {

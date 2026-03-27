@@ -56,6 +56,7 @@ import {
   requestAuditContextValidator,
   resolveAuditRequestContext,
 } from './lib/requestAuditContext';
+import { executeVendorOperation, recordVendorAccessUsed } from './lib/vendorAudit';
 import {
   createBetterAuthMember,
   deleteBetterAuthMemberRecord,
@@ -99,6 +100,16 @@ import {
   recordSystemAuditEvent,
   recordUserAuditEvent,
 } from './lib/auditEmitters';
+import { VendorBoundaryError } from '../src/lib/server/vendor-boundary.server';
+
+/**
+ * Maximum number of concurrent active sessions allowed per user.
+ * When exceeded on session creation, the oldest sessions are revoked
+ * to bring the count within the limit. This is a HIPAA compliance
+ * requirement to prevent compromised credentials from maintaining
+ * persistent access alongside the legitimate user.
+ */
+const MAX_CONCURRENT_SESSIONS_PER_USER = 10;
 
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
   components.betterAuth,
@@ -2250,6 +2261,46 @@ export const createAuth = (
               },
             };
           },
+          after: async (session) => {
+            // Enforce concurrent session limit (HIPAA compliance).
+            // After a new session is created, check if the user exceeds
+            // the maximum allowed concurrent sessions. If so, revoke
+            // the oldest sessions to bring the count within the limit.
+            const userId = typeof session.userId === 'string' ? session.userId : null;
+            if (!userId) {
+              return;
+            }
+
+            const userSessions = await fetchBetterAuthSessionsByUserId(ctx, userId);
+
+            if (userSessions.length <= MAX_CONCURRENT_SESSIONS_PER_USER) {
+              return;
+            }
+
+            // Sort sessions by creation time ascending (oldest first).
+            const sortedSessions = [...userSessions].sort((a, b) => {
+              const aTime = a._creationTime ?? 0;
+              const bTime = b._creationTime ?? 0;
+              return aTime - bTime;
+            });
+
+            // Determine how many sessions to revoke.
+            const excessCount = sortedSessions.length - MAX_CONCURRENT_SESSIONS_PER_USER;
+            const sessionsToRevoke = sortedSessions.slice(0, excessCount);
+
+            // Revoke excess sessions by deleting them individually.
+            await Promise.all(
+              sessionsToRevoke.map(async (oldSession) => {
+                await ctxWithRunMutation.runMutation?.(
+                  components.betterAuth.adapter.deleteOne as never,
+                  {
+                    model: 'session',
+                    id: oldSession._id,
+                  } as never,
+                );
+              }),
+            );
+          },
         },
       },
     },
@@ -2355,10 +2406,63 @@ export const createAuth = (
 
       let googleHostedDomain = account.googleHostedDomain ?? null;
       if (!googleHostedDomain && account.idToken) {
+        const idToken = account.idToken;
+        const vendorAuditTarget = {
+          actorUserId: userId,
+          emitter: 'auth.lifecycle',
+          kind: 'user' as const,
+          sourceSurface: 'auth.google_workspace_hosted_domain',
+          userId,
+        };
         try {
-          googleHostedDomain = await deriveGoogleHostedDomainFromIdToken(account.idToken);
+          googleHostedDomain = await executeVendorOperation(
+            ctxWithRunMutation as MutationCtx & Pick<typeof ctxWithRunMutation, 'runMutation'>,
+            vendorAuditTarget,
+            {
+              context: {
+                oauthProvider: providerId,
+                tokenType: 'id_token',
+              },
+              dataClasses: ['account_metadata'],
+              execute: async () => await deriveGoogleHostedDomainFromIdToken(idToken),
+              operation: 'hosted_domain_verification',
+              resolveUsedAudit: (hostedDomain) => ({
+                context: {
+                  hostedDomainResolved: hostedDomain !== null,
+                  oauthProvider: providerId,
+                  tokenType: 'id_token',
+                },
+              }),
+              vendor: 'google_workspace_oauth',
+            },
+          );
         } catch (error) {
-          console.error('[auth] Failed to derive Google Workspace hosted domain claim', error);
+          if (error instanceof VendorBoundaryError) {
+            console.warn(
+              '[auth] Google Workspace hosted domain verification skipped by vendor boundary',
+              error,
+            );
+          } else {
+            await recordVendorAccessUsed(
+              ctxWithRunMutation as MutationCtx & Pick<typeof ctxWithRunMutation, 'runMutation'>,
+              vendorAuditTarget,
+              {
+                context: {
+                  failureReason: 'hosted_domain_verification_failed',
+                  oauthProvider: providerId,
+                  tokenType: 'id_token',
+                },
+                decision: {
+                  dataClasses: ['account_metadata'],
+                  vendor: 'google_workspace_oauth',
+                },
+                operation: 'hosted_domain_verification',
+                outcome: 'failure',
+                severity: 'warning',
+              },
+            );
+            console.error('[auth] Failed to derive Google Workspace hosted domain claim', error);
+          }
         }
       }
 

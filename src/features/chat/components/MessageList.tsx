@@ -170,7 +170,7 @@ function getSourceFaviconUrl(source: ChatMessageSource) {
     return null;
   }
 
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(safeUrl.hostname)}&sz=64`;
+  return `/api/chat/source-favicon?hostname=${encodeURIComponent(safeUrl.hostname)}`;
 }
 
 function SourceAvatar({ source, className }: { source: ChatMessageSource; className?: string }) {

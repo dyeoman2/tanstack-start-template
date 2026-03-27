@@ -22,6 +22,7 @@ export const securityControlsSearchSchema = z.object({
   support: z.enum(CONTROL_SUPPORT_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
   selectedControl: z.string().optional(),
+  showAdvancedFilters: z.boolean().default(false),
 });
 
 export const securityPoliciesSearchSchema = z.object({
@@ -40,6 +41,7 @@ export const securityFindingsSearchSchema = z.object({
   findingStatus: z.enum(FINDING_STATUS_FILTER_VALUES).default('all'),
   findingType: z.enum(FINDING_TYPE_FILTER_VALUES).default('all'),
   selectedFinding: z.string().optional(),
+  showAdvancedFilters: z.boolean().default(false),
 });
 
 export const securityVendorsSearchSchema = z.object({

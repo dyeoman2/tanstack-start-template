@@ -155,16 +155,16 @@
     "@sentry/tanstackstart-react": "^10.46.0",
     "@tanstack/react-form": "^1.28.5",
     "@tanstack/react-query": "^5.95.2",
-    "@tanstack/react-router": "^1.168.5",
+    "@tanstack/react-router": "^1.168.7",
     "@tanstack/react-router-devtools": "^1.166.11",
-    "@tanstack/react-start": "^1.167.10",
+    "@tanstack/react-start": "^1.167.12",
     "@tanstack/react-table": "^8.21.3",
-    "@tanstack/router-plugin": "^1.167.7",
-    "ai": "^6.0.138",
+    "@tanstack/router-plugin": "^1.167.8",
+    "ai": "^6.0.140",
     "better-auth": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "convex": "^1.34.0",
+    "convex": "^1.34.1",
     "date-fns": "^4.1.0",
     "fast-xml-parser": "^5.5.9",
     "fflate": "^0.8.2",
@@ -235,7 +235,8 @@
   "pnpm": {
     "overrides": {
       "h3-v2": "npm:h3@2.0.1-rc.18",
-      "lodash": "4.17.23"
+      "lodash": "4.17.23",
+      "brace-expansion": "5.0.5"
     }
   }
 }

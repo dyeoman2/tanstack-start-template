@@ -27,6 +27,7 @@ import {
   clipDocumentPromptText,
   validateChatAttachmentUpload,
 } from './lib/chatAttachments';
+import { recordVendorAccessDenied, recordVendorAccessUsed } from './lib/vendorAudit';
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
@@ -1480,24 +1481,31 @@ export const runChatGenerationInternal = internalAction({
           userId: run.initiatedByUserId,
         });
       }
-      await recordSystemAuditEvent(ctx, {
-        emitter: 'chat.run_worker',
-        eventType: 'outbound_vendor_access_used',
-        initiatedByUserId: run.initiatedByUserId,
-        metadata: JSON.stringify({
-          runId: args.runId,
-          useWebSearch: run.useWebSearch,
-          vendor: 'openrouter',
-        }),
-        organizationId: run.organizationId,
-        outcome: 'success',
-        resourceId: 'openrouter',
-        resourceLabel: 'OpenRouter',
-        resourceType: 'vendor',
-        severity: 'info',
-        sourceSurface: 'chat.run_generation',
-        userId: run.initiatedByUserId,
-      });
+      const vendorDataClasses = run.useWebSearch
+        ? (['chat_metadata', 'chat_prompt', 'external_search_terms'] as const)
+        : (['chat_metadata', 'chat_prompt'] as const);
+      await recordVendorAccessUsed(
+        ctx,
+        {
+          emitter: 'chat.run_worker',
+          initiatedByUserId: run.initiatedByUserId,
+          kind: 'system',
+          organizationId: run.organizationId,
+          sourceSurface: 'chat.run_generation',
+          userId: run.initiatedByUserId,
+        },
+        {
+          decision: {
+            vendor: 'openrouter',
+            dataClasses: [...vendorDataClasses],
+          },
+          operation: 'chat_generation',
+          context: {
+            runId: args.runId,
+            useWebSearch: run.useWebSearch,
+          },
+        },
+      );
       await ctx.runMutation(internal.agentChat.patchThreadInternal, {
         threadId: run.threadId,
         patch: {
@@ -1543,32 +1551,30 @@ export const runChatGenerationInternal = internalAction({
         userId: latestRun.initiatedByUserId,
       });
       if (error instanceof Error && error.name === 'VendorBoundaryError') {
-        const violation =
-          'violation' in error ? (error as { violation: string }).violation : undefined;
-        const violatedValues =
-          'violatedValues' in error
-            ? (error as { violatedValues: readonly string[] }).violatedValues
-            : undefined;
-        await recordSystemAuditEvent(ctx, {
-          emitter: 'chat.run_worker',
-          eventType: 'outbound_vendor_access_denied',
-          initiatedByUserId: latestRun.initiatedByUserId,
-          metadata: JSON.stringify({
-            reason: error.message,
-            violation,
-            violatedValues,
-            runId: args.runId,
+        const deniedVendorDataClasses = latestRun.useWebSearch
+          ? (['chat_metadata', 'chat_prompt', 'external_search_terms'] as const)
+          : (['chat_metadata', 'chat_prompt'] as const);
+        await recordVendorAccessDenied(
+          ctx,
+          {
+            emitter: 'chat.run_worker',
+            initiatedByUserId: latestRun.initiatedByUserId,
+            kind: 'system',
+            organizationId: latestRun.organizationId,
+            sourceSurface: 'chat.run_generation',
+            userId: latestRun.initiatedByUserId,
+          },
+          {
             vendor: 'openrouter',
-          }),
-          organizationId: latestRun.organizationId,
-          outcome: 'failure',
-          resourceId: 'openrouter',
-          resourceLabel: 'OpenRouter',
-          resourceType: 'vendor',
-          severity: 'warning',
-          sourceSurface: 'chat.run_generation',
-          userId: latestRun.initiatedByUserId,
-        });
+            dataClasses: [...deniedVendorDataClasses],
+            error: error as never,
+            operation: 'chat_generation',
+            context: {
+              runId: args.runId,
+              useWebSearch: latestRun.useWebSearch,
+            },
+          },
+        );
       }
     }
 

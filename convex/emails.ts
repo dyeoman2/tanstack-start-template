@@ -1,6 +1,6 @@
 import { Resend as ConvexResend, type EmailEvent, vEmailEvent, vEmailId } from '@convex-dev/resend';
 import { v } from 'convex/values';
-import { assertVendorBoundary } from '../src/lib/server/vendor-boundary.server';
+import { type VendorDataClass } from '../src/lib/server/vendor-boundary.server';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
@@ -15,7 +15,9 @@ import {
   buildVerifyEmailTemplate,
   type EmailTemplateId,
 } from './emailTemplates';
+import { recordSystemAuditEvent } from './lib/auditEmitters';
 import { emailServiceConfiguredValidator, successTrueValidator } from './lib/returnValidators';
+import { executeVendorOperation } from './lib/vendorAudit';
 
 export {
   AVAILABLE_EMAIL_TEMPLATE_IDS,
@@ -129,6 +131,12 @@ type EmailTag = {
   value: string;
 };
 
+const EMAIL_VENDOR_DATA_CLASSES: VendorDataClass[] = [
+  'account_metadata',
+  'email_address',
+  'email_content',
+];
+
 function getSupportEmail() {
   return (
     process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_EMAIL_SENDER || 'support@example.com'
@@ -159,54 +167,75 @@ function buildEmailTags(templateId: EmailTemplateId, appName: string): EmailTag[
 }
 
 async function sendEmailViaResendApi(args: {
+  ctx: Parameters<typeof recordSystemAuditEvent>[0];
   apiKey: string;
   from: string;
   to: string;
   subject: string;
   html: string;
   text: string;
+  audit: {
+    emitter: string;
+    templateId: EmailTemplateId;
+    userId: string;
+  };
   replyTo?: string[];
   headers?: EmailHeader[];
   tags?: EmailTag[];
 }) {
-  assertVendorBoundary({
-    vendor: 'resend',
-    dataClasses: ['account_metadata', 'email_address', 'email_content'],
-  });
-
-  const response = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${args.apiKey}`,
-      'Content-Type': 'application/json',
+  return await executeVendorOperation(
+    args.ctx,
+    {
+      emitter: args.audit.emitter,
+      initiatedByUserId: args.audit.userId,
+      kind: 'system',
+      sourceSurface: 'auth.email',
+      userId: args.audit.userId,
     },
-    body: JSON.stringify({
-      from: args.from,
-      to: [args.to],
-      subject: args.subject,
-      html: args.html,
-      text: args.text,
-      reply_to: args.replyTo,
-      headers: args.headers,
-      tags: args.tags,
-    }),
-  });
+    {
+      context: {
+        templateId: args.audit.templateId,
+      },
+      dataClasses: EMAIL_VENDOR_DATA_CLASSES,
+      operation: 'transactional_email_send',
+      vendor: 'resend',
+      execute: async () => {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${args.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: args.from,
+            to: [args.to],
+            subject: args.subject,
+            html: args.html,
+            text: args.text,
+            reply_to: args.replyTo,
+            headers: args.headers,
+            tags: args.tags,
+          }),
+        });
 
-  const payload = (await response.json().catch(() => null)) as {
-    id?: string;
-    message?: string;
-    name?: string;
-  } | null;
+        const payload = (await response.json().catch(() => null)) as {
+          id?: string;
+          message?: string;
+          name?: string;
+        } | null;
 
-  if (!response.ok) {
-    throw new Error(payload?.message ?? `Resend API request failed with ${response.status}`);
-  }
+        if (!response.ok) {
+          throw new Error(payload?.message ?? `Resend API request failed with ${response.status}`);
+        }
 
-  if (!payload?.id) {
-    throw new Error('Resend did not return a message id');
-  }
+        if (!payload?.id) {
+          throw new Error('Resend did not return a message id');
+        }
 
-  return payload.id;
+        return payload.id;
+      },
+    },
+  );
 }
 
 export const sendPasswordResetEmailMutation = internalAction({
@@ -251,7 +280,13 @@ export const sendPasswordResetEmailMutation = internalAction({
         },
         async () => {
           return await sendEmailViaResendApi({
+            ctx,
             apiKey: resendApiKey,
+            audit: {
+              emitter: 'emails.sendPasswordResetEmailMutation',
+              templateId: 'reset-password',
+              userId: args.user.id,
+            },
             from: `${appName} <${emailSender}>`,
             to: args.user.email,
             subject: `Reset your ${appName} password`,
@@ -329,7 +364,13 @@ export const sendVerificationEmailMutation = internalAction({
       },
       async () => {
         return await sendEmailViaResendApi({
+          ctx,
           apiKey: resendApiKey,
+          audit: {
+            emitter: 'emails.sendVerificationEmailMutation',
+            templateId: 'verify-email',
+            userId: args.user.id,
+          },
           from: `${appName} <${emailSender}>`,
           to: args.user.email,
           subject: content.subject,
@@ -388,7 +429,13 @@ export const sendChangeEmailConfirmationMutation = internalAction({
       },
       async () => {
         return await sendEmailViaResendApi({
+          ctx,
           apiKey: resendApiKey,
+          audit: {
+            emitter: 'emails.sendChangeEmailConfirmationMutation',
+            templateId: 'verify-email',
+            userId: args.user.id,
+          },
           from: `${appName} <${emailSender}>`,
           to: args.user.email,
           subject: content.subject,

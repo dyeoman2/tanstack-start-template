@@ -356,6 +356,28 @@ function resolveAbsoluteOrigin(value: string | undefined, label: string): string
   }
 }
 
+function parseAbsoluteServiceUrl(value: string, label: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new Error(`${label} must be a valid absolute URL.`);
+  }
+
+  if (
+    parsed.protocol !== 'https:' &&
+    !(parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname))
+  ) {
+    throw new Error(`${label} must use https unless it points to a loopback host.`);
+  }
+
+  if (parsed.search || parsed.hash) {
+    throw new Error(`${label} must not include a query string or hash.`);
+  }
+
+  return parsed.toString();
+}
+
 /**
  * Get the Better Auth secret, with validation.
  */
@@ -854,6 +876,15 @@ export function getAuditArchiveRuntimeConfig(): AuditArchiveRuntimeConfig {
   }
 
   return baseConfig;
+}
+
+export function getDomainDnsResolverUrl(): string | null {
+  const configured = readOptionalServerEnv('DOMAIN_DNS_RESOLVER_URL');
+  if (!configured) {
+    return null;
+  }
+
+  return parseAbsoluteServiceUrl(configured, 'DOMAIN_DNS_RESOLVER_URL');
 }
 
 export function getGoogleOAuthCredentials(): {

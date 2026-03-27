@@ -1,4 +1,5 @@
 import {
+  VENDOR_KEYS,
   getVendorBoundaryPolicy,
   isVendorApproved,
   resolveVendorEnvironment,
@@ -6,7 +7,23 @@ import {
   type VendorKey,
 } from '../shared/vendor-boundary';
 
+export type { VendorDataClass, VendorKey } from '../shared/vendor-boundary';
+export { getVendorBoundaryPolicy } from '../shared/vendor-boundary';
+
 export type VendorBoundaryViolation = 'approval' | 'data_class' | 'environment';
+
+export type VendorAuditContext = Record<string, boolean | number | string | null>;
+
+export type VendorBoundaryDecision = {
+  allowedDataClasses: readonly VendorDataClass[];
+  allowedEnvironments: readonly ('development' | 'production' | 'test')[];
+  approvalEnvVar: string | null;
+  approvedByDefault: boolean;
+  dataClasses: readonly VendorDataClass[];
+  displayName: string;
+  environment: 'development' | 'production' | 'test';
+  vendor: VendorKey;
+};
 
 export class VendorBoundaryError extends Error {
   constructor(
@@ -20,26 +37,57 @@ export class VendorBoundaryError extends Error {
   }
 }
 
+function getConfiguredVendorValue(vendor: VendorKey) {
+  switch (vendor) {
+    case 'openrouter':
+      return process.env.OPENROUTER_API_KEY;
+    case 'resend':
+      return process.env.RESEND_API_KEY;
+    case 'sentry':
+      return process.env.ENABLE_SENTRY_EGRESS;
+    case 'google_favicons':
+      return process.env.ENABLE_GOOGLE_FAVICON_EGRESS;
+    case 'google_workspace_oauth': {
+      const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.BETTER_AUTH_GOOGLE_CLIENT_ID;
+      const clientSecret =
+        process.env.GOOGLE_CLIENT_SECRET ?? process.env.BETTER_AUTH_GOOGLE_CLIENT_SECRET;
+      return clientId && clientSecret ? 'true' : undefined;
+    }
+  }
+}
+
+function getVendorApprovalRequirement(vendor: VendorKey, approvalEnvVar: string | null) {
+  if (approvalEnvVar) {
+    return {
+      requirementKey: approvalEnvVar,
+      requirementLabel: `${approvalEnvVar} is enabled`,
+    };
+  }
+
+  return {
+    requirementKey: `${vendor}:configuration`,
+    requirementLabel: 'required configuration is present',
+  };
+}
+
 export function getVendorBoundarySnapshot() {
   const environment = resolveVendorEnvironment(
     process.env.NODE_ENV,
     process.env.APP_DEPLOYMENT_ENV,
   );
 
-  return Object.entries({
-    openrouter: process.env.OPENROUTER_API_KEY,
-    resend: process.env.RESEND_API_KEY,
-    sentry: process.env.ENABLE_SENTRY_EGRESS,
-  }).map(([vendor, configuredValue]) => {
-    const policy = getVendorBoundaryPolicy(vendor as VendorKey);
+  return VENDOR_KEYS.map((vendor) => {
+    const policy = getVendorBoundaryPolicy(vendor);
     const approved = isVendorApproved({
-      vendor: vendor as VendorKey,
+      vendor,
       environment,
-      envValue: policy.approvalEnvVar ? process.env[policy.approvalEnvVar] : configuredValue,
+      envValue: policy.approvalEnvVar
+        ? process.env[policy.approvalEnvVar]
+        : getConfiguredVendorValue(vendor),
     });
 
     return {
-      vendor: vendor as VendorKey,
+      vendor,
       displayName: policy.displayName,
       approved,
       approvedByDefault: policy.approvedByDefault,
@@ -50,28 +98,34 @@ export function getVendorBoundarySnapshot() {
   });
 }
 
-export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; vendor: VendorKey }) {
+export function resolveVendorBoundaryDecision(args: {
+  dataClasses: VendorDataClass[];
+  vendor: VendorKey;
+}): VendorBoundaryDecision {
   const environment = resolveVendorEnvironment(
     process.env.NODE_ENV,
     process.env.APP_DEPLOYMENT_ENV,
   );
   const policy = getVendorBoundaryPolicy(args.vendor);
+  const configuredValue = getConfiguredVendorValue(args.vendor);
   const approved = isVendorApproved({
     vendor: args.vendor,
     environment,
-    envValue: policy.approvalEnvVar ? process.env[policy.approvalEnvVar] : undefined,
+    envValue: policy.approvalEnvVar ? process.env[policy.approvalEnvVar] : configuredValue,
   });
 
   if (!approved) {
+    const approvalRequirement = getVendorApprovalRequirement(args.vendor, policy.approvalEnvVar);
     throw new VendorBoundaryError(
       args.vendor,
       'approval',
-      [policy.approvalEnvVar ?? 'default'],
-      `${policy.displayName} outbound access is blocked until ${policy.approvalEnvVar ?? 'an approval flag'} is enabled.`,
+      [approvalRequirement.requirementKey],
+      `${policy.displayName} outbound access is blocked until ${approvalRequirement.requirementLabel}.`,
     );
   }
 
-  const unsupportedDataClasses = args.dataClasses.filter(
+  const normalizedDataClasses = [...new Set(args.dataClasses)] as VendorDataClass[];
+  const unsupportedDataClasses = normalizedDataClasses.filter(
     (dataClass) => !(policy.allowedDataClasses as readonly VendorDataClass[]).includes(dataClass),
   );
   if (unsupportedDataClasses.length > 0) {
@@ -96,5 +150,33 @@ export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; ven
     );
   }
 
-  return policy;
+  return {
+    vendor: args.vendor,
+    displayName: policy.displayName,
+    approvalEnvVar: policy.approvalEnvVar,
+    approvedByDefault: policy.approvedByDefault,
+    environment,
+    dataClasses: normalizedDataClasses,
+    allowedDataClasses: [...policy.allowedDataClasses],
+    allowedEnvironments: [...policy.allowedEnvironments],
+  };
+}
+
+export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; vendor: VendorKey }) {
+  return getVendorBoundaryPolicy(resolveVendorBoundaryDecision(args).vendor);
+}
+
+export function buildVendorAuditMetadata(args: {
+  context?: VendorAuditContext;
+  decision: Pick<VendorBoundaryDecision, 'dataClasses' | 'vendor'>;
+  operation: string;
+  sourceSurface: string;
+}) {
+  return JSON.stringify({
+    vendor: args.decision.vendor,
+    operation: args.operation,
+    dataClasses: args.decision.dataClasses,
+    sourceSurface: args.sourceSurface,
+    context: args.context ?? {},
+  });
 }

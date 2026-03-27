@@ -176,6 +176,7 @@ type SearchState = {
   selectedReport?: string;
   selectedReviewRun?: string;
   selectedVendor?: string;
+  showAdvancedFilters?: boolean;
 };
 
 const defaultSearch: SearchState = {
@@ -835,6 +836,7 @@ function renderRoute() {
             search: search.search,
             selectedControl: search.selectedControl,
             sortBy: search.sortBy,
+            showAdvancedFilters: search.showAdvancedFilters ?? false,
             sortOrder: search.sortOrder,
             support: search.support,
           }}
@@ -868,6 +870,7 @@ function renderRoute() {
             findingStatus: search.findingStatus ?? 'all',
             findingType: search.findingType ?? 'all',
             selectedFinding: search.selectedFinding,
+            showAdvancedFilters: search.showAdvancedFilters ?? false,
           }}
         />
       ) : null}
@@ -1584,8 +1587,9 @@ describe('Admin security route', () => {
       'Pending manager sign-off.',
     );
 
+    await user.click(screen.getByRole('button', { name: /more options/i }));
     await user.click(screen.getByRole('combobox', { name: /source/i }));
-    await user.click(await screen.findByText('Internal review'));
+    await user.click(await screen.findByRole('option', { name: 'Internal review' }));
     await user.click(screen.getByRole('combobox', { name: /sufficiency/i }));
     await user.click(await screen.findByRole('option', { name: 'Partial' }));
     await user.click(screen.getByRole('button', { name: /attach note/i }));

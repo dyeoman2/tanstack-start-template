@@ -376,6 +376,7 @@ export default defineSchema({
     supportAccessApprovalModel: v.literal('single_owner'),
     supportAccessEnabled: v.boolean(),
     webSearchAllowed: v.boolean(),
+    aiChatEnabled: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -1160,7 +1161,13 @@ export default defineSchema({
   securityVendors: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    vendorKey: v.union(
+      v.literal('openrouter'),
+      v.literal('resend'),
+      v.literal('sentry'),
+      v.literal('google_favicons'),
+      v.literal('google_workspace_oauth'),
+    ),
     title: v.string(),
     owner: v.optional(v.string()),
     summary: v.optional(v.union(v.string(), v.null())),
@@ -1187,7 +1194,13 @@ export default defineSchema({
   securityVendorControlMappings: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    vendorKey: v.union(
+      v.literal('openrouter'),
+      v.literal('resend'),
+      v.literal('sentry'),
+      v.literal('google_favicons'),
+      v.literal('google_workspace_oauth'),
+    ),
     internalControlId: v.string(),
     createdAt: v.number(),
   })
@@ -1265,7 +1278,13 @@ export default defineSchema({
     templateKey: v.string(),
     policyId: v.optional(v.string()),
     vendorKey: v.optional(
-      v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+      v.union(
+        v.literal('openrouter'),
+        v.literal('resend'),
+        v.literal('sentry'),
+        v.literal('google_favicons'),
+        v.literal('google_workspace_oauth'),
+      ),
     ),
     title: v.string(),
     description: v.string(),

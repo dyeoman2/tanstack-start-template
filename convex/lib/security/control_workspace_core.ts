@@ -2,6 +2,7 @@ import type { Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import type { VendorKey } from '../../../src/lib/shared/vendor-boundary';
 import { getSecurityScopeFields } from './core';
 import {
   buildNormalizedChecklistEvidence,
@@ -640,12 +641,8 @@ async function _listSecurityControlWorkspaceRecords(
             (relationship: (typeof allRelationships)[number]): LinkedEntity[] => {
               switch (relationship.toType) {
                 case 'vendor': {
-                  const vendorRecord = vendorByKey.get(
-                    relationship.toId as 'openrouter' | 'resend' | 'sentry',
-                  );
-                  const vendorRuntime = vendorRuntimeByKey.get(
-                    relationship.toId as 'openrouter' | 'resend' | 'sentry',
-                  );
+                  const vendorRecord = vendorByKey.get(relationship.toId as VendorKey);
+                  const vendorRuntime = vendorRuntimeByKey.get(relationship.toId as VendorKey);
                   if (!vendorRuntime) {
                     return [];
                   }

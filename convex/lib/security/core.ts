@@ -1,6 +1,7 @@
 import type { Doc, Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import type { VendorKey } from '../../../src/lib/shared/vendor-boundary';
 import {
   EXPORT_ARTIFACT_SCHEMA_VERSION,
   RELEASE_PROVENANCE_CONTROL_ID,
@@ -263,11 +264,11 @@ function resolveControlLinkMetadata(link: { internalControlId: string; itemId: s
   };
 }
 
-function getVendorRelatedControlLinks(vendorKey: 'openrouter' | 'resend' | 'sentry') {
+function getVendorRelatedControlLinks(vendorKey: VendorKey) {
   return VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR[vendorKey];
 }
 
-function buildVendorRelatedControls(vendorKey: 'openrouter' | 'resend' | 'sentry') {
+function buildVendorRelatedControls(vendorKey: VendorKey) {
   return getVendorRelatedControlLinks(vendorKey).map((link) => {
     const metadata = resolveControlLinkMetadata(link);
     return {
