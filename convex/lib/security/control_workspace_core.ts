@@ -781,9 +781,115 @@ async function _listSecurityControlWorkspaceRecords(
   });
 }
 
+/**
+ * Lightweight loader that computes only support status per control/checklist item.
+ * Skips relationships, vendors, findings, reports, review tasks, and actor resolution.
+ * Used by the policy read model where only control metadata + support is needed.
+ */
+async function listSecurityControlSupportRecords(
+  ctx: QueryCtx,
+  options?: { controlIds?: string[] },
+) {
+  const controls = options?.controlIds
+    ? ACTIVE_CONTROL_REGISTER.controls.filter((control) =>
+        options.controlIds?.includes(control.internalControlId),
+      )
+    : ACTIVE_CONTROL_REGISTER.controls;
+
+  const perControlRows = await Promise.all(
+    controls.map(async (control) => {
+      const [checklistItems, evidenceRows] = await Promise.all([
+        ctx.db
+          .query('securityControlChecklistItems')
+          .withIndex('by_internal_control_id', (q) =>
+            q.eq('internalControlId', control.internalControlId),
+          )
+          .collect(),
+        ctx.db
+          .query('securityControlEvidence')
+          .withIndex('by_internal_control_id', (q) =>
+            q.eq('internalControlId', control.internalControlId),
+          )
+          .collect(),
+      ]);
+      return { control, checklistItems, evidenceRows };
+    }),
+  );
+
+  const seededReviewedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+  const seededValidUntil = resolveSeededEvidenceValidUntil(seededReviewedAt);
+
+  return perControlRows.map(({ control, checklistItems, evidenceRows }) => {
+    const checklistStateByKey = new Map(
+      checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item] as const),
+    );
+    const evidenceByKey = evidenceRows.reduce<Map<string, typeof evidenceRows>>((acc, ev) => {
+      const key = `${ev.internalControlId}:${ev.itemId}`;
+      const arr = acc.get(key) ?? [];
+      arr.push(ev);
+      acc.set(key, arr);
+      return acc;
+    }, new Map());
+
+    const platformChecklist = control.platformChecklistItems.map((item) => {
+      const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
+      const hiddenSeedEvidenceIds = new Set(itemState?.hiddenSeedEvidenceIds ?? []);
+      const seededEvidence = item.seed.evidence
+        .filter((_, index) => {
+          const id = `${control.internalControlId}:${item.itemId}:seed:${index}`;
+          return !hiddenSeedEvidenceIds.has(id);
+        })
+        .map((entry) => ({
+          lifecycleStatus: 'active' as const,
+          reviewStatus: 'reviewed' as const,
+          sufficiency: entry.sufficiency,
+          validUntil: seededValidUntil,
+        }));
+      const storedEvidence = (
+        evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? []
+      )
+        .filter((ev) => (ev.lifecycleStatus ?? 'active') === 'active')
+        .map((ev) => ({
+          lifecycleStatus: (ev.lifecycleStatus ?? 'active') as 'active' | 'archived' | 'superseded',
+          reviewStatus: (ev.reviewStatus ?? 'pending') as 'pending' | 'reviewed',
+          sufficiency: ev.sufficiency,
+          validUntil: resolveEvidenceValidUntil({
+            reviewedAt: ev.reviewedAt,
+            reviewDueIntervalMonths: ev.reviewDueIntervalMonths,
+            validUntil: ev.validUntil,
+          }),
+        }));
+      const allEvidence = [...seededEvidence, ...storedEvidence];
+      const support = resolveChecklistSupport(allEvidence);
+
+      return {
+        itemId: item.itemId,
+        label: item.label,
+        required: item.required,
+        support,
+      };
+    });
+
+    const controlSupport = resolveControlSupport(platformChecklist);
+
+    return {
+      familyId: control.familyId,
+      familyTitle: control.familyTitle,
+      implementationSummary: control.implementationSummary,
+      internalControlId: control.internalControlId,
+      nist80053Id: control.nist80053Id,
+      platformChecklist,
+      responsibility: control.responsibility,
+      support: controlSupport,
+      title: control.title,
+    };
+  });
+}
+
 export {
   _listSecurityControlWorkspaceRecords,
   getSecurityControlWorkspaceRecord,
+  listSecurityControlSupportRecords,
   listSecurityControlWorkspaceExportRecords,
   listSecurityControlWorkspaceSummaryRecords,
 };

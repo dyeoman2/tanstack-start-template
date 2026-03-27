@@ -1,8 +1,9 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { Archive, Check, History, MoreHorizontal, RefreshCw } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
+import { AddEvidenceDialog } from '~/features/security/components/AddEvidenceDialog';
 import {
   Accordion,
   AccordionContent,
@@ -16,7 +17,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog';
@@ -26,29 +26,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import { Input } from '~/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
 import { Spinner } from '~/components/ui/spinner';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
-import { Textarea } from '~/components/ui/textarea';
 import {
   Accordion as MappingAccordion,
   AccordionContent as MappingAccordionContent,
   AccordionItem as MappingAccordionItem,
   AccordionTrigger as MappingAccordionTrigger,
 } from '~/components/ui/accordion';
-import {
-  EVIDENCE_REVIEW_DUE_OPTIONS,
-  EVIDENCE_SOURCE_OPTIONS,
-  EVIDENCE_SUFFICIENCY_OPTIONS,
-} from '~/features/security/constants';
 import {
   SecurityChecklistAccordionHeader,
   SecurityChecklistItemReadOnlyContent,
@@ -57,9 +42,7 @@ import {
   formatControlResponsibility,
   formatEvidenceActivityEvent,
   formatEvidenceLifecycleStatus,
-  formatEvidenceReviewDueInterval,
   formatEvidenceReviewStatus,
-  formatEvidenceSource,
   formatEvidenceSufficiency,
   formatEvidenceTimestamp,
   formatHipaaMapping,
@@ -68,13 +51,10 @@ import {
   getEvidenceReviewBadgeVariant,
   getEvidenceSufficiencyBadgeVariant,
   getSupportBadgeVariant,
-  getTodayDateInputValue,
-  parseEvidenceDateInput,
 } from '~/features/security/formatters';
 import type {
   EvidenceReviewDueIntervalMonths,
   EvidenceSource,
-  EvidenceSufficiency,
   SecurityChecklistEvidence,
   SecurityChecklistEvidenceActivity,
   SecurityChecklistItem,
@@ -391,18 +371,6 @@ function ChecklistItemActions(props: {
     useState<SecurityChecklistEvidence | null>(null);
   const [pendingRenewEvidence, setPendingRenewEvidence] =
     useState<SecurityChecklistEvidence | null>(null);
-  const [proofComposerTab, setProofComposerTab] = useState<'link' | 'note' | 'file'>('link');
-  const [linkTitle, setLinkTitle] = useState('');
-  const [linkUrl, setLinkUrl] = useState('');
-  const [linkDescription, setLinkDescription] = useState('');
-  const [noteTitle, setNoteTitle] = useState('');
-  const [noteDescription, setNoteDescription] = useState('');
-  const [evidenceDateInput, setEvidenceDateInput] = useState(() => getTodayDateInputValue());
-  const [reviewDueIntervalMonths, setReviewDueIntervalMonths] =
-    useState<EvidenceReviewDueIntervalMonths>(12);
-  const [source, setSource] = useState<EvidenceSource | ''>('internal_review');
-  const [sufficiency, setSufficiency] = useState<EvidenceSufficiency>('sufficient');
-  const [showEvidenceAdvanced, setShowEvidenceAdvanced] = useState(false);
   const linkKey = `${control.internalControlId}:${item.itemId}:link`;
   const noteKey = `${control.internalControlId}:${item.itemId}:note`;
   const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
@@ -415,22 +383,6 @@ function ChecklistItemActions(props: {
         }
       : 'skip',
   );
-  const metadataIsComplete = evidenceDateInput.length > 0 && source !== '';
-
-  const resetEvidenceComposer = useCallback(() => {
-    setLinkTitle('');
-    setLinkUrl('');
-    setLinkDescription('');
-    setNoteTitle('');
-    setNoteDescription('');
-    setEvidenceDateInput(getTodayDateInputValue());
-    setReviewDueIntervalMonths(12);
-    setSource('internal_review');
-    setSufficiency('sufficient');
-    setShowEvidenceAdvanced(false);
-    setProofComposerTab('link');
-  }, []);
-
   return (
     <>
       <AccordionItem value={item.itemId} className="border-b last:border-b-0">
@@ -516,267 +468,35 @@ function ChecklistItemActions(props: {
         </AccordionContent>
       </AccordionItem>
 
-      <Dialog
-        open={isAddingProof}
-        onOpenChange={(open) => {
-          setIsAddingProof(open);
-          if (!open) {
-            resetEvidenceComposer();
-          }
+      <AddEvidenceDialog
+        busyKey={props.busyAction}
+        description={`${item.label}. Suggested evidence: ${item.suggestedEvidenceTypes.join(', ')}`}
+        linkBusyKey={linkKey}
+        noteBusyKey={noteKey}
+        onAddLink={async (payload) => {
+          await props.onAddEvidenceLink({
+            ...payload,
+            internalControlId: control.internalControlId,
+            itemId: item.itemId,
+          });
         }}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add evidence</DialogTitle>
-            <DialogDescription>
-              {item.label}. Suggested evidence: {item.suggestedEvidenceTypes.join(', ')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <label className="text-sm font-medium" htmlFor={`${item.itemId}-evidence-date`}>
-                Evidence date
-              </label>
-              <Input
-                id={`${item.itemId}-evidence-date`}
-                type="date"
-                value={evidenceDateInput}
-                onChange={(event) => setEvidenceDateInput(event.target.value)}
-              />
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowEvidenceAdvanced((prev) => !prev)}
-              className="text-xs"
-            >
-              {showEvidenceAdvanced ? 'Hide options' : 'More options'}
-            </Button>
-            {showEvidenceAdvanced && (
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-review-due`}>
-                    Review due
-                  </label>
-                  <Select
-                    value={String(reviewDueIntervalMonths)}
-                    onValueChange={(value) =>
-                      setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
-                    }
-                  >
-                    <SelectTrigger id={`${item.itemId}-review-due`} className="w-full">
-                      <SelectValue placeholder="Select interval" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={String(option)}>
-                          {formatEvidenceReviewDueInterval(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-source`}>
-                    Source
-                  </label>
-                  <Select
-                    value={source}
-                    onValueChange={(value) => setSource(value as EvidenceSource)}
-                  >
-                    <SelectTrigger id={`${item.itemId}-source`} className="w-full">
-                      <SelectValue placeholder="Select source" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EVIDENCE_SOURCE_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {formatEvidenceSource(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium" htmlFor={`${item.itemId}-sufficiency`}>
-                    Sufficiency
-                  </label>
-                  <Select
-                    value={sufficiency}
-                    onValueChange={(value) => setSufficiency(value as EvidenceSufficiency)}
-                  >
-                    <SelectTrigger id={`${item.itemId}-sufficiency`} className="w-full">
-                      <SelectValue placeholder="Select sufficiency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {EVIDENCE_SUFFICIENCY_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={option}>
-                          {formatEvidenceSufficiency(option)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
-            <Tabs
-              value={proofComposerTab}
-              onValueChange={(value) => setProofComposerTab(value as 'link' | 'note' | 'file')}
-              className="space-y-3"
-            >
-              <TabsList className="w-full justify-start overflow-auto">
-                <TabsTrigger value="link">Link</TabsTrigger>
-                <TabsTrigger value="note">Note</TabsTrigger>
-                <TabsTrigger value="file">File</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="link" className="space-y-2">
-                <Input
-                  value={linkTitle}
-                  onChange={(event) => setLinkTitle(event.target.value)}
-                  placeholder="Link title"
-                />
-                <Input
-                  value={linkUrl}
-                  onChange={(event) => setLinkUrl(event.target.value)}
-                  placeholder="https://…"
-                />
-                <Textarea
-                  value={linkDescription}
-                  onChange={(event) => setLinkDescription(event.target.value)}
-                  placeholder="What this evidence shows"
-                />
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={
-                      props.busyAction === linkKey ||
-                      !metadataIsComplete ||
-                      linkTitle.trim().length === 0 ||
-                      linkUrl.trim().length === 0
-                    }
-                    onClick={() => {
-                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                      if (evidenceDate === null || source === '') {
-                        return;
-                      }
-                      void props
-                        .onAddEvidenceLink({
-                          description: linkDescription.trim() || undefined,
-                          evidenceDate,
-                          internalControlId: control.internalControlId,
-                          itemId: item.itemId,
-                          reviewDueIntervalMonths,
-                          source,
-                          sufficiency,
-                          title: linkTitle.trim(),
-                          url: linkUrl.trim(),
-                        })
-                        .then(() => {
-                          setIsAddingProof(false);
-                          resetEvidenceComposer();
-                        });
-                    }}
-                  >
-                    {props.busyAction === linkKey ? 'Saving…' : 'Attach link'}
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-
-              <TabsContent value="note" className="space-y-2">
-                <Input
-                  value={noteTitle}
-                  onChange={(event) => setNoteTitle(event.target.value)}
-                  placeholder="Note title"
-                />
-                <Textarea
-                  value={noteDescription}
-                  onChange={(event) => setNoteDescription(event.target.value)}
-                  placeholder="Paste reviewer note or summary"
-                />
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    disabled={
-                      props.busyAction === noteKey ||
-                      !metadataIsComplete ||
-                      noteTitle.trim().length === 0 ||
-                      noteDescription.trim().length === 0
-                    }
-                    onClick={() => {
-                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                      if (evidenceDate === null || source === '') {
-                        return;
-                      }
-                      void props
-                        .onAddEvidenceNote({
-                          description: noteDescription.trim(),
-                          evidenceDate,
-                          internalControlId: control.internalControlId,
-                          itemId: item.itemId,
-                          reviewDueIntervalMonths,
-                          source,
-                          sufficiency,
-                          title: noteTitle.trim(),
-                        })
-                        .then(() => {
-                          setIsAddingProof(false);
-                          resetEvidenceComposer();
-                        });
-                    }}
-                  >
-                    {props.busyAction === noteKey ? 'Saving…' : 'Attach note'}
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-
-              <TabsContent value="file" className="space-y-2">
-                <Input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.pdf,image/jpeg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
-                    if (!file || evidenceDate === null || source === '') {
-                      event.target.value = '';
-                      return;
-                    }
-                    void props
-                      .onUploadEvidenceFile({
-                        description: undefined,
-                        evidenceDate,
-                        file,
-                        internalControlId: control.internalControlId,
-                        itemId: item.itemId,
-                        reviewDueIntervalMonths,
-                        source,
-                        sufficiency,
-                        title: file.name,
-                      })
-                      .finally(() => {
-                        event.target.value = '';
-                      });
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Allowed file types: PDF, TXT, CSV, JPG, PNG, GIF, WEBP.
-                </p>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
-                    Close
-                  </Button>
-                </DialogFooter>
-              </TabsContent>
-            </Tabs>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onAddNote={async (payload) => {
+          await props.onAddEvidenceNote({
+            ...payload,
+            internalControlId: control.internalControlId,
+            itemId: item.itemId,
+          });
+        }}
+        onUploadFile={async (payload) => {
+          await props.onUploadEvidenceFile({
+            ...payload,
+            internalControlId: control.internalControlId,
+            itemId: item.itemId,
+          });
+        }}
+        open={isAddingProof}
+        onOpenChange={setIsAddingProof}
+      />
 
       <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
         <DialogContent className="sm:max-w-3xl">

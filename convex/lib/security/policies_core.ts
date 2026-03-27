@@ -5,7 +5,7 @@ import { SECURITY_POLICY_DOCUMENTS } from '../../../src/lib/shared/compliance/se
 import { SECURITY_POLICY_CATALOG } from '../../../src/lib/shared/compliance/security-policies';
 import { getAnnualReviewRunKey, getCurrentAnnualReviewYear, getSecurityScopeFields } from './core';
 import { addMonths, resolveSeedSiteAdminActor } from './operations_core';
-import { listSecurityControlWorkspaceExportRecords } from './control_workspace_core';
+import { listSecurityControlSupportRecords } from './control_workspace_core';
 
 type SecuritySupport = 'missing' | 'partial' | 'complete';
 type SecurityPolicyLinkedAnnualReviewTask = {
@@ -67,7 +67,7 @@ type SecurityPolicyReviewContextRecord = {
   policyControls: SecurityPolicyMappedControlRecord[];
 };
 type SecurityControlRecordForPolicy = Awaited<
-  ReturnType<typeof listSecurityControlWorkspaceExportRecords>
+  ReturnType<typeof listSecurityControlSupportRecords>
 >[number];
 type SecurityPolicyReadModelState = {
   controlRecords: SecurityControlRecordForPolicy[];
@@ -410,7 +410,7 @@ async function loadSecurityPolicyReadModelState(
             q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
           )
           .unique();
-  const [seededActor, policies, mappings, controlRecords, reviewTasks] = await Promise.all([
+  const [seededActor, policies, mappings, reviewTasks] = await Promise.all([
     resolveSeedSiteAdminActor(ctx),
     options?.policyId
       ? ctx.db
@@ -424,7 +424,6 @@ async function loadSecurityPolicyReadModelState(
           .withIndex('by_policy_id', (q) => q.eq('policyId', options.policyId as string))
           .collect()
       : ctx.db.query('securityPolicyControlMappings').collect(),
-    listSecurityControlWorkspaceExportRecords(ctx),
     currentAnnualRun
       ? ctx.db
           .query('reviewTasks')
@@ -432,6 +431,12 @@ async function loadSecurityPolicyReadModelState(
           .collect()
       : Promise.resolve([] as Array<Doc<'reviewTasks'>>),
   ]);
+  const mappedControlIds = Array.from(
+    new Set(mappings.map((mapping) => mapping.internalControlId)),
+  );
+  const controlRecords = await listSecurityControlSupportRecords(ctx, {
+    controlIds: mappedControlIds.length > 0 ? mappedControlIds : undefined,
+  });
 
   return {
     controlRecords,
